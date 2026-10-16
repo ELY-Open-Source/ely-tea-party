@@ -1,21 +1,12 @@
 name: CI
 
+# GitHub's runners check Linux and Windows; macOS is checked, built and signed on the owner's Mac.
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-      # The runner's PATH lacks the host's rustup.
-      - run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - run: rustup toolchain install --no-self-update
-      - run: scripts/check.sh
-      - run: cargo build --locked
-
   platforms:
     strategy:
       fail-fast: false
@@ -27,25 +18,17 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v7
-      # The job container comes without rustup.
+      # pwsh comes with the image; zsh and fish run the shell tests, Xvfb the X11 one.
       - if: runner.os == 'Linux'
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - run: rustup toolchain install --no-self-update
-      # On a host runner its post step deletes the host's rustup.
-      - if: runner.os == 'Linux'
-        uses: Swatinem/rust-cache@v2
-      - if: runner.os != 'Linux'
-        run: cargo test --locked --quiet
-      # The Linux job container runs as root, which ignores the file permissions the tests check.
-      - if: runner.os == 'Linux'
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends pkg-config libwayland-dev \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libwayland-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev libfontconfig-dev \
             libfreetype-dev zsh fish xvfb
-          useradd --create-home ci
-          chmod o+x "$HOME"
-          chown -R ci "$GITHUB_WORKSPACE" "$HOME/.cargo" "$HOME/.rustup"
-          runuser -u ci -- env HOME=/home/ci CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup" PATH="$PATH" cargo test --locked --quiet
+      - run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: scripts/check.sh
+      - if: runner.os != 'Linux'
+        run: cargo test --locked --quiet
       - run: cargo build --locked

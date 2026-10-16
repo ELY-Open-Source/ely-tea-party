@@ -1,6 +1,6 @@
 # Ely Tea Party
 
-A fork of [ELYTerminal](https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal) by Zachary Zhang, made with his permission, forked at `8bc94ed` (v0.1.1). The terminal, its engine and its design are his; this fork adds one opinion on top: **a terminal for running coding agents**. Each session running an agent shows it as an animated chibi character whose pose follows what the agent is doing, so a glance at the left column says who is working, who is thinking and who waits for you.
+A fork of [ELYTerminal](https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal) by Zachary Zhang, made with their permission, forked at `8bc94ed` (v0.1.1). The terminal, its engine and its design are theirs; this fork adds one opinion on top: **a terminal for running coding agents**. Each session running an agent shows it as an animated chibi character whose pose follows what the agent is doing, so a glance at the left column says who is working, who is thinking and who waits for you.
 
 A terminal for macOS, Windows and Linux, in Rust on GPUI and Ely components. Sessions sit on the left, the terminal in the middle, Git or Files on the right. Every setting has a control in the settings window.
 
@@ -38,6 +38,15 @@ cargo run --release
 ```
 
 Each platform's script builds its release in `target/release`: on macOS, `scripts/mac-app.sh` builds `Ely Tea Party.app`, with its icon, and a disk image of it; on Windows, `scripts/windows-zip.ps1` zips `ely-tea-party.exe`, its icon inside; on Linux, `scripts/linux-tar.sh` builds in Docker and packs the binary with its desktop entry and icon.
+
+To release, dispatch the Release workflow on GitHub, which drafts `vVERSION` and puts the Linux and Windows builds on it. Then, on a Mac whose keychain holds a Developer ID Application identity, with an App Store Connect API key:
+
+```sh
+SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)" \
+NOTARY_KEY=~/.appstoreconnect/AuthKey_KEYID.p8 NOTARY_KEY_ID=KEYID NOTARY_ISSUER=ISSUER-UUID \
+  scripts/mac-app.sh
+scripts/release-asset.sh target/release/ely-tea-party-VERSION.dmg
+```
 
 On Linux, install the libraries gpui links first. On Debian and Ubuntu:
 
