@@ -27,7 +27,21 @@ The art comes from cmux-todd-ui, a separate project that draws the same characte
 
 ## Install
 
-No release yet: build from source, below. On macOS, `scripts/mac-app.sh` makes `Ely Tea Party.app` and a disk image; on Windows `scripts/windows-zip.ps1` a zip of `ely-tea-party.exe`; on Linux `scripts/linux-tar.sh` a tarball with `net.toddzheng.ely-tea-party.desktop` and its icon, whose desktop entry runs `ely-tea-party` from `PATH`.
+Each release on GitHub (Releases of `qiz029/ely-tea-party`) carries three builds.
+
+- macOS 11 or later, Apple silicon: open `ely-tea-party-VERSION.dmg` and drag Ely Tea Party into Applications. The app is signed with Developer ID and notarized.
+- Windows 10 or later, x86_64: unzip `ely-tea-party-VERSION-windows-x86_64.zip` and run `ely-tea-party.exe`. It is unsigned; if SmartScreen stops it, press More info, then Run anyway.
+- Linux, x86_64, glibc 2.35 or later, with libxkbcommon, libxkbcommon-x11 and libxcb:
+
+```sh
+tar -xzf ely-tea-party-VERSION-linux-x86_64.tar.gz
+cd ely-tea-party-VERSION-linux-x86_64
+install -Dm755 ely-tea-party -t ~/.local/bin
+install -Dm644 net.toddzheng.ely-tea-party.desktop -t ~/.local/share/applications
+install -Dm644 net.toddzheng.ely-tea-party.svg -t ~/.local/share/icons/hicolor/scalable/apps
+```
+
+The desktop entry runs `ely-tea-party`, so `~/.local/bin` must be on `PATH`.
 
 ## Build and run
 
