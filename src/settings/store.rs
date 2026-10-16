@@ -22,7 +22,7 @@ impl SettingsStore {
     /// Loads `settings.json` from the platform config folder into the app.
     pub fn init(cx: &mut App) -> anyhow::Result<()> {
         let folder = dirs::config_dir().context("settings: the platform names no config folder")?;
-        let path = folder.join("ELYTerminal").join("settings.json");
+        let path = folder.join("ely-tea-party").join("settings.json");
         let settings = load(&path)?;
         loads(&settings.font_family, cx)
             .with_context(|| format!("settings: {} holds a bad value", path.display()))?;
@@ -136,7 +136,7 @@ mod tests {
 
     fn folder(name: &str) -> PathBuf {
         let folder =
-            std::env::temp_dir().join(format!("elyterminal-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("ely-tea-party-{name}-{}", std::process::id()));
         if folder.exists() {
             fs::remove_dir_all(&folder).expect("a stale test folder goes");
         }

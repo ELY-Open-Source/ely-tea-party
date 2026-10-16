@@ -2,7 +2,7 @@
 # linux.sh ARGS: runs `cargo ARGS` on the working tree in a Linux container.
 set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
-docker build -q -t elyterminal-linux - >/dev/null <<'EOF'
+docker build -q -t ely-tea-party-linux - >/dev/null <<'EOF'
 FROM rust:1.95
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config libwayland-dev libxkbcommon-dev \
@@ -24,4 +24,4 @@ git -C "$repo" ls-files -co --exclude-standard -z |
     -v ely-linux-target:/target \
     -v ely-linux-registry:/usr/local/cargo/registry \
     -v ely-linux-git:/usr/local/cargo/git \
-    elyterminal-linux sh -c 'tar -xmf - -C /src && exec cargo "$@"' cargo "$@"
+    ely-tea-party-linux sh -c 'tar -xmf - -C /src && exec cargo "$@"' cargo "$@"

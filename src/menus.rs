@@ -8,7 +8,7 @@ use crate::{
 };
 
 actions!(
-    elyterminal,
+    ely_tea_party,
     [Quit, Bigger, Smaller, ResetSize, Minimize, Zoom]
 );
 
@@ -21,11 +21,11 @@ pub fn menus() -> Vec<Menu> {
     };
     vec![
         menu(
-            "ELYTerminal",
+            "Ely Tea Party",
             vec![
                 MenuItem::action("Settings…", OpenSettings),
                 MenuItem::separator(),
-                MenuItem::action("Quit ELYTerminal", Quit),
+                MenuItem::action("Quit Ely Tea Party", Quit),
             ],
         ),
         menu(

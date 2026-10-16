@@ -37,7 +37,7 @@ impl TerminalTheme {
 /// The settings' name for Omarchy's theme, on Linux.
 pub const OMARCHY: &str = "omarchy";
 
-/// Omarchy's current theme, while ELYTerminal follows it.
+/// Omarchy's current theme, while Ely Tea Party follows it.
 pub struct Omarchy(pub TerminalTheme);
 
 impl Global for Omarchy {}

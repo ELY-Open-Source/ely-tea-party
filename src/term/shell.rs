@@ -16,16 +16,16 @@ const SCRIPTS: [(&str, &str); 4] = [
         include_str!("../../assets/shell-integration/zsh/.zshenv"),
     ),
     (
-        "bash/elyterminal.bash",
-        include_str!("../../assets/shell-integration/bash/elyterminal.bash"),
+        "bash/ely-tea-party.bash",
+        include_str!("../../assets/shell-integration/bash/ely-tea-party.bash"),
     ),
     (
-        "fish/vendor_conf.d/elyterminal.fish",
-        include_str!("../../assets/shell-integration/fish/vendor_conf.d/elyterminal.fish"),
+        "fish/vendor_conf.d/ely-tea-party.fish",
+        include_str!("../../assets/shell-integration/fish/vendor_conf.d/ely-tea-party.fish"),
     ),
     (
-        "pwsh/elyterminal.ps1",
-        include_str!("../../assets/shell-integration/pwsh/elyterminal.ps1"),
+        "pwsh/ely-tea-party.ps1",
+        include_str!("../../assets/shell-integration/pwsh/ely-tea-party.ps1"),
     ),
 ];
 
@@ -39,7 +39,7 @@ impl ShellIntegration {
     pub fn init(cx: &mut App) -> anyhow::Result<()> {
         let dir = dirs::data_local_dir()
             .context("shell integration: the platform names no data folder")?
-            .join("ELYTerminal")
+            .join("ely-tea-party")
             .join("shell-integration");
         install(&dir)?;
         cx.set_global(Self(dir));
@@ -99,7 +99,7 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
             launch.env.push(("ZDOTDIR".into(), script("zsh")));
         }
         "bash" => {
-            let rcfile = script("bash/elyterminal.bash");
+            let rcfile = script("bash/ely-tea-party.bash");
             launch.program = Some((path.clone(), vec!["--rcfile".into(), rcfile]));
             if cfg!(target_os = "macos") {
                 launch.env.push(("ELY_BASH_LOGIN".into(), "1".into()));
@@ -117,7 +117,7 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
             launch.env.push(("ELY_FISH_XDG_DATA_DIRS".into(), previous));
         }
         "pwsh" | "powershell" => {
-            let file = script("pwsh/elyterminal.ps1").replace('\'', "''");
+            let file = script("pwsh/ely-tea-party.ps1").replace('\'', "''");
             launch.program = Some((
                 path.clone(),
                 vec![
@@ -127,7 +127,7 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
                     "Bypass".into(),
                     "-Command".into(),
                     format!(
-                        "try {{ . '{file}' }} catch {{ [Console]::Error.WriteLine(\"ELYTerminal: shell integration failed: $_\"); exit 1 }}"
+                        "try {{ . '{file}' }} catch {{ [Console]::Error.WriteLine(\"Ely Tea Party: shell integration failed: $_\"); exit 1 }}"
                     ),
                 ],
             ));

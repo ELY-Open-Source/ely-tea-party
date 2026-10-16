@@ -1,4 +1,10 @@
-use std::{collections::HashSet, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    process::ExitStatus,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use alacritty_terminal::{
     event::Event,
@@ -71,6 +77,8 @@ pub struct TerminalView {
     focused: bool,
     blinking: bool,
     shown: bool,
+    /// When the program last drew.
+    drew: Instant,
     _events: Task<()>,
     _blink: Task<()>,
     _focus: [Subscription; 3],
@@ -115,6 +123,7 @@ impl TerminalView {
             focused: false,
             blinking: false,
             shown: true,
+            drew: Instant::now(),
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
@@ -131,6 +140,16 @@ impl TerminalView {
 
     pub fn pid(&self) -> u32 {
         self.pty.pid
+    }
+
+    /// The process group the program's keys go to.
+    pub fn foreground(&self) -> Option<u32> {
+        self.pty.foreground()
+    }
+
+    /// When the program last drew.
+    pub fn drew(&self) -> Instant {
+        self.drew
     }
 
     fn pump(mut events: Events, cx: &mut Context<Self>) -> Task<()> {
@@ -221,7 +240,10 @@ impl TerminalView {
 
     fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
-            Event::Wakeup => self.shown = true,
+            Event::Wakeup => {
+                self.shown = true;
+                self.drew = Instant::now();
+            }
             Event::MouseCursorDirty => {}
             // A reset empties the title and sends only this; setting the options sends the title.
             Event::CursorBlinkingChange => {

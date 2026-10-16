@@ -10,7 +10,7 @@ use gpui::{
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
-    blur, menus,
+    agents, blur, menus,
     settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
     themes,
@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// The id the macOS bundle and Linux desktop entry share.
-pub const APP_ID: &str = "com.zacharyzhang.elyterminal";
+pub const APP_ID: &str = "net.toddzheng.ely-tea-party";
 
 /// Fonts, settings, integration scripts and the chosen font, each checked before a window opens.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
@@ -43,6 +43,12 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     }
     SettingsStore::init(cx)?;
     ShellIntegration::init(cx)?;
+    #[cfg(unix)]
+    {
+        cx.set_global(workspace::Reports::new(agents::hooks::listen()?));
+        cx.on_app_quit(|_| async { agents::hooks::close() })
+            .detach();
+    }
     input::bind_keys(cx);
     workspace::bind_keys(cx);
     settings::window::bind_keys(cx);
@@ -84,7 +90,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
 }
 
 /// Opens the main window running `launch`.
-pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
+pub fn open(mut launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
     let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
     let background = blur::appearance(SettingsStore::get(cx));
     let options = WindowOptions {
@@ -99,13 +105,15 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         window_background: background,
         ..Default::default()
     };
+    let id = agents::next_session();
+    launch.env.extend(agents::env(id)?);
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
     let window = cx.open_window(options, |window, cx| {
         window.set_app_id(APP_ID);
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
-        cx.new(|cx| Workspace::new(pty, events, launch, window, cx))
+        cx.new(|cx| Workspace::new((id, pty, events), launch, window, cx))
     })?;
     log::info!(
         "app: main window open, blur: {background:?} on {}",

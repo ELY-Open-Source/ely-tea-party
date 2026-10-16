@@ -1,11 +1,10 @@
 [package]
-name = "elyterminal"
+name = "ely-tea-party"
 version = "0.1.1"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
-description = "A terminal on GPUI and Ely."
-repository = "https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal"
+description = "A terminal for coding agents, on GPUI and Ely; a fork of Ely Tea Party."
 publish = false
 
 [dependencies]

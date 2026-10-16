@@ -1,4 +1,4 @@
-# ELYTerminal: restore ZDOTDIR, load the user's .zshenv, report folder and title.
+# Ely Tea Party: restore ZDOTDIR, load the user's .zshenv, report folder and title.
 if [[ -n "${ELY_ZSH_ZDOTDIR+set}" ]]; then
   ZDOTDIR=$ELY_ZSH_ZDOTDIR
   builtin unset ELY_ZSH_ZDOTDIR

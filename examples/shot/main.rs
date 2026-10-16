@@ -4,12 +4,14 @@
 fn main() {
     use std::time::Duration;
 
-    use ely_gpui_component::Assets;
-    use elyterminal::{app, settings::window::SettingsWindow, term::Launch};
+    use ely_tea_party::agents::assets::Assets;
+    use ely_tea_party::{app, settings::window::SettingsWindow, term::Launch};
     use gpui::AnyWindowHandle;
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
-        .init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("ely_tea_party=info"),
+    )
+    .init();
     let mut args = std::env::args().skip(1).peekable();
     let keys: Vec<String> = if args.peek().map(String::as_str) == Some("--keys") {
         args.next();

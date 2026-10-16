@@ -1,5 +1,5 @@
 #!/bin/sh
-# mac-app.sh: ELYTerminal.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized.
+# mac-app.sh: Ely Tea Party.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized.
 set -eu
 cd "$(dirname "$0")/.."
 sign=${SIGN_IDENTITY:-}
@@ -18,27 +18,27 @@ version=$(cargo pkgid)
 version=${version##*[#@]}
 case $version in [0-9]*) ;; *) echo "mac-app: cargo pkgid names no version" >&2; exit 1 ;; esac
 out=${CARGO_TARGET_DIR:-target}/release
-app=$out/ELYTerminal.app
+app="$out/Ely Tea Party.app"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cargo run --release --locked --quiet --example icons -- \
-  iconset assets/icons/elyterminal-macos.svg "$work/ELYTerminal.iconset"
+  iconset assets/icons/ely-tea-party-macos.svg "$work/ely-tea-party.iconset"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$out/elyterminal" "$app/Contents/MacOS/"
-iconutil -c icns "$work/ELYTerminal.iconset" -o "$app/Contents/Resources/ELYTerminal.icns"
+cp "$out/ely-tea-party" "$app/Contents/MacOS/"
+iconutil -c icns "$work/ely-tea-party.iconset" -o "$app/Contents/Resources/ely-tea-party.icns"
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>ELYTerminal</string>
-  <key>CFBundleExecutable</key><string>elyterminal</string>
-  <key>CFBundleIconFile</key><string>ELYTerminal</string>
-  <key>CFBundleIdentifier</key><string>com.zacharyzhang.elyterminal</string>
+  <key>CFBundleDisplayName</key><string>Ely Tea Party</string>
+  <key>CFBundleExecutable</key><string>ely-tea-party</string>
+  <key>CFBundleIconFile</key><string>ely-tea-party</string>
+  <key>CFBundleIdentifier</key><string>net.toddzheng.ely-tea-party</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>ELYTerminal</string>
+  <key>CFBundleName</key><string>Ely Tea Party</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -55,10 +55,10 @@ else
   codesign --force --sign - "$app"
 fi
 mkdir "$work/disk"
-ditto "$app" "$work/disk/ELYTerminal.app"
+ditto "$app" "$work/disk/Ely Tea Party.app"
 ln -s /Applications "$work/disk/Applications"
-dmg=$out/ELYTerminal-$version.dmg
-hdiutil create -quiet -volname ELYTerminal -srcfolder "$work/disk" -ov -format UDZO "$dmg"
+dmg=$out/ely-tea-party-$version.dmg
+hdiutil create -quiet -volname "Ely Tea Party" -srcfolder "$work/disk" -ov -format UDZO "$dmg"
 if [ -n "$sign" ]; then
   codesign --force --timestamp --sign "$sign" "$dmg"
   notary() { xcrun notarytool "$@" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"; }

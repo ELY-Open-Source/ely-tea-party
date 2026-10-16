@@ -12,7 +12,7 @@ use super::{
     view::TerminalView,
 };
 
-actions!(elyterminal, [Find, FindNewer]);
+actions!(ely_tea_party, [Find, FindNewer]);
 
 /// The key context a terminal's root sets.
 pub const CONTEXT: &str = "Terminal";

@@ -8,6 +8,6 @@ $arch = @{ AMD64 = 'x86_64'; ARM64 = 'aarch64' }[$env:PROCESSOR_ARCHITECTURE]
 if (-not $arch) { throw "windows-zip: no name for $env:PROCESSOR_ARCHITECTURE" }
 $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { 'target' }
 $out = Join-Path $target 'release'
-$zip = Join-Path $out "ELYTerminal-$version-windows-$arch.zip"
-Compress-Archive -Force -Path (Join-Path $out 'elyterminal.exe') -DestinationPath $zip -ErrorAction Stop
+$zip = Join-Path $out "ely-tea-party-$version-windows-$arch.zip"
+Compress-Archive -Force -Path (Join-Path $out 'ely-tea-party.exe') -DestinationPath $zip -ErrorAction Stop
 Write-Output "windows-zip: $zip"

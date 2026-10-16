@@ -1,4 +1,4 @@
-# ELYTerminal: wrap the prompt to report folder and title.
+# Ely Tea Party: wrap the prompt to report folder and title.
 $global:ElyPrompt = $function:prompt
 function global:prompt {
     $text = & $global:ElyPrompt

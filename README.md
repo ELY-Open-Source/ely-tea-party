@@ -1,24 +1,33 @@
-# ELYTerminal
+# Ely Tea Party
+
+A fork of [ELYTerminal](https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal) by Zachary Zhang, made with his permission, forked at `8bc94ed` (v0.1.1). The terminal, its engine and its design are his; this fork adds one opinion on top: **a terminal for running coding agents**. Each session running an agent shows it as an animated chibi character whose pose follows what the agent is doing, so a glance at the left column says who is working, who is thinking and who waits for you.
 
 A terminal for macOS, Windows and Linux, in Rust on GPUI and Ely components. Sessions sit on the left, the terminal in the middle, Git or Files on the right. Every setting has a control in the settings window.
 
+## Agent characters
+
+| Agent | Character |
+|---|---|
+| `claude` | Claude学姐 |
+| `codex` | GPT娘 |
+| `dscode`, `deepseek` | 鲸鱼娘 |
+| `grok` | Grok娘 |
+| `kimi` | Kimi兔 |
+| `gemini`, `antigravity`, `agy` | Gemini星 |
+| `pi`, `omp` | Pi酱 |
+| `opencode` | OpenCode娘 |
+
+- **Zero setup.** Once a second each session's foreground job is read (its process group leader's command line, `node …/codex` and `npx @openai/codex` included). An agent there gets its character. Without hooks it works while it draws, idles when quiet, and waits for you after a bell.
+- **Hooks, for the real state.** `ely-tea-party hooks install` adds hooks to `~/.claude/settings.json` (backed up first) and prints Codex's `notify` line. Each session carries `ELY_SESSION`, `ELY_SOCKET` and `ELY_HOOK`; the hook runs `$ELY_HOOK hook claude`, which reports to the app's socket, and does nothing in any other terminal. With hooks, a quiet working agent shows as thinking, a permission prompt as waiting, and Stop as idle.
+- **Poses.** Waiting: waving with a red "!". Working: turns every 15 s through the main pose, research, a special move and slacking off. Quiet 6 s while working: thinking. Idle: the character's leisure pose; after 10 min, asleep.
+- **Cmd-Shift-U** (Ctrl-Shift-U off macOS) shows the first other session whose agent waits for you, else one that rang.
+- Detection reads processes on macOS and Linux; on Windows sessions show no characters yet.
+
+The art comes from cmux-todd-ui, a separate project that draws the same characters for cmux; `scripts/agents.py PATH/TO/cmux-todd-ui/sidebar/assets` turns its APNGs into the 112 px animated WebPs in `assets/agents`, which are built into the binary.
+
 ## Install
 
-A release on Gitea carries three builds.
-
-- macOS 11 or later, Apple silicon: open `ELYTerminal-VERSION.dmg` and drag ELYTerminal into Applications. The app is signed with Developer ID and notarized.
-- Windows 10 or later, x86_64: unzip `ELYTerminal-VERSION-windows-x86_64.zip` and run `elyterminal.exe`. It is unsigned; if SmartScreen stops it, press More info, then Run anyway.
-- Linux, x86_64, glibc 2.35 or later, with libxkbcommon, libxkbcommon-x11 and libxcb:
-
-```sh
-tar -xzf ELYTerminal-VERSION-linux-x86_64.tar.gz
-cd ELYTerminal-VERSION-linux-x86_64
-install -Dm755 elyterminal -t ~/.local/bin
-install -Dm644 com.zacharyzhang.elyterminal.desktop -t ~/.local/share/applications
-install -Dm644 com.zacharyzhang.elyterminal.svg -t ~/.local/share/icons/hicolor/scalable/apps
-```
-
-The desktop entry runs `elyterminal`, so `~/.local/bin` must be on `PATH`.
+No release yet: build from source, below. On macOS, `scripts/mac-app.sh` makes `Ely Tea Party.app` and a disk image; on Windows `scripts/windows-zip.ps1` a zip of `ely-tea-party.exe`; on Linux `scripts/linux-tar.sh` a tarball with `net.toddzheng.ely-tea-party.desktop` and its icon, whose desktop entry runs `ely-tea-party` from `PATH`.
 
 ## Build and run
 
@@ -28,7 +37,7 @@ Rust 1.95.0, which `rust-toolchain.toml` pins; rustup installs it on the first b
 cargo run --release
 ```
 
-Each platform's script builds its release in `target/release`: on macOS, `scripts/mac-app.sh` builds `ELYTerminal.app`, with its icon, and a disk image of it; on Windows, `scripts/windows-zip.ps1` zips `elyterminal.exe`, its icon inside; on Linux, `scripts/linux-tar.sh` builds in Docker and packs the binary with its desktop entry and icon.
+Each platform's script builds its release in `target/release`: on macOS, `scripts/mac-app.sh` builds `Ely Tea Party.app`, with its icon, and a disk image of it; on Windows, `scripts/windows-zip.ps1` zips `ely-tea-party.exe`, its icon inside; on Linux, `scripts/linux-tar.sh` builds in Docker and packs the binary with its desktop entry and icon.
 
 On Linux, install the libraries gpui links first. On Debian and Ubuntu:
 
@@ -37,7 +46,7 @@ sudo apt-get install pkg-config libwayland-dev libxkbcommon-dev libxkbcommon-x11
   libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev
 ```
 
-The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `trace` logs each paint. A Windows release build opens no console: `elyterminal.exe 2> log.txt` keeps its log.
+The app writes its log to stderr. `RUST_LOG=ely_tea_party=debug` writes more; `trace` logs each paint. A Windows release build opens no console: `ely-tea-party.exe 2> log.txt` keeps its log.
 
 ## What it does
 
@@ -75,9 +84,9 @@ Settings › Terminal lists them all, as this platform binds them.
 
 The settings window saves each change at once to `settings.json` in the platform's config folder:
 
-- macOS: `~/Library/Application Support/ELYTerminal/settings.json`
-- Linux: `$XDG_CONFIG_HOME/ELYTerminal/settings.json`, else `~/.config/ELYTerminal/settings.json`
-- Windows: `%APPDATA%\ELYTerminal\settings.json`
+- macOS: `~/Library/Application Support/ely-tea-party/settings.json`
+- Linux: `$XDG_CONFIG_HOME/ely-tea-party/settings.json`, else `~/.config/ely-tea-party/settings.json`
+- Windows: `%APPDATA%\ely-tea-party\settings.json`
 
 A file that does not parse, or holds a value out of range, stops the start with an error naming the file and the field. The app never overwrites it.
 
@@ -87,4 +96,4 @@ A file that does not parse, or holds a value out of range, stops the start with 
 
 ## License
 
-MIT, in `LICENSE`. Box drawing and key encoding follow Ghostty's code, MIT, in `LICENSE-GHOSTTY`. The theme files come from iTerm2-Color-Schemes, MIT, with its license in `assets/themes`. JetBrains Mono and its Nerd Font build are under the SIL Open Font License, in `assets/fonts`.
+MIT, in `LICENSE`, as upstream ELYTerminal; the fork keeps its copyright notice. Box drawing and key encoding follow Ghostty's code, MIT, in `LICENSE-GHOSTTY`. The theme files come from iTerm2-Color-Schemes, MIT, with its license in `assets/themes`. JetBrains Mono and its Nerd Font build are under the SIL Open Font License, in `assets/fonts`.

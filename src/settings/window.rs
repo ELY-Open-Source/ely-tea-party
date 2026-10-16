@@ -22,7 +22,7 @@ use crate::{app::APP_ID, menus, term::BLINK};
 mod appearance;
 mod terminal;
 
-actions!(elyterminal, [OpenSettings, CloseSettings]);
+actions!(ely_tea_party, [OpenSettings, CloseSettings]);
 
 /// The key context of the settings window's content.
 const CONTEXT: &str = "Settings";

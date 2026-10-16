@@ -7,12 +7,23 @@ use ely_gpui_component::{
     typography::Caption,
 };
 use gpui::{
-    Action, App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
+    App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, StyleRefinement,
+    Styled, Subscription, Task, Window, div, prelude::FluentBuilder, rems,
+};
+
+mod agents;
+mod keys;
+
+#[cfg(unix)]
+pub use agents::Reports;
+pub use keys::{
+    CloseSession, JumpToWaiting, LastSession, NewSession, NextSession, PreviousSession,
+    SelectSession, TogglePanel, ToggleSessions, bind_keys,
 };
 
 use crate::{
+    agents::{self as characters, Status},
     blur::Blur,
     files::Files,
     git::panel::{Acted, GitPanel},
@@ -26,57 +37,11 @@ use crate::{
     },
 };
 
-actions!(
-    elyterminal,
-    [
-        ToggleSessions,
-        TogglePanel,
-        NewSession,
-        CloseSession,
-        NextSession,
-        PreviousSession,
-        LastSession
-    ]
-);
-
-/// Shows the session at this place, from 0; past the last one, the key goes on to the program.
-#[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = elyterminal, no_json)]
-pub struct SelectSession(pub usize);
-
 /// The key context of the main window's content.
 pub const CONTEXT: &str = "Workspace";
 
 /// The window's title while the program names none.
-pub const TITLE: &str = "ELYTerminal";
-
-/// Ghostty's keys: Cmd on macOS; off it, Ctrl-Shift for keys a terminal takes, Alt for digits.
-pub fn bind_keys(cx: &mut App) {
-    let (sessions, panel, new, close, digit) = if cfg!(target_os = "macos") {
-        ("cmd-b", "cmd-alt-b", "cmd-t", "cmd-w", "cmd")
-    } else {
-        (
-            "ctrl-shift-b",
-            "ctrl-shift-alt-b",
-            "ctrl-shift-t",
-            "ctrl-shift-w",
-            "alt",
-        )
-    };
-    let context = Some(CONTEXT);
-    cx.bind_keys([
-        KeyBinding::new(sessions, ToggleSessions, context),
-        KeyBinding::new(panel, TogglePanel, context),
-        KeyBinding::new(new, NewSession, context),
-        KeyBinding::new(close, CloseSession, context),
-        KeyBinding::new("ctrl-tab", NextSession, context),
-        KeyBinding::new("ctrl-shift-tab", PreviousSession, context),
-        KeyBinding::new(&format!("{digit}-9"), LastSession, context),
-    ]);
-    cx.bind_keys(
-        (1..=8).map(|n| KeyBinding::new(&format!("{digit}-{n}"), SelectSession(n - 1), context)),
-    );
-}
+pub const TITLE: &str = "Ely Tea Party";
 
 /// The main window's content: sessions, the terminal, and Git or Files, in Ely's columns.
 pub struct Workspace {
@@ -90,13 +55,13 @@ pub struct Workspace {
     background: Blur,
     _settings: Subscription,
     _acted: Subscription,
+    _agents: [Task<()>; 2],
 }
 
 impl Workspace {
-    /// The window's content with its first session, `pty` started from `launch`.
+    /// The window's content with its first session `id`, `pty` started from `launch`.
     pub fn new(
-        pty: Pty,
-        events: Events,
+        (id, pty, events): (u64, Pty, Events),
         launch: Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -119,28 +84,30 @@ impl Workspace {
                 cx.notify();
             }),
             _acted: acted,
+            _agents: agents::watch(window, cx),
         };
-        workspace.add(pty, events, launch, window, cx);
+        workspace.add((id, pty, events), launch, window, cx);
         workspace.select(0, window, cx);
         workspace
     }
 
     fn add(
         &mut self,
-        pty: Pty,
-        events: Events,
+        (id, pty, events): (u64, Pty, Events),
         launch: Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
-        let id = terminal.entity_id();
+        let entity = terminal.entity_id();
         let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
-            this.session_event(id, event, window, cx)
+            this.session_event(entity, event, window, cx)
         });
         let pid = terminal.read(cx).pid();
         log::info!("app: session {pid} opens in {}", launch.cwd.display());
         self.sessions.push(Session {
+            id,
+            agent: None,
             terminal,
             title: String::new(),
             folder: launch.cwd,
@@ -164,11 +131,16 @@ impl Workspace {
                 .get(self.active)
                 .map_or(home, |session| session.folder.clone()),
         };
-        let started = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0)
-            .and_then(|launch| Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch)));
+        let id = characters::next_session();
+        let started = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0).and_then(
+            |mut launch| {
+                launch.env.extend(characters::env(id)?);
+                Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch))
+            },
+        );
         match started {
             Ok(((pty, events), launch)) => {
-                self.add(pty, events, launch, window, cx);
+                self.add((id, pty, events), launch, window, cx);
                 self.select(self.sessions.len() - 1, window, cx);
             }
             Err(error) => log::error!("app: no new session: {error:#}"),
@@ -260,13 +232,15 @@ impl Workspace {
                     self.git.update(cx, |git, cx| git.show(folder, cx));
                 }
             }
-            TerminalEvent::Bell if index != self.active => {
-                if !session.bell {
-                    log::debug!("app: a bell in hidden session {}", index + 1);
+            TerminalEvent::Bell => {
+                if let Some(agent) = session.agent.as_mut().filter(|agent| !agent.hooked) {
+                    agent.set(Status::NeedsInput, std::time::Instant::now());
                 }
-                session.bell = true;
+                if index != self.active && !session.bell {
+                    log::debug!("app: a bell in hidden session {}", index + 1);
+                    session.bell = true;
+                }
             }
-            TerminalEvent::Bell => {}
             TerminalEvent::Exited(status) => {
                 let pid = session.terminal.read(cx).pid();
                 log::info!("app: session {pid}'s program ended, {status}");
@@ -340,6 +314,8 @@ impl Render for Workspace {
         self.background.fit(window);
         let settings = SettingsStore::get(cx);
         let width = cx.theme().sidebar_width(false);
+        // Wider than Ely's sidebar: the characters need the room.
+        let sessions_width = rems(18.);
         let workspace = cx.entity();
         let tip =
             |shown: bool, what: &str| format!("{} {what}", if shown { "Hide" } else { "Show" });
@@ -375,14 +351,24 @@ impl Render for Workspace {
             .sessions
             .get(self.active)
             .map(|session| session.terminal.clone());
+        // Cached: the characters' frames redraw the window, not the grid.
+        let fill = || StyleRefinement::default().size_full();
         let mut terminal = ShellColumn::new("terminal")
             .title(self.title().to_string())
-            .children(shown);
+            .children(shown.map(|terminal| terminal.cached(fill())));
         if settings.show_sessions {
             let home = dirs::home_dir();
+            let now = std::time::Instant::now();
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {
                 let active = index == self.active;
-                sessions::row(&workspace, index, session, active, home.as_deref(), cx)
+                sessions::row(
+                    &workspace,
+                    index,
+                    session,
+                    active,
+                    (home.as_deref(), now),
+                    cx,
+                )
             });
             let list = List::new().children(rows);
             let new = IconButton::new("new-session", IconName::Plus)
@@ -394,7 +380,7 @@ impl Render for Workspace {
                 });
             shell = shell.column(
                 ShellColumn::new("sessions")
-                    .width(width)
+                    .width(sessions_width)
                     .leading(left)
                     .action(new)
                     .child(
@@ -434,7 +420,6 @@ impl Render for Workspace {
                     .when(!on, |body| body.hidden())
             };
             // Git's list draws every row, so terminal output must not redraw it.
-            let fill = || StyleRefinement::default().size_full();
             shell = shell.column(terminal).column(
                 ShellColumn::new("panel")
                     .width(width)
@@ -443,7 +428,7 @@ impl Render for Workspace {
                     .child(div().flex().justify_center().px_2().pt_2().child(switch))
                     .children(quiet.then(caption))
                     .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
-                    .child(body(tab == PanelTab::Files).child(self.files.clone())),
+                    .child(body(tab == PanelTab::Files).child(self.files.clone().cached(fill()))),
             );
         } else {
             shell = shell.column(terminal.action(end));
@@ -471,6 +456,9 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &NextSession, window, cx| this.step(true, window, cx)))
             .on_action(
                 cx.listener(|this, _: &PreviousSession, window, cx| this.step(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &JumpToWaiting, window, cx| this.jump_to_waiting(window, cx)),
             )
             .on_action(cx.listener(|this, _: &LastSession, window, cx| {
                 this.select(this.sessions.len().saturating_sub(1), window, cx)

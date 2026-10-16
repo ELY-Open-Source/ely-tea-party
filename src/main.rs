@@ -1,8 +1,8 @@
 // A release build on Windows opens no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use ely_gpui_component::Assets;
-use elyterminal::{
+use ely_tea_party::{
+    agents::assets::Assets,
     app,
     settings::SettingsStore,
     term::shell::{ShellIntegration, launch},
@@ -33,9 +33,44 @@ fn run(cx: &mut App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `ely-tea-party hook AGENT` reports an agent's hook; `ely-tea-party hooks install` installs them.
+#[cfg(unix)]
+fn command() -> Option<i32> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("hook") => {
+            ely_tea_party::agents::hooks::run(&args[1..]);
+            Some(0)
+        }
+        Some("hooks") if args.get(1).map(String::as_str) == Some("install") => {
+            let installed = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("install: no home folder"))
+                .and_then(|home| ely_tea_party::agents::install::run(&home));
+            Some(match installed {
+                Ok(()) => 0,
+                Err(error) => {
+                    eprintln!("{error:#}");
+                    1
+                }
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+fn command() -> Option<i32> {
+    None
+}
+
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
-        .init();
+    if let Some(code) = command() {
+        std::process::exit(code);
+    }
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("ely_tea_party=info"),
+    )
+    .init();
     application().with_assets(Assets).run(|cx: &mut App| {
         ely_gpui_component::init(cx).expect("Ely failed to start");
         if let Err(error) = run(cx) {

@@ -3,7 +3,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=assets/icons");
     embed_resource::compile(
-        "assets/icons/elyterminal.rc",
+        "assets/icons/ely-tea-party.rc",
         embed_resource::ParamsIncludeDirs(["assets/icons"]),
     )
     .manifest_required()

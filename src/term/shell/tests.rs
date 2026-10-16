@@ -14,7 +14,7 @@ const INNER: &str = "in ner%\u{7}x\ny";
 
 /// A fresh folder under the temp dir, by its real path.
 fn folder(name: &str) -> PathBuf {
-    let folder = env::temp_dir().join(format!("elyterminal-{name}-{}", std::process::id()));
+    let folder = env::temp_dir().join(format!("ely-tea-party-{name}-{}", std::process::id()));
     if folder.exists() {
         fs::remove_dir_all(&folder).expect("a stale test folder goes");
     }
@@ -180,12 +180,12 @@ fn a_script_it_cannot_read_fails_the_install() {
     use std::os::unix::fs::PermissionsExt;
     let dir = folder("unreadable");
     install(&dir).expect("installs");
-    let bash = dir.join("bash/elyterminal.bash");
+    let bash = dir.join("bash/ely-tea-party.bash");
     fs::set_permissions(&bash, fs::Permissions::from_mode(0o200)).expect("200");
     let error = install(&dir).expect_err("an unreadable script fails");
     fs::set_permissions(&bash, fs::Permissions::from_mode(0o600)).expect("600");
     assert!(
-        format!("{error:#}").contains("bash/elyterminal.bash"),
+        format!("{error:#}").contains("bash/ely-tea-party.bash"),
         "{error:#}"
     );
     fs::remove_dir_all(dir).expect("cleanup");

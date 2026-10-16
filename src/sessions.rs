@@ -1,20 +1,31 @@
-use std::path::{MAIN_SEPARATOR, Path, PathBuf};
+use std::{
+    path::{MAIN_SEPARATOR, Path, PathBuf},
+    time::Instant,
+};
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     lists::ListItem,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, ControlSize, Radius},
 };
-use gpui::{App, Entity, Subscription};
+use gpui::{
+    App, Entity, IntoElement, ObjectFit, ParentElement, Styled, StyledImage, Subscription, div,
+    img, rems,
+};
 
 use crate::{
+    agents::{self, Agent, Pose, Status},
     term::TerminalView,
     workspace::{TITLE, Workspace},
 };
 
 /// A program on its own terminal, as the sessions column lists it.
 pub struct Session {
+    /// Its hooks report under this.
+    pub id: u64,
+    /// The coding agent it runs, if any.
+    pub agent: Option<Agent>,
     pub terminal: Entity<TerminalView>,
     /// The program's title; empty while it names none.
     pub title: String,
@@ -57,13 +68,32 @@ pub fn after_close(active: usize, closed: usize, left: usize) -> usize {
     }
 }
 
-/// Session `index`'s row: its title and folder, a bell while one rang unseen, a button that closes it.
+/// Its agent waits for an answer.
+pub fn waits(session: &Session) -> bool {
+    let agent = session.agent.as_ref();
+    agent.is_some_and(|agent| agent.status == Status::NeedsInput)
+}
+
+/// The character of `agent` in `pose`, on a tile of its color.
+fn avatar(agent: &Agent, pose: Pose, cx: &App) -> impl IntoElement {
+    div()
+        .size(rems(3.5))
+        .rounded(cx.theme().radius(Radius::Lg))
+        .bg(agent.kind.color().opacity(0.14))
+        .child(
+            img(agents::art(agent.kind, pose))
+                .size_full()
+                .object_fit(ObjectFit::Contain),
+        )
+}
+
+/// Session `index`'s row: its title and folder, or its agent's character and doing; a bell; a close button.
 pub fn row(
     workspace: &Entity<Workspace>,
     index: usize,
     session: &Session,
     active: bool,
-    home: Option<&Path>,
+    (home, now): (Option<&Path>, Instant),
     cx: &App,
 ) -> ListItem {
     let pid = session.terminal.read(cx).pid() as usize;
@@ -72,11 +102,22 @@ pub fn row(
     } else {
         &session.title
     };
+    let folder = shown(&session.folder, home);
     let (select, close) = (workspace.clone(), workspace.clone());
-    let item = ListItem::new(("session", pid), title.to_string())
-        .description(shown(&session.folder, home))
+    let item = match &session.agent {
+        Some(agent) => {
+            let pose = agent.pose(now, session.id);
+            let since = agents::ago(now.saturating_duration_since(agent.since));
+            ListItem::new(("session", pid), agent.kind.name())
+                .description(format!("{} · {since}", agent.kind.label(pose)))
+                .detail(folder)
+                .leading(avatar(agent, pose, cx))
+        }
+        None => ListItem::new(("session", pid), title.to_string()).description(folder),
+    };
+    let item = item
         .selected(active)
-        .strong(session.bell)
+        .strong(session.bell || waits(session))
         .on_click(move |_, window, cx| select.update(cx, |this, cx| this.select(index, window, cx)))
         .trailing(
             IconButton::new(("close-session", pid), IconName::X)
@@ -88,7 +129,7 @@ pub fn row(
                     close.update(cx, |this, cx| this.close(index, window, cx))
                 }),
         );
-    if session.bell {
+    if session.bell && session.agent.is_none() {
         item.leading(Icon::new(IconName::Bell).color(cx.theme().colors.warning))
     } else {
         item

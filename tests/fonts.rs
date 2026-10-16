@@ -2,7 +2,7 @@
 
 #[cfg(target_os = "macos")]
 fn main() {
-    use elyterminal::term::load_font;
+    use ely_tea_party::term::load_font;
     let system = gpui::TextSystem::new(gpui_platform::current_platform(true).text_system());
     assert!(load_font(&gpui::font("Menlo"), &system).is_ok());
     // A family missing, and one gpui passes over for lacking an `m`.

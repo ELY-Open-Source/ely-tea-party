@@ -30,4 +30,4 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(cargo pkgid)
-          scripts/release-asset.sh "target/release/ELYTerminal-${version##*[#@]}.dmg"
+          scripts/release-asset.sh "target/release/ely-tea-party-${version##*[#@]}.dmg"

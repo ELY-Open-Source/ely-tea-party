@@ -141,7 +141,7 @@ fn omarchys_ghostty_conf_reads_without_its_glass() {
 #[test]
 fn omarchys_file_is_worn_again_once_it_reads() {
     use std::{fs, os::unix::fs::PermissionsExt};
-    let folder = std::env::temp_dir().join(format!("elyterminal-omarchy-{}", std::process::id()));
+    let folder = std::env::temp_dir().join(format!("ely-tea-party-omarchy-{}", std::process::id()));
     if folder.exists() {
         fs::remove_dir_all(&folder).expect("a stale test folder goes");
     }

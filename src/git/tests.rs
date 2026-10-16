@@ -7,7 +7,7 @@ use super::*;
 
 /// A fresh folder under the temp dir.
 fn folder(name: &str) -> PathBuf {
-    let folder = env::temp_dir().join(format!("elyterminal-{name}-{}", std::process::id()));
+    let folder = env::temp_dir().join(format!("ely-tea-party-{name}-{}", std::process::id()));
     if folder.exists() {
         fs::remove_dir_all(&folder).expect("a stale test folder goes");
     }

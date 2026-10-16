@@ -262,7 +262,8 @@ mod tests {
     #[test]
     fn a_shell_runs_for_this_user_from_a_full_folder() {
         use std::{fs, os::unix::fs::PermissionsExt};
-        let folder = std::env::temp_dir().join(format!("elyterminal-shell-{}", std::process::id()));
+        let folder =
+            std::env::temp_dir().join(format!("ely-tea-party-shell-{}", std::process::id()));
         fs::create_dir_all(&folder).expect("a test folder");
         let file = folder.join("review-shell");
         fs::write(&file, "#!/bin/sh\n").expect("a script");
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn exe_joins_only_a_name_without_an_extension() {
         use std::fs;
-        let folder = env::temp_dir().join(format!("elyterminal-exe-{}", std::process::id()));
+        let folder = env::temp_dir().join(format!("ely-tea-party-exe-{}", std::process::id()));
         fs::create_dir_all(&folder).expect("a test folder");
         let file = folder.join("review.exe");
         fs::write(&file, "").expect("a program");
@@ -313,7 +314,7 @@ mod tests {
             os::unix::{ffi::OsStringExt, fs::PermissionsExt},
             path::PathBuf,
         };
-        let folder = env::temp_dir().join(format!("elyterminal-bytes-{}-", std::process::id()));
+        let folder = env::temp_dir().join(format!("ely-tea-party-bytes-{}-", std::process::id()));
         let mut name = folder.into_os_string().into_vec();
         name.push(0xff);
         let folder = PathBuf::from(OsString::from_vec(name));

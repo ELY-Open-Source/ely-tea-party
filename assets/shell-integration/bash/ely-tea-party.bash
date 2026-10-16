@@ -1,4 +1,4 @@
-# ELYTerminal: load the usual startup files, report folder and title.
+# Ely Tea Party: load the usual startup files, report folder and title.
 if [ -n "${ELY_BASH_LOGIN-}" ]; then
   builtin unset ELY_BASH_LOGIN
   [ -r /etc/profile ] && builtin source /etc/profile

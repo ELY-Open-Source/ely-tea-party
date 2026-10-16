@@ -56,7 +56,7 @@ pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
     pub pid: u32,
     notifier: Notifier,
-    #[cfg(all(test, unix))]
+    #[cfg(unix)]
     master: std::fs::File,
 }
 
@@ -111,7 +111,7 @@ pub fn spawn(
         )
     })?;
     let pid = child_id(&raw)?;
-    #[cfg(all(test, unix))]
+    #[cfg(unix)]
     let master = raw
         .master()
         .map_err(|error| anyhow::anyhow!("pty {pid}: no copy of the master: {error}"))?;
@@ -141,7 +141,7 @@ pub fn spawn(
             term,
             pid,
             notifier,
-            #[cfg(all(test, unix))]
+            #[cfg(unix)]
             master,
         },
         events,
@@ -181,6 +181,19 @@ impl Pty {
         self.term
             .lock()
             .resize(TermSize::new(size.num_cols.into(), size.num_lines.into()));
+    }
+
+    /// The process group the terminal hands its keys to: the shell, or the job it runs.
+    #[cfg(unix)]
+    pub fn foreground(&self) -> Option<u32> {
+        use std::os::fd::AsRawFd;
+        let group = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
+        u32::try_from(group).ok().filter(|group| *group > 0)
+    }
+
+    #[cfg(windows)]
+    pub fn foreground(&self) -> Option<u32> {
+        None
     }
 }
 
@@ -376,7 +389,8 @@ mod tests {
     #[test]
     fn a_folder_that_cannot_be_entered_stops_the_start() {
         use std::os::unix::fs::PermissionsExt;
-        let folder = std::env::temp_dir().join(format!("elyterminal-shut-{}", std::process::id()));
+        let folder =
+            std::env::temp_dir().join(format!("ely-tea-party-shut-{}", std::process::id()));
         std::fs::create_dir_all(&folder).expect("a temp folder");
         std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o600)).expect("600");
         let launch = Launch {

@@ -1,4 +1,4 @@
-# ELYTerminal: restore XDG_DATA_DIRS, report the folder; fish_title keeps the title.
+# Ely Tea Party: restore XDG_DATA_DIRS, report the folder; fish_title keeps the title.
 if test -n "$ELY_FISH_XDG_DATA_DIRS"
     set -gx XDG_DATA_DIRS $ELY_FISH_XDG_DATA_DIRS
 else
