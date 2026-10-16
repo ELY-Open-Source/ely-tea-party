@@ -25,9 +25,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends pkg-config libwayland-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev libfontconfig-dev \
             libfreetype-dev zsh fish xvfb
+          # The image's group-writable zsh folders stop compinit at a prompt.
+          zsh -c 'autoload -U compaudit; compaudit' | xargs -r sudo chmod g-w,o-w
       - run: rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@v2
+      # snapd's fish script adds its folder to XDG_DATA_DIRS unless it is there already.
       - if: runner.os == 'Linux'
+        env:
+          XDG_DATA_DIRS: /usr/local/share:/usr/share:/var/lib/snapd/desktop
         run: scripts/check.sh
       - if: runner.os != 'Linux'
         run: cargo test --locked --quiet
