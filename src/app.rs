@@ -89,8 +89,19 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Opens the main window running `launch`.
-pub fn open(mut launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
+/// Opens the main window running `launch`, or, with `restore`, the sessions saved last time.
+pub fn open(
+    mut launch: Launch,
+    restore: bool,
+    cx: &mut App,
+) -> anyhow::Result<WindowHandle<Workspace>> {
+    let saved = (restore && SettingsStore::get(cx).restore_sessions)
+        .then(workspace::restore::load)
+        .flatten()
+        .filter(|saved| !saved.sessions.is_empty());
+    if let Some(folder) = saved.as_ref().and_then(workspace::restore::first_folder) {
+        launch.cwd = folder.to_path_buf();
+    }
     let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
     let background = blur::appearance(SettingsStore::get(cx));
     let options = WindowOptions {
@@ -113,7 +124,13 @@ pub fn open(mut launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Wor
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
-        cx.new(|cx| Workspace::new((id, pty, events), launch, window, cx))
+        cx.new(|cx| {
+            let mut workspace = Workspace::new((id, pty, events), launch, window, cx);
+            if let Some(saved) = saved {
+                workspace.restore(saved, window, cx);
+            }
+            workspace
+        })
     })?;
     log::info!(
         "app: main window open, blur: {background:?} on {}",

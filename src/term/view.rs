@@ -138,6 +138,11 @@ impl TerminalView {
         }
     }
 
+    /// Types `line` and Enter, as the user would.
+    pub fn type_line(&self, line: &str) {
+        self.pty.write(format!("{line}\r").into_bytes());
+    }
+
     pub fn pid(&self) -> u32 {
         self.pty.pid
     }
@@ -381,6 +386,10 @@ impl Render for TerminalView {
             .on_action(cx.listener(|view, _: &Find, window, cx| view.find(window, cx)))
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
+            .on_modifiers_changed(cx.listener(Self::modifiers_changed))
+            .when(self.pointer.on_link, |root| {
+                root.cursor(gpui::CursorStyle::PointingHand)
+            })
             .on_scroll_wheel(cx.listener(Self::wheel))
             .size_full()
             .px(px(settings.padding_x))

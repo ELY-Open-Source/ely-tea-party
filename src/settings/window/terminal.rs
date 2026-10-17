@@ -17,7 +17,7 @@ use crate::{
     term::input::{self, Find},
     workspace::{
         self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
-        TogglePanel, ToggleSessions,
+        ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
     },
 };
 
@@ -99,7 +99,15 @@ impl SettingsWindow {
             settings.copy_on_select,
             |settings, on| settings.copy_on_select = on,
         );
-        let section = section.row(SettingsRow::new("Copy on select").control(copy));
+        let restore = switch(
+            &this,
+            "restore_sessions",
+            settings.restore_sessions,
+            |settings, on| settings.restore_sessions = on,
+        );
+        let section = section
+            .row(SettingsRow::new("Copy on select").control(copy))
+            .row(SettingsRow::new("Restore sessions at start").control(restore));
         let keys = SettingsSection::new("Shortcuts")
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
         div().flex().flex_col().gap_6().child(section).child(keys)
@@ -143,6 +151,8 @@ fn listed() -> Vec<(&'static str, &'static str, Box<dyn Action>)> {
         ("Edit", "Find", Find.boxed_clone()),
         ("View", "Toggle sessions", ToggleSessions.boxed_clone()),
         ("View", "Toggle right panel", TogglePanel.boxed_clone()),
+        ("View", "Toggle drawer", ToggleDrawer.boxed_clone()),
+        ("View", "Tea party", ToggleParty.boxed_clone()),
         ("View", "Bigger", Bigger.boxed_clone()),
         ("View", "Smaller", Smaller.boxed_clone()),
         ("View", "Reset size", ResetSize.boxed_clone()),

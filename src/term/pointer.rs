@@ -5,8 +5,8 @@ use alacritty_terminal::{
     term::{Term, TermMode},
 };
 use gpui::{
-    ClipboardItem, Context, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollDelta, ScrollWheelEvent, Size, Window,
+    ClipboardItem, Context, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Size, Window,
 };
 
 use super::{
@@ -34,6 +34,19 @@ pub struct Pointer {
     last: Option<(usize, usize)>,
     /// Wheel travel short of a line.
     rest: Pixels,
+    /// Where the mouse last moved, in the window.
+    at: Point<Pixels>,
+    /// The mouse is over a link the open modifier would open.
+    pub on_link: bool,
+}
+
+/// The modifier whose click opens a link: Cmd on macOS, Ctrl elsewhere.
+fn opens(modifiers: &Modifiers) -> bool {
+    if cfg!(target_os = "macos") {
+        modifiers.platform
+    } else {
+        modifiers.control
+    }
 }
 
 fn button(button: MouseButton) -> Option<Button> {
@@ -106,12 +119,7 @@ impl TerminalView {
     ) {
         window.focus(&self.focus, cx);
         let (cell, point, side) = self.cell_at(event.position);
-        let opens = if cfg!(target_os = "macos") {
-            event.modifiers.platform
-        } else {
-            event.modifiers.control
-        };
-        if event.button == MouseButton::Left && opens {
+        if event.button == MouseButton::Left && opens(&event.modifiers) {
             let link = link_at(&self.pty.term.lock(), point);
             if let Some(link) = link {
                 log::info!("terminal {}: opens {link}", self.pty.pid);
@@ -165,12 +173,35 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Points the pointer when the open modifier is down over a link.
+    fn hover(&mut self, modifiers: &Modifiers, cx: &mut Context<Self>) {
+        let on_link = opens(modifiers) && {
+            let (_, point, _) = self.cell_at(self.pointer.at);
+            link_at(&self.pty.term.lock(), point).is_some()
+        };
+        if self.pointer.on_link != on_link {
+            self.pointer.on_link = on_link;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn modifiers_changed(
+        &mut self,
+        event: &ModifiersChangedEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.hover(&event.modifiers, cx);
+    }
+
     pub(super) fn mouse_move(
         &mut self,
         event: &MouseMoveEvent,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.pointer.at = event.position;
+        self.hover(&event.modifiers, cx);
         let (cell, point, side) = self.cell_at(event.position);
         if self.pointer.selecting && event.pressed_button == Some(MouseButton::Left) {
             if let Some(selection) = self.pty.term.lock().selection.as_mut() {

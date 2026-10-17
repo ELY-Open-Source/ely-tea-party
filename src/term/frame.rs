@@ -122,7 +122,8 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink, lit: &[(Match, Hsla)])
                 .chain(marks.into_iter().flatten().copied())
                 .collect::<String>()
         });
-        let shown = if spacer || hidden || alone.is_some() {
+        // alacritty keeps a tab in the first cell it crossed, for copies; it draws blank.
+        let shown = if spacer || hidden || alone.is_some() || cell.c == '\t' {
             ' '
         } else {
             cell.c
@@ -238,6 +239,15 @@ mod tests {
         assert_eq!(
             frame.rows[0].text.chars().take(3).collect::<String>(),
             "中 a"
+        );
+    }
+
+    #[test]
+    fn a_tab_leaves_blank_cells_to_its_stop() {
+        let (frame, _) = shown(b"a\tb");
+        assert_eq!(
+            frame.rows[0].text.chars().take(9).collect::<String>(),
+            "a       b"
         );
     }
 

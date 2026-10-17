@@ -4,7 +4,6 @@
 fn main() {
     use std::time::Duration;
 
-    use ely_tea_party::agents::assets::Assets;
     use ely_tea_party::{app, settings::window::SettingsWindow, term::Launch};
     use gpui::AnyWindowHandle;
 
@@ -29,11 +28,14 @@ fn main() {
         reports: false,
     };
     gpui_platform::application()
-        .with_assets(Assets)
+        .with_assets(ely_gpui_component::Assets)
         .run(move |cx: &mut gpui::App| {
             ely_gpui_component::init(cx).expect("Ely starts");
             app::start(cx).expect("the app starts");
-            let main: AnyWindowHandle = app::open(launch, cx).expect("the window opens").into();
+            let main: AnyWindowHandle =
+                app::open(launch, std::env::var_os("SHOT_RESTORE").is_some(), cx)
+                    .expect("the window opens")
+                    .into();
             cx.spawn(async move |cx| {
                 let number = |aim: AnyWindowHandle, cx: &mut gpui::AsyncApp| {
                     let number = aim.update(cx, |_, window, _| capture::number(window));

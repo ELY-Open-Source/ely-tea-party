@@ -1,26 +1,37 @@
 use ely_gpui_component::{
-    buttons::{ButtonVariant, IconButton, SegmentedControl},
+    buttons::{ButtonVariant, IconButton},
     lists::List,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
-    theme::{ActiveTheme, ControlSize},
-    typography::Caption,
+    theme::ControlSize,
 };
 use gpui::{
-    App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, StyleRefinement,
-    Styled, Subscription, Task, Window, div, prelude::FluentBuilder, rems,
+    App, AppContext, ClickEvent, Context, Entity, EntityId, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Render, StatefulInteractiveElement,
+    Styled, Subscription, Task, Window, div, prelude::FluentBuilder,
 };
 
 mod agents;
+mod divider;
+mod drawer;
+mod header;
 mod keys;
+mod order;
+mod panel;
+mod party;
+pub mod restore;
 
 #[cfg(unix)]
 pub use agents::Reports;
+pub use drawer::Drawer;
 pub use keys::{
     CloseSession, JumpToWaiting, LastSession, NewSession, NextSession, PreviousSession,
-    SelectSession, TogglePanel, ToggleSessions, bind_keys,
+    SelectSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions, bind_keys,
 };
+
+use std::path::PathBuf;
+
+use header::column_toggle;
 
 use crate::{
     agents::{self as characters, Status},
@@ -29,7 +40,7 @@ use crate::{
     git::panel::{Acted, GitPanel},
     menus,
     sessions::{self, Session},
-    settings::{PanelTab, Settings, SettingsStore, StartIn, window::OpenSettings},
+    settings::{Settings, SettingsStore, StartIn, window::OpenSettings},
     term::{
         Events, Launch, Pty, TerminalEvent, TerminalView, config,
         shell::{ShellIntegration, launch},
@@ -53,9 +64,18 @@ pub struct Workspace {
     git: Entity<GitPanel>,
     /// What the window shows of the desktop, and the blur behind it.
     background: Blur,
+    /// The sessions column's width while its divider is dragged.
+    dragged: Option<Pixels>,
+    /// The drawer's height while its divider is dragged.
+    drawer_dragged: Option<Pixels>,
+    /// The tea party shows in place of the columns.
+    party: bool,
+    /// The sessions as last saved for the next start.
+    saved: Option<restore::Saved>,
+    party_focus: FocusHandle,
     _settings: Subscription,
     _acted: Subscription,
-    _agents: [Task<()>; 2],
+    _agents: [Task<()>; 3],
 }
 
 impl Workspace {
@@ -79,6 +99,11 @@ impl Workspace {
             files: cx.new(|_| Files::new(launch.cwd.clone())),
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
+            dragged: None,
+            drawer_dragged: None,
+            party: false,
+            saved: None,
+            party_focus: cx.focus_handle(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();
@@ -113,6 +138,8 @@ impl Workspace {
             folder: launch.cwd,
             reports: launch.reports,
             bell: false,
+            drawer: None,
+            pending: None,
             _events: events,
         });
     }
@@ -132,13 +159,7 @@ impl Workspace {
                 .map_or(home, |session| session.folder.clone()),
         };
         let id = characters::next_session();
-        let started = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0).and_then(
-            |mut launch| {
-                launch.env.extend(characters::env(id)?);
-                Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch))
-            },
-        );
-        match started {
+        match start(folder, Some(id), cx) {
             Ok(((pty, events), launch)) => {
                 self.add((id, pty, events), launch, window, cx);
                 self.select(self.sessions.len() - 1, window, cx);
@@ -155,8 +176,12 @@ impl Workspace {
         if index != self.active
             && let Some(hidden) = self.sessions.get(self.active)
         {
-            hidden.terminal.update(cx, |view, cx| view.let_go(cx));
+            let drawer = hidden.drawer.as_ref().map(|drawer| &drawer.terminal);
+            for terminal in std::iter::once(&hidden.terminal).chain(drawer) {
+                terminal.update(cx, |view, cx| view.let_go(cx));
+            }
         }
+        self.party = false;
         let session = &mut self.sessions[index];
         session.bell = false;
         window.focus(&session.terminal.focus_handle(cx), cx);
@@ -177,6 +202,8 @@ impl Workspace {
         let session = self.sessions.remove(index);
         log::info!("app: session {} closes", session.terminal.read(cx).pid());
         if self.sessions.is_empty() {
+            // Closed by hand, none comes back.
+            self.keep();
             log::info!("app: no session left; the window closes");
             window.remove_window();
             return;
@@ -227,6 +254,11 @@ impl Workspace {
             TerminalEvent::Folder(folder) => {
                 session.folder.clone_from(folder);
                 session.reports = true;
+                // Its first prompt: the shell takes the restored agent's resume.
+                if let Some(line) = session.pending.take() {
+                    log::info!("restore: session {} runs {line}", session.id);
+                    session.terminal.read(cx).type_line(&line);
+                }
                 if index == self.active {
                     self.files.update(cx, |files, cx| files.show(folder, cx));
                     self.git.update(cx, |git, cx| git.show(folder, cx));
@@ -278,44 +310,22 @@ impl Workspace {
     }
 }
 
-/// Shows Git or Files in the right column, as the settings keep it.
-fn show_tab(value: &SharedString, cx: &mut App) {
-    let panel = match value.as_ref() {
-        "git" => PanelTab::Git,
-        "files" => PanelTab::Files,
-        other => unreachable!("app: no {other} tab"),
-    };
-    if SettingsStore::get(cx).panel == panel {
-        return;
+/// Starts the Shell setting in `folder`; a session's `agent` hooks reach the app under its id, a drawer's none.
+fn start(folder: PathBuf, agent: Option<u64>, cx: &App) -> anyhow::Result<((Pty, Events), Launch)> {
+    let settings = SettingsStore::get(cx);
+    let mut launch = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0)?;
+    if let Some(id) = agent {
+        launch.env.extend(characters::env(id)?);
     }
-    match SettingsStore::update(cx, |settings| settings.panel = panel) {
-        Ok(()) => log::info!("app: the right column shows {panel:?}"),
-        Err(error) => log::error!("app: the right column stays: {error:#}"),
-    }
-}
-
-/// A header button that hides or shows a column, saved.
-fn column_toggle(
-    workspace: &Entity<Workspace>,
-    (id, icon): (&'static str, IconName),
-    tip: String,
-    flip: fn(&mut Settings),
-) -> IconButton {
-    let workspace = workspace.clone();
-    IconButton::new(id, icon)
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Sm)
-        .tooltip(tip)
-        .on_click(move |_, _, cx| workspace.update(cx, |this, cx| this.toggle(flip, cx)))
+    Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch))
 }
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.background.fit(window);
-        let settings = SettingsStore::get(cx);
-        let width = cx.theme().sidebar_width(false);
-        // Wider than Ely's sidebar: the characters need the room.
-        let sessions_width = rems(18.);
+        let body = self.terminal_body(window, cx);
+        let settings = SettingsStore::get(cx).clone();
+        let sessions_width = self.sessions_width(cx);
         let workspace = cx.entity();
         let tip =
             |shown: bool, what: &str| format!("{} {what}", if shown { "Hide" } else { "Show" });
@@ -347,15 +357,9 @@ impl Render for Workspace {
             .children(gear)
             .child(right);
         let mut shell = ColumnShell::new("workspace").glass();
-        let shown = self
-            .sessions
-            .get(self.active)
-            .map(|session| session.terminal.clone());
-        // Cached: the characters' frames redraw the window, not the grid.
-        let fill = || StyleRefinement::default().size_full();
         let mut terminal = ShellColumn::new("terminal")
             .title(self.title().to_string())
-            .children(shown.map(|terminal| terminal.cached(fill())));
+            .child(body);
         if settings.show_sessions {
             let home = dirs::home_dir();
             let now = std::time::Instant::now();
@@ -382,6 +386,7 @@ impl Render for Workspace {
                 ShellColumn::new("sessions")
                     .width(sessions_width)
                     .leading(left)
+                    .action(party::party_button(cx.entity()))
                     .action(new)
                     .child(
                         div()
@@ -389,6 +394,16 @@ impl Render for Workspace {
                             .size_full()
                             .overflow_y_scroll()
                             .p_2()
+                            // A row dropped off the rows goes last.
+                            .on_drop(cx.listener(|this, moving: &sessions::Moving, _, cx| {
+                                this.move_session(moving.from, usize::MAX, cx)
+                            }))
+                            // A double click off the rows opens a session.
+                            .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                                if event.click_count() == 2 {
+                                    this.new_session(window, cx)
+                                }
+                            }))
                             .child(list),
                     ),
             );
@@ -397,39 +412,7 @@ impl Render for Workspace {
         }
         if settings.show_panel {
             let tab = settings.panel;
-            let chosen = match tab {
-                PanelTab::Git => "git",
-                PanelTab::Files => "files",
-            };
-            let switch = SegmentedControl::new("panel-tab", chosen)
-                .segment("git", "Git", None)
-                .segment("files", "Files", None)
-                .size(ControlSize::Sm)
-                .on_change(|value, _, cx| show_tab(value, cx));
-            let quiet = self
-                .sessions
-                .get(self.active)
-                .is_some_and(|session| !session.reports);
-            let caption = || Caption::new("This shell reports no folder.").px_3().pt_2();
-            // Hidden, not dropped, so each keeps its state.
-            let body = |on: bool| {
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .p_2()
-                    .when(!on, |body| body.hidden())
-            };
-            // Git's list draws every row, so terminal output must not redraw it.
-            shell = shell.column(terminal).column(
-                ShellColumn::new("panel")
-                    .width(width)
-                    .action(end)
-                    // Below the title bar, clear of Windows' caption buttons.
-                    .child(div().flex().justify_center().px_2().pt_2().child(switch))
-                    .children(quiet.then(caption))
-                    .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
-                    .child(body(tab == PanelTab::Files).child(self.files.clone().cached(fill()))),
-            );
+            shell = shell.column(terminal).column(self.panel(tab, end, cx));
         } else {
             shell = shell.column(terminal.action(end));
         }
@@ -449,9 +432,13 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &NewSession, window, cx| this.new_session(window, cx)))
             .on_action(
-                cx.listener(|this, _: &CloseSession, window, cx| {
-                    this.close(this.active, window, cx)
-                }),
+                cx.listener(|this, _: &CloseSession, window, cx| this.close_focused(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleDrawer, window, cx| this.toggle_drawer(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleParty, window, cx| this.toggle_party(window, cx)),
             )
             .on_action(cx.listener(|this, _: &NextSession, window, cx| this.step(true, window, cx)))
             .on_action(
@@ -473,7 +460,17 @@ impl Render for Workspace {
             .child(
                 ResizeBorder::new()
                     .when(self.background.see_through(), ResizeBorder::glass)
-                    .child(FocusScope::new(&self.focus).root().size_full().child(shell)),
+                    .child(
+                        FocusScope::new(&self.focus)
+                            .root()
+                            .size_full()
+                            .child(if self.party {
+                                self.party(cx).into_any_element()
+                            } else {
+                                self.wrap(shell, settings.show_sessions, window, cx)
+                                    .into_any_element()
+                            }),
+                    ),
             )
     }
 }

@@ -1,11 +1,14 @@
 //! Coding agents in sessions, each drawn as its character in a pose that follows its state.
 
+pub mod activity;
 pub mod assets;
 pub mod detect;
 #[cfg(unix)]
 pub mod hooks;
 #[cfg(unix)]
 pub mod install;
+pub mod quips;
+pub mod timeline;
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -13,6 +16,8 @@ use std::{
 };
 
 use gpui::Hsla;
+
+use activity::{Activity, Turn};
 
 /// An agent quiet this long while working is thinking.
 const THINKING_AFTER: Duration = Duration::from_secs(6);
@@ -24,7 +29,7 @@ const STALE_AFTER: Duration = Duration::from_secs(15 * 60);
 const BUSY_WITHIN: Duration = Duration::from_secs(2);
 /// While working, the pose turns every this long.
 const ROTATE: Duration = Duration::from_secs(15);
-/// The working poses in turn; the main one twice, so it shows most.
+/// An unhooked agent's working poses in turn; the main one twice, so it shows most.
 const WORKING: [Pose; 5] = [
     Pose::Working,
     Pose::Research,
@@ -34,7 +39,7 @@ const WORKING: [Pose; 5] = [
 ];
 
 /// Which character an agent is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Claude,
     Gpt,
@@ -55,7 +60,7 @@ pub enum Status {
 }
 
 /// What its character is drawn doing; each names one animation per character.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Pose {
     Working,
     Research,
@@ -268,11 +273,6 @@ pub fn env(_: u64) -> anyhow::Result<Vec<(String, String)>> {
     Ok(Vec::new())
 }
 
-/// The asset path of `kind` in `pose`.
-pub fn art(kind: Kind, pose: Pose) -> String {
-    format!("agents/{}-{}.webp", kind.stem(), pose.stem())
-}
-
 /// An agent running in a session.
 #[derive(Clone, Debug)]
 pub struct Agent {
@@ -284,6 +284,17 @@ pub struct Agent {
     pub active: Instant,
     /// Its hooks report its status; else output and bells stand in for them.
     pub hooked: bool,
+    /// The tool its hooks last named.
+    pub activity: Option<Activity>,
+    pub turn: Turn,
+    /// Her last word and when she said it.
+    pub quip: Option<(quips::Moment, Instant)>,
+    /// What she did, oldest first.
+    pub log: std::collections::VecDeque<timeline::Entry>,
+    /// The command her hooks name, as `codex` or `agy`.
+    pub program: Option<String>,
+    /// Her conversation's id, which resumes it.
+    pub conversation: Option<String>,
 }
 
 impl Agent {
@@ -294,6 +305,12 @@ impl Agent {
             since: now,
             active: now,
             hooked: false,
+            activity: None,
+            turn: Turn::default(),
+            quip: None,
+            log: std::collections::VecDeque::new(),
+            program: None,
+            conversation: None,
         }
     }
 
@@ -331,14 +348,14 @@ impl Agent {
     pub fn pose(&self, now: Instant, seed: u64) -> Pose {
         let quiet = now.saturating_duration_since(self.active);
         match self.status {
-            Status::NeedsInput => Pose::NeedsInput,
             Status::Working if self.hooked && quiet >= STALE_AFTER => Pose::Idle,
-            Status::Working if self.hooked && quiet >= THINKING_AFTER => Pose::Thinking,
+            Status::Idle if quiet >= SLEEPING_AFTER => Pose::Sleeping,
+            _ if self.hooked => self.hooked_pose(now, quiet, THINKING_AFTER),
+            Status::NeedsInput => Pose::NeedsInput,
             Status::Working => {
                 let turn = now.saturating_duration_since(self.since).as_secs() / ROTATE.as_secs();
                 WORKING[((turn + seed) % WORKING.len() as u64) as usize]
             }
-            Status::Idle if quiet >= SLEEPING_AFTER => Pose::Sleeping,
             Status::Idle => Pose::Idle,
         }
     }

@@ -23,7 +23,9 @@ pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
         let spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
         if !grid[cell].flags.intersects(spacer) {
             text.push(grid[cell].c);
-            text.extend(grid[cell].zerowidth().into_iter().flatten());
+            // A zero-width space fences a URL, as terminal-link's fallback writes it.
+            let marks = grid[cell].zerowidth().into_iter().flatten();
+            text.extend(marks.filter(|&&mark| mark != '\u{200b}'));
         }
         if cell == end {
             break;
@@ -89,5 +91,11 @@ mod tests {
             Some("file://a/\u{4e2d}"),
             "a wide cell's spacer is its char"
         );
+    }
+
+    #[test]
+    fn a_zero_width_space_ends_a_url() {
+        let text = "doc (\u{200b}https://a.io/x\u{200b})";
+        assert_eq!(link(text, 0, 8).as_deref(), Some("https://a.io/x"));
     }
 }

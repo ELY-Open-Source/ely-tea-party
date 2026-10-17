@@ -60,6 +60,10 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
+- The sessions column's right edge drags to set its width, 200 to 640 px and never past the terminal's room, saved when the button comes up. A double click on the column off its rows opens a session.
+- A session's row drags up or down to reorder the sessions; the shown session stays shown.
+- The tea party (Cmd-Shift-O) shows every session's character at one table with what she does; characters speak at the moments that matter; the right column's Activity tab lists the shown agent's steps; sessions and their agents' conversations come back at the next start.
+- Each session has a drawer: Cmd-J opens the user's own shell under the session's terminal, in its folder, and hides it again; it keeps running while hidden, and a job left running there marks the session's row.
 - The title shows the active session's title, and no other text.
 - The pointer over the terminal is the arrow.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.

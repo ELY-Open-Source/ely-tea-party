@@ -51,8 +51,11 @@ fn poses_follow_status_and_quiet() {
     assert_eq!(agent.pose(start + secs(601), 0), Pose::Sleeping);
     agent.hooked = true;
     agent.set(Status::Working, start);
-    assert_eq!(agent.pose(start + secs(1), 0), Pose::Working);
-    assert_eq!(agent.pose(start + secs(7), 0), Pose::Thinking);
+    assert_eq!(
+        agent.pose(start + secs(1), 0),
+        Pose::Thinking,
+        "no tool yet"
+    );
     assert_eq!(agent.pose(start + secs(901), 0), Pose::Idle, "a lost Stop");
     agent.set(Status::NeedsInput, start);
     assert_eq!(agent.pose(start + secs(3600), 0), Pose::NeedsInput);

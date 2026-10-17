@@ -1,113 +1,114 @@
-//! `ely-tea-party hooks install`: Claude Code's hooks report to Ely Tea Party; outside it they do nothing.
+//! `ely-tea-party hooks install [AGENT…]`: each agent on this machine reports to Ely Tea Party; outside it, its hooks do nothing.
 
-use std::path::Path;
+mod codex;
+mod files;
+mod groups;
+mod kimi;
+mod plugins;
 
-use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 
-/// The events whose hooks move a character.
-const EVENTS: [&str; 9] = [
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "PreCompact",
-    "SubagentStop",
-    "Notification",
-    "Stop",
-    "SessionEnd",
-];
+pub use groups::claude;
 
-/// The hook's command: a no-op in any terminal but Ely Tea Party.
+/// What each hook and plugin the app installs carries, so a new install finds its own.
+pub const MARK: &str = "ely-tea-party";
+
+/// Claude Code's hook command: a no-op in any terminal but Ely Tea Party.
 pub fn command(agent: &str) -> String {
     format!(r#"[ -z "$ELY_HOOK" ] || "$ELY_HOOK" hook {agent} || true"#)
 }
 
-/// Codex's `notify` line, which `~/.codex/config.toml` holds one of.
-pub fn codex_notify() -> String {
-    let script = command("codex").replace("hook codex", r#"hook codex "$1""#);
-    format!("notify = [\"sh\", \"-c\", {}, \"sh\"]", json!(script))
+/// Another agent's hook for `event`: `printenv` and `${h:-}`, as Grok refuses plain `$VAR`; `{}` as its reply.
+pub fn command_for(agent: &str, event: &str) -> String {
+    format!(
+        r#"h=$(printenv ELY_HOOK); if [ -n "${{h:-}}" ]; then "${{h:-}}" hook {agent} {event} 2>/dev/null; else cat >/dev/null; fi; echo '{{}}'; : {MARK}"#
+    )
 }
 
-/// Adds Ely Tea Party's hooks to Claude Code's settings; returns how many it added.
-pub fn claude(settings: &mut Value) -> anyhow::Result<usize> {
-    let hooks = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("install: Claude's settings are no JSON object"))?
-        .entry("hooks")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("install: Claude's `hooks` is no object"))?;
-    let command = command("claude");
-    let mut added = 0;
-    for event in EVENTS {
-        let groups = hooks
-            .entry(event)
-            .or_insert_with(|| json!([]))
-            .as_array_mut()
-            .ok_or_else(|| anyhow::anyhow!("install: Claude's hooks.{event} is no list"))?;
-        let present = groups.iter().any(|group| {
-            group["hooks"]
-                .as_array()
-                .is_some_and(|list| list.iter().any(|hook| hook["command"] == command))
-        });
-        if present {
+/// Where an install wrote, and how many hooks it added; none means it was current.
+pub struct Installed {
+    pub path: PathBuf,
+    pub added: usize,
+}
+
+/// An agent the installer knows: its name, its program, its installer, and what its owner should know.
+struct Agent(
+    &'static str,
+    &'static str,
+    fn(&Path) -> anyhow::Result<Installed>,
+    Option<&'static str>,
+);
+
+const AGENTS: [Agent; 10] = [
+    Agent("claude", "claude", groups::claude_file, None),
+    Agent(
+        "codex",
+        "codex",
+        codex::install,
+        Some("Codex trusts hooks by place: install again after another tool changes its hooks."),
+    ),
+    Agent("gemini", "gemini", groups::gemini, None),
+    Agent("agy", "agy", groups::antigravity, None),
+    Agent("grok", "grok", groups::grok, None),
+    Agent("kimi", "kimi", kimi::install, None),
+    Agent(
+        "dscode",
+        "dscode",
+        groups::dscode,
+        Some("dscode's hooks see their session only with DSCODE_RUNTIME=in-process."),
+    ),
+    Agent("opencode", "opencode", plugins::opencode, None),
+    Agent("pi", "pi", plugins::pi, None),
+    Agent("omp", "omp", plugins::omp, None),
+];
+
+/// The names `hooks install` takes.
+pub fn names() -> Vec<&'static str> {
+    AGENTS.iter().map(|agent| agent.0).collect()
+}
+
+/// Installs for each agent in `only`, else for each whose program is on `PATH`; a failure stops none of the rest.
+pub fn run(home: &Path, only: &[String]) -> anyhow::Result<()> {
+    if let Some(unknown) = only.iter().find(|name| !names().contains(&name.as_str())) {
+        anyhow::bail!(
+            "install: no agent {unknown:?}; known: {}",
+            names().join(", ")
+        );
+    }
+    let mut failed = Vec::new();
+    for Agent(name, program, install, note) in &AGENTS {
+        let named = only.iter().any(|only| only == name);
+        if !only.is_empty() && !named {
             continue;
         }
-        let hook = json!({ "type": "command", "command": command, "timeout": 5 });
-        let group = if event.ends_with("ToolUse") {
-            json!({ "matcher": "*", "hooks": [hook] })
-        } else {
-            json!({ "hooks": [hook] })
-        };
-        groups.push(group);
-        added += 1;
-    }
-    Ok(added)
-}
-
-/// Installs into `~/.claude/settings.json`, kept beside itself as `.bak` first.
-pub fn run(home: &Path) -> anyhow::Result<()> {
-    let path = home.join(".claude").join("settings.json");
-    let mut settings = match std::fs::read_to_string(&path) {
-        Ok(text) => {
-            let backup = path.with_extension("json.bak");
-            std::fs::write(&backup, &text)?;
-            println!("Backed up {} to {}", path.display(), backup.display());
-            serde_json::from_str(&text)
-                .map_err(|error| anyhow::anyhow!("install: {} : {error}", path.display()))?
+        if !named && crate::settings::program_path(program).is_err() {
+            println!("{name:<9} skipped: {program} is not on PATH");
+            continue;
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({}),
-        Err(error) => anyhow::bail!("install: cannot read {}: {error}", path.display()),
-    };
-    let added = claude(&mut settings)?;
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder)?;
+        match install(home) {
+            Ok(Installed { path, added: 0 }) => {
+                println!("{name:<9} up to date in {}", path.display())
+            }
+            Ok(Installed { path, .. }) => {
+                println!("{name:<9} installed: {}", path.display());
+                if let Some(note) = note {
+                    println!("{:<9} {note}", "");
+                }
+            }
+            Err(error) => {
+                println!("{name:<9} failed: {error:#}");
+                failed.push(*name);
+            }
+        }
     }
-    std::fs::write(&path, serde_json::to_string_pretty(&settings)? + "\n")?;
-    println!("Claude Code: {added} hooks added to {}", path.display());
-    println!("Codex: put this in ~/.codex/config.toml (it keeps one notify):");
-    println!("  {}", codex_notify());
+    anyhow::ensure!(failed.is_empty(), "install: {} failed", failed.join(", "));
+    println!("Restart running agents so they load their hooks.");
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn installing_twice_adds_once_and_keeps_the_owners_hooks() {
-        let mine = json!({ "type": "command", "command": "say done" });
-        let mut settings = json!({ "model": "opus", "hooks": { "Stop": [{ "hooks": [mine] }] } });
-        assert_eq!(claude(&mut settings).expect("installed"), EVENTS.len());
-        assert_eq!(claude(&mut settings).expect("installed again"), 0);
-        assert_eq!(settings["model"], "opus");
-        assert_eq!(settings["hooks"]["Stop"].as_array().map(Vec::len), Some(2));
-        assert_eq!(settings["hooks"]["PreToolUse"][0]["matcher"], "*");
-    }
-
-    #[test]
-    fn settings_of_the_wrong_shape_are_refused() {
-        assert!(claude(&mut json!([])).is_err());
-        assert!(claude(&mut json!({ "hooks": { "Stop": {} } })).is_err());
-    }
+/// The folder `variable` names when it is set, else `default`.
+fn folder(variable: &str, default: PathBuf) -> PathBuf {
+    std::env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map_or(default, PathBuf::from)
 }

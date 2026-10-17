@@ -47,6 +47,8 @@ pub enum PanelTab {
     #[default]
     Git,
     Files,
+    /// What the shown session's agent did.
+    Activity,
 }
 
 /// Everything the settings window edits. A field the file leaves out takes its default.
@@ -72,7 +74,13 @@ pub struct Settings {
     pub scrollback: u32,
     pub option_as_alt: OptionAsAlt,
     pub copy_on_select: bool,
+    /// Sessions, and their agents' conversations, come back at the next start.
+    pub restore_sessions: bool,
     pub show_sessions: bool,
+    /// The sessions column's width in pixels, as its divider was dragged.
+    pub sessions_width: f32,
+    /// A drawer's height in pixels, as its divider was dragged.
+    pub drawer_height: f32,
     pub show_panel: bool,
     pub panel: PanelTab,
 }
@@ -97,7 +105,10 @@ impl Default for Settings {
             scrollback: 10_000,
             option_as_alt: OptionAsAlt::Off,
             copy_on_select: false,
+            restore_sessions: true,
             show_sessions: true,
+            sessions_width: 288.0,
+            drawer_height: 260.0,
             show_panel: true,
             panel: PanelTab::Git,
         }
@@ -109,6 +120,8 @@ pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
 pub const OPACITY: RangeInclusive<f32> = 0.3..=1.0;
 pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
+pub const SESSIONS_WIDTH: RangeInclusive<f32> = 200.0..=640.0;
+pub const DRAWER_HEIGHT: RangeInclusive<f32> = 100.0..=1600.0;
 
 impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
@@ -119,6 +132,8 @@ impl Settings {
         within("padding_x", self.padding_x, &PADDING)?;
         within("padding_y", self.padding_y, &PADDING)?;
         within("scrollback", self.scrollback, &SCROLLBACK)?;
+        within("sessions_width", self.sessions_width, &SESSIONS_WIDTH)?;
+        within("drawer_height", self.drawer_height, &DRAWER_HEIGHT)?;
         for (field, id) in [
             ("theme", Some(&self.theme)),
             ("dark_theme", self.dark_theme.as_ref()),

@@ -15,12 +15,14 @@ ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-G
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
+image = { version = "0.25", default-features = false, features = ["webp"] }
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit", "wayland", "x11"] }
 log = "0.4"
 polling = "3"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 serde_path_to_error = "0.1.20"
 
 [build-dependencies]
@@ -65,3 +67,10 @@ all = { level = "warn", priority = -1 }
 [[test]]
 name = "fonts"
 harness = false
+
+# The characters' art decodes at first sight; unoptimized, a pose takes a visible moment.
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.image-webp]
+opt-level = 3

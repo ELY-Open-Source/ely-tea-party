@@ -13,8 +13,11 @@ use crate::agents::{
 /// How often the sessions' foreground jobs are read.
 const EVERY: Duration = Duration::from_secs(1);
 
-/// The tasks that keep the sessions' agents current: a tick, and the hooks' reports.
-pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<()>; 2] {
+/// How often characters move to their next frame: the art's 12 frames a second.
+const FRAME: Duration = Duration::from_millis(83);
+
+/// The tasks that keep the sessions' agents current: a tick, the hooks' reports, the characters' frames.
+pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<()>; 3] {
     let tick = cx.spawn_in(window, async move |this, cx| {
         loop {
             cx.background_executor().timer(EVERY).await;
@@ -23,7 +26,23 @@ pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<(
             }
         }
     });
-    [tick, hear(cx)]
+    // Characters move whether or not the window is active, unless the system asks for less motion.
+    let frames = cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor().timer(FRAME).await;
+            let moved = this.update(cx, |this, cx| {
+                if this.sessions.iter().any(|session| session.agent.is_some())
+                    && !cx.reduce_motion()
+                {
+                    cx.notify();
+                }
+            });
+            if moved.is_err() {
+                break;
+            }
+        }
+    });
+    [tick, hear(cx), frames]
 }
 
 #[cfg(unix)]
@@ -113,8 +132,19 @@ impl Workspace {
                     session.id
                 );
             }
-            shown |= session.agent.is_some();
+            if let Some(drawer) = session.drawer.as_mut()
+                && drawer.check(cx)
+            {
+                log::debug!(
+                    "agents: session {}'s drawer busy: {}",
+                    session.id,
+                    drawer.busy
+                );
+            }
+            shown |= session.agent.is_some() || session.drawer.is_some();
         }
+        self.type_pending(now, cx);
+        self.keep();
         // Poses turn and times count up, so rows with agents redraw each tick.
         if shown {
             cx.notify();
@@ -162,6 +192,12 @@ impl Workspace {
             return;
         };
         agent.hooked = true;
+        agent.program = Some(report.agent.clone());
+        if let Some(conversation) = &report.conversation {
+            agent.conversation = Some(conversation.clone());
+        }
+        let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
+        agent.note(&report.event, tool, detail, now);
         if agent.set(status, now) {
             log::info!("agents: session {}'s {kind:?} is {status:?}", session.id);
             if status == Status::NeedsInput && index != self.active {

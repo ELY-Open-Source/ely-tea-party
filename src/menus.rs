@@ -4,7 +4,7 @@ use gpui::{App, InteractiveElement, KeyBinding, Menu, MenuItem, OsAction, action
 use crate::{
     settings::window::OpenSettings,
     term::{input::Find, zoom},
-    workspace::{CloseSession, NewSession, TogglePanel, ToggleSessions},
+    workspace::{CloseSession, NewSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions},
 };
 
 actions!(
@@ -50,6 +50,8 @@ pub fn menus() -> Vec<Menu> {
             vec![
                 MenuItem::action("Toggle Sessions", ToggleSessions),
                 MenuItem::action("Toggle Right Panel", TogglePanel),
+                MenuItem::action("Toggle Drawer", ToggleDrawer),
+                MenuItem::action("Tea Party", ToggleParty),
                 MenuItem::separator(),
                 MenuItem::action("Bigger", Bigger),
                 MenuItem::action("Smaller", Smaller),

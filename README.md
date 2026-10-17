@@ -18,7 +18,7 @@ A terminal for macOS, Windows and Linux, in Rust on GPUI and Ely components. Ses
 | `opencode` | OpenCode娘 |
 
 - **Zero setup.** Once a second each session's foreground job is read (its process group leader's command line, `node …/codex` and `npx @openai/codex` included). An agent there gets its character. Without hooks it works while it draws, idles when quiet, and waits for you after a bell.
-- **Hooks, for the real state.** `ely-tea-party hooks install` adds hooks to `~/.claude/settings.json` (backed up first) and prints Codex's `notify` line. Each session carries `ELY_SESSION`, `ELY_SOCKET` and `ELY_HOOK`; the hook runs `$ELY_HOOK hook claude`, which reports to the app's socket, and does nothing in any other terminal. With hooks, a quiet working agent shows as thinking, a permission prompt as waiting, and Stop as idle.
+- **Hooks, for the real state.** `ely-tea-party hooks install` installs hooks for every agent it finds on `PATH`: Claude Code, Codex, Gemini, Antigravity, Grok, Kimi Code, dscode, and plugins for OpenCode, Pi and oh-my-pi (`hooks install codex kimi` picks some). Each file it changes is backed up first as `NAME.ely-tea-party.bak`, and running it again changes nothing. Each session carries `ELY_SESSION`, `ELY_SOCKET` and `ELY_HOOK`; a hook runs `$ELY_HOOK hook AGENT`, which reports to the app's socket, and does nothing in any other terminal. With hooks, a character shows what its agent does: reading, editing, running a command, waiting for you, done.
 - **Poses.** Waiting: waving with a red "!". Working: turns every 15 s through the main pose, research, a special move and slacking off. Quiet 6 s while working: thinking. Idle: the character's leisure pose; after 10 min, asleep.
 - **Cmd-Shift-U** (Ctrl-Shift-U off macOS) shows the first other session whose agent waits for you, else one that rang.
 - Detection reads processes on macOS and Linux; on Windows sessions show no characters yet.
@@ -93,6 +93,8 @@ Settings › Terminal lists them all, as this platform binds them.
 | Session 1 to 8, last | Cmd-1 to Cmd-8, Cmd-9 | Alt-1 to Alt-8, Alt-9 |
 | Next, previous session | Ctrl-Tab, Ctrl-Shift-Tab | Ctrl-Tab, Ctrl-Shift-Tab |
 | Sessions column | Cmd-B | Ctrl-Shift-B |
+| Drawer (your own shell under the session) | Cmd-J | Ctrl-Shift-J |
+| Tea party (every session at one table) | Cmd-Shift-O | Ctrl-Shift-O |
 | Right column | Cmd-Alt-B | Ctrl-Shift-Alt-B |
 | Copy, paste | Cmd-C, Cmd-V | Ctrl-Shift-C, Ctrl-Shift-V; on Windows Ctrl-V pastes too |
 | Select all | Cmd-A | Ctrl-Shift-A |

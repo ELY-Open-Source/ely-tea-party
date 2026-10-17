@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{Kind, Status};
 
+mod payload;
+
 /// The session a hook runs in.
 pub const SESSION: &str = "ELY_SESSION";
 /// The app's socket.
@@ -22,12 +24,21 @@ pub const HOOK: &str = "ELY_HOOK";
 
 static SOCKET_PATH: OnceLock<PathBuf> = OnceLock::new();
 
-/// One hook's word: which session, which agent, which event.
+/// One hook's word: which session, which agent, which event, and what it touches.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Report {
     pub session: u64,
     pub agent: String,
     pub event: String,
+    /// The tool the event names, as `Read` or `Bash`.
+    #[serde(default)]
+    pub tool: Option<String>,
+    /// What it works on or says: a file's name, a command, a pattern, a message.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// The agent's conversation, which resumes it.
+    #[serde(default)]
+    pub conversation: Option<String>,
 }
 
 /// What an event means for the agent it comes from.
@@ -45,7 +56,9 @@ impl Report {
     /// Claude Code's hook events, which Codex's notify and others borrow.
     pub fn change(&self) -> Option<Change> {
         Some(match self.event.as_str() {
-            "SessionStart" | "Stop" | "agent-turn-complete" => Change::To(Status::Idle),
+            "SessionStart" | "Stop" | "StopFailure" | "agent-turn-complete" => {
+                Change::To(Status::Idle)
+            }
             "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure"
             | "PreCompact" | "SubagentStart" | "SubagentStop" => Change::To(Status::Working),
             "Notification" | "PermissionRequest" => Change::To(Status::NeedsInput),
@@ -127,21 +140,29 @@ pub fn env(id: u64) -> anyhow::Result<Vec<(String, String)>> {
     ])
 }
 
-/// `ely-tea-party hook AGENT [JSON]`: silent and always succeeding, so it never stops the agent.
+/// `ely-tea-party hook AGENT [EVENT] [JSON]`: silent and always succeeding, so it never stops the agent.
 pub fn run(args: &[String]) {
     if let Err(error) = send(args) {
         log::debug!("hook: {error:#}");
     }
 }
 
+/// `hook AGENT [EVENT] [JSON]`: the payload comes as an argument, as Codex's notify passes it, else on stdin.
 fn send(args: &[String]) -> anyhow::Result<()> {
     let agent = args
         .first()
         .ok_or_else(|| anyhow::anyhow!("no agent named"))?;
+    // Grok runs Claude Code's hooks too; its own hooks speak for it.
+    if agent == "claude"
+        && std::env::var_os("GROK_HOOK_EVENT").is_some_and(|event| !event.is_empty())
+    {
+        return Ok(());
+    }
     let session = std::env::var(SESSION)?.parse()?;
     let socket = std::env::var(SOCKET)?;
-    // Claude Code writes its event to stdin; Codex's notify passes it as an argument.
-    let payload = match args.get(1) {
+    let rest = &args[1..];
+    let named = rest.first().filter(|arg| !arg.starts_with('{'));
+    let payload = match rest.iter().find(|arg| arg.starts_with('{')) {
         Some(json) => json.clone(),
         None => {
             let mut text = String::new();
@@ -149,15 +170,20 @@ fn send(args: &[String]) -> anyhow::Result<()> {
             text
         }
     };
-    let payload: serde_json::Value = serde_json::from_str(&payload)?;
-    let event = ["hook_event_name", "type"]
-        .iter()
-        .find_map(|key| payload.get(key).and_then(|value| value.as_str()))
-        .ok_or_else(|| anyhow::anyhow!("the payload names no event"))?;
+    let payload: serde_json::Value = match payload.trim() {
+        "" => serde_json::json!({}),
+        text => serde_json::from_str(text)?,
+    };
+    let Some(said) = payload::read(agent, named.map(String::as_str), &payload) else {
+        return Ok(());
+    };
     let report = Report {
         session,
         agent: agent.clone(),
-        event: event.into(),
+        event: said.event,
+        tool: said.tool,
+        detail: said.detail,
+        conversation: said.conversation,
     };
     let mut stream = UnixStream::connect(socket)?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
@@ -174,6 +200,9 @@ mod tests {
             session: 1,
             agent: "claude".into(),
             event: event.into(),
+            tool: None,
+            detail: None,
+            conversation: None,
         };
         report.change()
     }

@@ -97,6 +97,13 @@ pub fn spawn(
     let mut env = HashMap::from([
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
+        ("TERM_PROGRAM".to_string(), "ely-tea-party".to_string()),
+        (
+            "TERM_PROGRAM_VERSION".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        ),
+        // Programs that know no such name, as Node's supports-hyperlinks, still send OSC 8.
+        ("FORCE_HYPERLINK".to_string(), "1".to_string()),
     ]);
     if std::env::var_os("LANG").is_none() {
         env.insert("LANG".into(), "en_US.UTF-8".into());
