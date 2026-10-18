@@ -304,8 +304,14 @@ mod tests {
     #[test]
     fn long_folders_cut_all_but_the_last_name_to_a_letter() {
         let home = PathBuf::from("/Users/ely");
-        let brief = |folder: &str| brief(Path::new(folder), Some(&home));
         let sep = MAIN_SEPARATOR;
+        // Windows names folders with either separator, so each test folder is written in its own.
+        let brief = |folder: &str| {
+            brief(
+                Path::new(&folder.replace('/', std::path::MAIN_SEPARATOR_STR)),
+                Some(&home),
+            )
+        };
         assert_eq!(
             brief("/Users/ely/Documents/notes"),
             format!("~{sep}Documents{sep}notes"),

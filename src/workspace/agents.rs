@@ -6,7 +6,7 @@ use gpui::{Context, Task, Window};
 
 use super::Workspace;
 use crate::agents::{
-    Agent, Status,
+    Agent,
     detect::{Foreground, foreground},
 };
 
@@ -200,7 +200,7 @@ impl Workspace {
         agent.note(&report.event, tool, detail, now);
         if agent.set(status, now) {
             log::info!("agents: session {}'s {kind:?} is {status:?}", session.id);
-            if status == Status::NeedsInput && index != self.active {
+            if status == crate::agents::Status::NeedsInput && index != self.active {
                 session.bell = true;
             }
         }
