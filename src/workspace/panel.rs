@@ -13,7 +13,7 @@ use gpui::{
     StatefulInteractiveElement, StyleRefinement, Styled, div, prelude::FluentBuilder,
 };
 
-use super::{Workspace, header::show_tab};
+use super::{Side, Workspace, header::show_tab};
 use crate::{
     agents::{
         self,
@@ -50,8 +50,7 @@ impl Workspace {
         };
         // Git's list draws every row, so terminal output must not redraw it.
         let fill = || StyleRefinement::default().size_full();
-        ShellColumn::new("panel")
-            .width(cx.theme().sidebar_width(false))
+        self.side_column(Side::Panel, cx)
             .action(end)
             // Below the title bar, clear of Windows' caption buttons.
             .child(div().flex().justify_center().px_2().pt_2().child(switch))

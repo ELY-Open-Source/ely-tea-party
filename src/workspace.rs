@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     lists::List,
@@ -6,20 +8,21 @@ use ely_gpui_component::{
     theme::ControlSize,
 };
 use gpui::{
-    App, AppContext, ClickEvent, Context, Entity, EntityId, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Render, StatefulInteractiveElement,
-    Styled, Subscription, Task, Window, div, prelude::FluentBuilder,
+    App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Subscription,
+    Task, Window, div, prelude::FluentBuilder,
 };
 
 mod agents;
-mod divider;
 mod drawer;
+mod events;
 mod header;
 mod keys;
 mod order;
 mod panel;
 mod party;
 pub mod restore;
+mod widths;
 
 #[cfg(unix)]
 pub use agents::Reports;
@@ -32,17 +35,18 @@ pub use keys::{
 use std::path::PathBuf;
 
 use header::column_toggle;
+use widths::{Dragged, Side};
 
 use crate::{
-    agents::{self as characters, Status},
+    agents as characters,
     blur::Blur,
     files::Files,
     git::panel::{Acted, GitPanel},
     menus,
-    sessions::{self, Session},
+    sessions::{self, Session, orb},
     settings::{Settings, SettingsStore, StartIn, window::OpenSettings},
     term::{
-        Events, Launch, Pty, TerminalEvent, TerminalView, config,
+        Events, Launch, Pty, TerminalView, config,
         shell::{ShellIntegration, launch},
         spawn,
     },
@@ -64,8 +68,10 @@ pub struct Workspace {
     git: Entity<GitPanel>,
     /// What the window shows of the desktop, and the blur behind it.
     background: Blur,
-    /// The sessions column's width while its divider is dragged.
-    dragged: Option<Pixels>,
+    /// Column widths a drag shows before the settings hold them.
+    dragged: Dragged,
+    /// Draws the window at each step of the status marks while one shown moves.
+    ticking: Option<Task<()>>,
     /// The drawer's height while its divider is dragged.
     drawer_dragged: Option<Pixels>,
     /// The tea party shows in place of the columns.
@@ -99,7 +105,8 @@ impl Workspace {
             files: cx.new(|_| Files::new(launch.cwd.clone())),
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
-            dragged: None,
+            dragged: Dragged::default(),
+            ticking: None,
             drawer_dragged: None,
             party: false,
             saved: None,
@@ -138,9 +145,36 @@ impl Workspace {
             folder: launch.cwd,
             reports: launch.reports,
             bell: false,
+            waiting: false,
+            look: None,
             drawer: None,
             pending: None,
             _events: events,
+        });
+    }
+
+    /// Notes each session's mark `now`, and draws the window at each step while one shown moves.
+    fn tick(&mut self, now: Instant, cx: &mut Context<Self>) {
+        let mut moving = false;
+        for session in &mut self.sessions {
+            moving |= session.note(now, cx);
+        }
+        let moving = moving && SettingsStore::get(cx).show_sessions;
+        if moving == self.ticking.is_some() {
+            return;
+        }
+        log::debug!("app: status marks {}", if moving { "move" } else { "rest" });
+        self.ticking = moving.then(|| {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(orb::wait(Instant::now()))
+                        .await;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        break;
+                    }
+                }
+            })
         });
     }
 
@@ -168,7 +202,7 @@ impl Workspace {
         }
     }
 
-    /// Shows session `index`, clears its bell, and gives its terminal the keys.
+    /// Shows session `index`, clears its bell and its waiting mark, and gives its terminal the keys.
     pub fn select(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index >= self.sessions.len() {
             return;
@@ -180,10 +214,13 @@ impl Workspace {
             for terminal in std::iter::once(&hidden.terminal).chain(drawer) {
                 terminal.update(cx, |view, cx| view.let_go(cx));
             }
+            hidden.terminal.update(cx, |view, _| view.set_front(false));
         }
         self.party = false;
         let session = &mut self.sessions[index];
         session.bell = false;
+        session.waiting = false;
+        session.terminal.update(cx, |view, _| view.set_front(true));
         window.focus(&session.terminal.focus_handle(cx), cx);
         let folder = session.folder.clone();
         self.files.update(cx, |files, cx| files.show(&folder, cx));
@@ -234,58 +271,6 @@ impl Workspace {
         }
     }
 
-    fn session_event(
-        &mut self,
-        id: EntityId,
-        event: &TerminalEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(index) = self
-            .sessions
-            .iter()
-            .position(|session| session.terminal.entity_id() == id)
-        else {
-            return;
-        };
-        let session = &mut self.sessions[index];
-        match event {
-            TerminalEvent::Title(title) => session.title.clone_from(title),
-            TerminalEvent::Folder(folder) => {
-                session.folder.clone_from(folder);
-                session.reports = true;
-                // Its first prompt: the shell takes the restored agent's resume.
-                if let Some(line) = session.pending.take() {
-                    log::info!("restore: session {} runs {line}", session.id);
-                    session.terminal.read(cx).type_line(&line);
-                }
-                if index == self.active {
-                    self.files.update(cx, |files, cx| files.show(folder, cx));
-                    self.git.update(cx, |git, cx| git.show(folder, cx));
-                }
-            }
-            TerminalEvent::Bell => {
-                if let Some(agent) = session.agent.as_mut().filter(|agent| !agent.hooked) {
-                    agent.set(Status::NeedsInput, std::time::Instant::now());
-                }
-                if index != self.active && !session.bell {
-                    log::debug!("app: a bell in hidden session {}", index + 1);
-                    session.bell = true;
-                }
-            }
-            TerminalEvent::Exited(status) => {
-                let pid = session.terminal.read(cx).pid();
-                log::info!("app: session {pid}'s program ended, {status}");
-                self.close(index, window, cx);
-                return;
-            }
-        }
-        if index == self.active {
-            self.retitle(window);
-        }
-        cx.notify();
-    }
-
     /// Shows or hides a side column, as the settings keep it.
     fn toggle(&mut self, flip: fn(&mut Settings), cx: &mut Context<Self>) {
         match SettingsStore::update(cx, flip) {
@@ -323,9 +308,10 @@ fn start(folder: PathBuf, agent: Option<u64>, cx: &App) -> anyhow::Result<((Pty,
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.background.fit(window);
+        let now = Instant::now();
+        self.tick(now, cx);
         let body = self.terminal_body(window, cx);
         let settings = SettingsStore::get(cx).clone();
-        let sessions_width = self.sessions_width(cx);
         let workspace = cx.entity();
         let tip =
             |shown: bool, what: &str| format!("{} {what}", if shown { "Hide" } else { "Show" });
@@ -362,7 +348,6 @@ impl Render for Workspace {
             .child(body);
         if settings.show_sessions {
             let home = dirs::home_dir();
-            let now = std::time::Instant::now();
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {
                 let active = index == self.active;
                 sessions::row(
@@ -383,8 +368,7 @@ impl Render for Workspace {
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
             shell = shell.column(
-                ShellColumn::new("sessions")
-                    .width(sessions_width)
+                self.side_column(Side::Sessions, cx)
                     .leading(left)
                     .action(party::party_button(cx.entity()))
                     .action(new)
@@ -467,8 +451,7 @@ impl Render for Workspace {
                             .child(if self.party {
                                 self.party(cx).into_any_element()
                             } else {
-                                self.wrap(shell, settings.show_sessions, window, cx)
-                                    .into_any_element()
+                                shell.into_any_element()
                             }),
                     ),
             )

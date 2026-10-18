@@ -14,7 +14,7 @@ use super::{OpenSettings, SettingsWindow, choice, set, switch};
 use crate::{
     menus::{Bigger, Minimize, Quit, ResetSize, Smaller},
     settings::{OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
-    term::input::{self, Find},
+    term::input::{self, Find, NextPrompt, PreviousPrompt},
     workspace::{
         self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
         ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
@@ -149,6 +149,8 @@ fn listed() -> Vec<(&'static str, &'static str, Box<dyn Action>)> {
         ("Edit", "Paste", Paste.boxed_clone()),
         ("Edit", "Select all", SelectAll.boxed_clone()),
         ("Edit", "Find", Find.boxed_clone()),
+        ("View", "Previous prompt", PreviousPrompt.boxed_clone()),
+        ("View", "Next prompt", NextPrompt.boxed_clone()),
         ("View", "Toggle sessions", ToggleSessions.boxed_clone()),
         ("View", "Toggle right panel", TogglePanel.boxed_clone()),
         ("View", "Toggle drawer", ToggleDrawer.boxed_clone()),

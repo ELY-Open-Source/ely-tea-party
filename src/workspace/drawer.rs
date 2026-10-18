@@ -167,7 +167,7 @@ impl Workspace {
                 log::debug!("app: a bell in session {id}'s hidden drawer");
                 session.bell = true;
             }
-            TerminalEvent::Bell => {}
+            TerminalEvent::Bell | TerminalEvent::Shows(_) => {}
             TerminalEvent::Exited(status) => {
                 log::info!("app: session {id}'s drawer ended, {status}");
                 self.close_drawer(index, window, cx);

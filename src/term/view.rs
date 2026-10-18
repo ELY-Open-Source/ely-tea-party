@@ -27,11 +27,14 @@ use super::{
     find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Find},
+    input::{self, Find, NextPrompt, PreviousPrompt},
+    marks::Mark,
     mouse::MouseMode,
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
+    reports::Notices,
+    status::{Records, State},
     zoom,
 };
 use crate::{
@@ -54,6 +57,8 @@ pub enum TerminalEvent {
     Title(String),
     Folder(PathBuf),
     Bell,
+    /// The state its row shows changed, to this one.
+    Shows(Option<State>),
     Exited(ExitStatus),
 }
 
@@ -72,15 +77,32 @@ pub struct TerminalView {
     pub(super) held: HashSet<String>,
     pub(super) finder: Option<Finder>,
     pub(super) size: (usize, usize),
+    /// How many folders the program has reported.
+    pub(super) reports: u64,
+    /// What programs say they are doing, OSC 7501.
+    pub(super) records: Records,
+    /// The status its shell's last command ended with; none before one, or when it gave none.
+    pub(super) ended: Option<i32>,
+    /// A command started, as OSC 133 C says, since the last one ended.
+    pub(super) ran: bool,
+    /// The system notifications it posted.
+    pub(super) notices: Notices,
+    /// The program's title; empty while it names none.
+    pub(super) title: String,
+    /// It is the session shown.
+    pub(super) front: bool,
+    /// Its window is active.
+    pub(super) active: bool,
     cell: (u16, u16),
     /// Focused in an active window, as the program last heard.
     focused: bool,
     blinking: bool,
     shown: bool,
     /// When the program last drew.
-    drew: Instant,
+    pub(super) drew: Instant,
     _events: Task<()>,
     _blink: Task<()>,
+    _herdr: Task<()>,
     _focus: [Subscription; 3],
     _settings: Subscription,
     _zoom: Subscription,
@@ -119,6 +141,14 @@ impl TerminalView {
             held: HashSet::new(),
             finder: None,
             size,
+            reports: 0,
+            records: Records::default(),
+            ended: None,
+            ran: false,
+            notices: Notices::default(),
+            title: String::new(),
+            front: true,
+            active: false,
             cell: (8, 16),
             focused: false,
             blinking: false,
@@ -126,6 +156,7 @@ impl TerminalView {
             drew: Instant::now(),
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
+            _herdr: super::herdr::follow(cx),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
                 view.pty
                     .term
@@ -138,23 +169,23 @@ impl TerminalView {
         }
     }
 
-    /// Types `line` and Enter, as the user would.
-    pub fn type_line(&self, line: &str) {
-        self.pty.write(format!("{line}\r").into_bytes());
-    }
-
     pub fn pid(&self) -> u32 {
         self.pty.pid
     }
 
-    /// The process group the program's keys go to.
-    pub fn foreground(&self) -> Option<u32> {
-        self.pty.foreground()
+    /// What programs in this terminal say they are doing.
+    pub fn records(&self) -> &Records {
+        &self.records
     }
 
-    /// When the program last drew.
-    pub fn drew(&self) -> Instant {
-        self.drew
+    /// The status its shell's last command ended with.
+    pub fn ended(&self) -> Option<i32> {
+        self.ended
+    }
+
+    /// Whether it is the session shown: one shown in an active window posts no notification.
+    pub fn set_front(&mut self, front: bool) {
+        self.front = front;
     }
 
     fn pump(mut events: Events, cx: &mut Context<Self>) -> Task<()> {
@@ -204,6 +235,7 @@ impl TerminalView {
 
     /// Tells a program that asked, by mode 1004, when the terminal gains or loses focus.
     fn refocus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.active = window.is_window_active();
         let focused = self.focus.is_focused(window) && window.is_window_active();
         if focused != self.focused {
             self.focused = focused;
@@ -231,9 +263,38 @@ impl TerminalView {
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
         for event in events {
             match event {
-                PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
+                PtyEvent::Folder(folder) => {
+                    self.reports += 1;
+                    cx.emit(TerminalEvent::Folder(folder));
+                }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
+                PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
+                // A new prompt ends what was working, waiting or idle; done and error stay.
+                PtyEvent::Mark(Mark::Prompt) => {
+                    self.records.prompt();
+                    self.restate(cx);
+                }
+                PtyEvent::Mark(Mark::Output) => self.ran = true,
+                PtyEvent::Mark(_) => {}
+                PtyEvent::Status(status) => {
+                    self.status(status);
+                    self.restate(cx);
+                }
+                PtyEvent::Ask(ask) => {
+                    self.ask(ask, cx);
+                    self.restate(cx);
+                }
+                PtyEvent::Title(title) => {
+                    self.title.clone_from(&title);
+                    cx.emit(TerminalEvent::Title(title));
+                }
+                PtyEvent::Reset => {
+                    self.records.reset();
+                    self.title.clear();
+                    cx.emit(TerminalEvent::Title(String::new()));
+                    self.restate(cx);
+                }
             }
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
@@ -249,14 +310,11 @@ impl TerminalView {
                 self.shown = true;
                 self.drew = Instant::now();
             }
-            Event::MouseCursorDirty => {}
-            // A reset empties the title and sends only this; setting the options sends the title.
-            Event::CursorBlinkingChange => {
-                let settings = config(SettingsStore::get(cx));
-                self.pty.term.lock().set_options(settings);
-            }
-            Event::Title(title) => cx.emit(TerminalEvent::Title(title)),
-            Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
+            // The tap reads the title in the output's order; alacritty's title events come after it.
+            Event::MouseCursorDirty
+            | Event::CursorBlinkingChange
+            | Event::Title(_)
+            | Event::ResetTitle => {}
             Event::Bell => {
                 log::debug!("terminal {}: a bell, kept silent", self.pty.pid);
                 cx.emit(TerminalEvent::Bell);
@@ -384,6 +442,10 @@ impl Render for TerminalView {
             .on_action(cx.listener(|view, _: &Paste, _, cx| view.paste(cx)))
             .on_action(cx.listener(|view, _: &SelectAll, _, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Find, window, cx| view.find(window, cx)))
+            .on_action(
+                cx.listener(|view, _: &PreviousPrompt, _, cx| view.scroll_to_prompt(true, cx)),
+            )
+            .on_action(cx.listener(|view, _: &NextPrompt, _, cx| view.scroll_to_prompt(false, cx)))
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))

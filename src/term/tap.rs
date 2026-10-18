@@ -7,16 +7,27 @@ use alacritty_terminal::{
 use futures::channel::mpsc::UnboundedSender;
 use polling::{Event, PollMode, Poller};
 
-use super::{mouse::MouseMode, pty::PtyEvent};
+use super::{
+    marks,
+    mouse::MouseMode,
+    notify::{self, Kitty},
+    prompts::{self, Prompts},
+    pty::PtyEvent,
+    status,
+    titles::{self, Titles},
+};
 
 /// The longest OSC body kept; longer ones are dropped whole.
-const MOST: usize = 4096;
+pub(super) const MOST: usize = 4096;
 
 /// A pty whose reader shows each byte to its scanners before the parser.
 pub(crate) struct Tapped<P> {
     pub inner: P,
-    scanner: Osc7,
+    scanner: Osc,
     mouse: MouseModes,
+    prompts: Prompts,
+    kitty: Kitty,
+    titles: Titles,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -26,8 +37,11 @@ impl<P> Tapped<P> {
     pub fn new(inner: P, events: UnboundedSender<PtyEvent>, pid: u32) -> Self {
         Self {
             inner,
-            scanner: Osc7::default(),
+            scanner: Osc::default(),
             mouse: MouseModes::default(),
+            prompts: Prompts::default(),
+            kitty: Kitty::default(),
+            titles: Titles::default(),
             events,
             pid,
             last: None,
@@ -37,29 +51,100 @@ impl<P> Tapped<P> {
 
 impl<P: EventedReadWrite> io::Read for Tapped<P> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let count = self.inner.reader().read(buf)?;
+        // What a rewrite adds stays inside the buffer, with room for the held sequence's own.
+        let room = buf
+            .len()
+            .saturating_sub(self.prompts.held() + prompts::SLACK);
+        let take = room / prompts::GROWTH;
+        if take == 0 {
+            return Ok(0);
+        }
+        let count = self.inner.reader().read(&mut buf[..take])?;
+        let read = &buf[..count];
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
-        self.scanner.feed(&buf[..count], &mut |body| {
-            let Some(folder) = folder(body) else {
-                return;
-            };
-            if last.as_ref() == Some(&folder) {
-                log::debug!("pty {pid}: folder {} again", folder.display());
-            } else {
-                log::info!("pty {pid}: folder {}", folder.display());
-                *last = Some(folder.clone());
-            }
-            if events.unbounded_send(PtyEvent::Folder(folder)).is_err() {
-                log::debug!("pty {pid}: a folder report after its session closed");
-            }
+        let (kitty, titles) = (&mut self.kitty, &mut self.titles);
+        self.scanner.feed(read, &mut |found| {
+            report(found, events, pid, last, kitty, titles)
         });
-        if let Some(mode) = self.mouse.feed(&buf[..count]) {
+        if let Some(mode) = self.mouse.feed(read) {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
                 log::debug!("pty {pid}: a mouse mode after its session closed");
             }
         }
-        Ok(count)
+        let out = self.prompts.pass(&buf[..count]);
+        buf[..out.len()].copy_from_slice(out);
+        Ok(out.len())
+    }
+}
+
+/// Sends the session what the scanner found: a full reset, a title, a mark, a program's status or ask, or a folder.
+fn report(
+    found: Found,
+    events: &UnboundedSender<PtyEvent>,
+    pid: u32,
+    last: &mut Option<PathBuf>,
+    kitty: &mut Kitty,
+    titles: &mut Titles,
+) {
+    let event = match found {
+        Found::Reset => {
+            log::debug!("pty {pid}: a full reset");
+            titles.reset();
+            PtyEvent::Reset
+        }
+        Found::Push => {
+            titles.push();
+            return;
+        }
+        Found::Pop => match titles.pop() {
+            Some(title) => PtyEvent::Title(title),
+            None => return,
+        },
+        Found::Osc(body, length) => {
+            if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
+                log::debug!("pty {pid}: {mark:?}");
+                PtyEvent::Mark(mark)
+            } else if let Some(status) = body
+                .strip_prefix(b"7501;")
+                .and_then(|rest| status::read(rest, length))
+            {
+                log::debug!("pty {pid}: {status:?}");
+                PtyEvent::Status(status)
+            } else if let Some(ask) = ask(body, kitty) {
+                log::debug!("pty {pid}: {ask:?}");
+                PtyEvent::Ask(ask)
+            } else if let Some(folder) = body.strip_prefix(b"7;").and_then(folder) {
+                if last.as_ref() == Some(&folder) {
+                    log::debug!("pty {pid}: folder {} again", folder.display());
+                } else {
+                    log::info!("pty {pid}: folder {}", folder.display());
+                    *last = Some(folder.clone());
+                }
+                PtyEvent::Folder(folder)
+            } else if let Some(rest) = body
+                .strip_prefix(b"0;")
+                .or_else(|| body.strip_prefix(b"2;"))
+            {
+                PtyEvent::Title(titles.set(rest))
+            } else {
+                return;
+            }
+        }
+    };
+    if events.unbounded_send(event).is_err() {
+        log::debug!("pty {pid}: an event after its session closed");
+    }
+}
+
+/// A notification or progress an OSC 99, 777 or 9 body asks for.
+fn ask(body: &[u8], kitty: &mut Kitty) -> Option<notify::Ask> {
+    if let Some(rest) = body.strip_prefix(b"99;") {
+        kitty.read(rest)
+    } else if let Some(rest) = body.strip_prefix(b"777;") {
+        notify::rxvt(rest)
+    } else {
+        body.strip_prefix(b"9;").and_then(notify::nine)
     }
 }
 
@@ -111,19 +196,32 @@ enum State {
     Ground,
     Escape,
     Osc,
-    OscEscape,
+    Csi,
 }
 
-/// Finds `ESC ] 7 ; body` ended by BEL or `ESC \`, across reads.
+/// What the scanner finds: an OSC's body with the sequence's length from OSC through ST, a full reset, or the title stack's push and pop.
+pub(crate) enum Found<'a> {
+    Osc(&'a [u8], usize),
+    Reset,
+    Push,
+    Pop,
+}
+
+/// Finds each OSC body across reads, ended as vte ends it: at BEL, ESC, CAN or SUB, each full reset, and CSI 22 t and 23 t.
 #[derive(Default)]
-pub(crate) struct Osc7 {
+pub(crate) struct Osc {
     state: State,
     body: Vec<u8>,
+    /// The sequence's bytes so far, the controls the body leaves out too.
+    length: usize,
     overflow: bool,
+    /// A CSI's first parameter while it reads as a plain number, and its fields so far.
+    first: Option<u32>,
+    fields: usize,
 }
 
-impl Osc7 {
-    pub fn feed(&mut self, bytes: &[u8], found: &mut impl FnMut(&[u8])) {
+impl Osc {
+    pub fn feed(&mut self, bytes: &[u8], found: &mut impl FnMut(Found)) {
         let mut rest = bytes;
         while !rest.is_empty() {
             if self.state == State::Ground {
@@ -141,42 +239,97 @@ impl Osc7 {
             self.state = match (self.state, byte) {
                 (State::Escape, b']') => {
                     self.body.clear();
+                    self.length = 2;
                     self.overflow = false;
                     State::Osc
                 }
-                (State::Escape, 0x1b) => State::Escape,
-                (State::Escape, _) => State::Ground,
-                (State::Osc, 0x07) | (State::OscEscape, b'\\') => {
-                    self.finish(found);
+                (State::Escape, b'c') => {
+                    found(Found::Reset);
                     State::Ground
                 }
-                (State::Osc | State::OscEscape, 0x18 | 0x1a) => State::Ground,
-                (State::Osc, 0x1b) => State::OscEscape,
-                (State::OscEscape, b']') => {
-                    self.body.clear();
-                    self.overflow = false;
+                (State::Escape, b'[') => {
+                    self.first = Some(0);
+                    self.fields = 1;
+                    State::Csi
+                }
+                // vte runs controls in an escape, passes DEL and high bytes by, and stays there.
+                (State::Escape, 0x00..=0x17 | 0x19 | 0x1b..=0x1f | 0x7f..=0xff) => State::Escape,
+                (State::Escape, _) => State::Ground,
+                (State::Osc, 0x07 | 0x18 | 0x1a) => {
+                    self.finish(1, found);
+                    State::Ground
+                }
+                // ESC ends the body, then reads as an escape: `\` makes ST, counted so.
+                (State::Osc, 0x1b) => {
+                    self.finish(2, found);
+                    State::Escape
+                }
+                (State::Osc, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f) => {
+                    self.length += 1;
                     State::Osc
                 }
-                (State::OscEscape, 0x1b) => State::Escape,
-                (State::OscEscape, _) => State::Ground,
                 (State::Osc, byte) => {
-                    if self.body.len() < MOST {
+                    self.length += 1;
+                    if self.body.len() < self.most() {
                         self.body.push(byte);
                     } else {
                         self.overflow = true;
                     }
                     State::Osc
                 }
+                // In a CSI, as in vte: CAN and SUB cancel, ESC restarts, controls run, DEL and high bytes pass by.
+                (State::Csi, 0x18 | 0x1a) => State::Ground,
+                (State::Csi, 0x1b) => State::Escape,
+                (State::Csi, 0x00..=0x1f | 0x7f..=0xff) => State::Csi,
+                (State::Csi, b'0'..=b'9') => {
+                    if self.fields == 1 {
+                        self.first = self.first.map(|first| {
+                            first
+                                .saturating_mul(10)
+                                .saturating_add(u32::from(byte - b'0'))
+                        });
+                    }
+                    State::Csi
+                }
+                (State::Csi, b';' | b':') => {
+                    self.fields += 1;
+                    State::Csi
+                }
+                (State::Csi, b't') => {
+                    match self.first.filter(|_| self.fields <= PARAMS) {
+                        Some(22) => found(Found::Push),
+                        Some(23) => found(Found::Pop),
+                        _ => {}
+                    }
+                    State::Ground
+                }
+                (State::Csi, 0x40..=0x7e) => State::Ground,
+                // A private marker or an intermediate makes another sequence.
+                (State::Csi, _) => {
+                    self.first = None;
+                    State::Csi
+                }
                 (State::Ground, _) => unreachable!("ground scans by position"),
             };
         }
     }
 
-    fn finish(&mut self, found: &mut impl FnMut(&[u8])) {
+    /// The longest body kept: an OSC 99's holds its payload past its metadata, a title's more.
+    fn most(&self) -> usize {
+        if self.body.starts_with(b"99;") {
+            notify::BODY
+        } else if self.body.starts_with(b"0;") || self.body.starts_with(b"2;") {
+            titles::LONGEST
+        } else {
+            MOST
+        }
+    }
+
+    fn finish(&mut self, end: usize, found: &mut impl FnMut(Found)) {
         if self.overflow {
-            log::warn!("pty: an OSC over {MOST} bytes dropped");
-        } else if let Some(body) = self.body.strip_prefix(b"7;") {
-            found(body);
+            log::warn!("pty: an OSC over {} bytes dropped", self.most());
+        } else {
+            found(Found::Osc(&self.body, self.length + end));
         }
         self.body.clear();
     }

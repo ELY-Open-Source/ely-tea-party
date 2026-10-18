@@ -8,7 +8,7 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 
 - One window. Sessions on the left, the terminal in the middle, Git or Files on the right.
 - Every setting has a control in the settings window. No setting lives only in a file.
-- Silent: no sound, no bell, no notifications, no update checks, no telemetry, no tips, no onboarding.
+- Silent: no sound, no bell, no notifications but a session's, below, no update checks, no telemetry, no tips, no onboarding.
 - Clean: no subtitle, no tagline, no logging options, no status bar, no badges that do not carry state.
 - Built-in themes, each shown as a small preview, Catppuccin among them. A theme colors the terminal and the chrome.
 - The window background blurs on macOS, Windows, Wayland and X11.
@@ -42,8 +42,14 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 
 Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `alacritty_terminal`; Ely's `Terminal` is a gallery widget without mouse reporting, IME, kitty keys or style settings.
 
-- PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC 7 scanner. The scanner reports the working directory.
+- PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC scanner. The scanner reports the working directory and prompt marks.
 - Shell integration for zsh, bash, fish and PowerShell, injected at launch as Ghostty does: each prompt sends OSC 7 and a title. A shell without integration reports nothing, and the panels say so.
+- Prompt marks, OSC 133: the shell integration marks where each prompt starts (A) and ends (B), where a command starts (C), and where it ends with its exit status (D), all but C on macOS's bash 3.2, which has no hook for it; the terminal reads any program's OSC 133. Cmd-Up and Cmd-Down, and Cmd-Shift-Up and Cmd-Shift-Down, on macOS, Ctrl-Shift-Up and Ctrl-Shift-Down elsewhere, scroll to the prompt before or after the view's top, as in Ghostty.
+- Program status, OSC 7501 revision 0.4: each terminal keeps the records programs report (state, id, kind, progress, app, title, msg), checked as the spec checks them; a new prompt drops working, blocked and idle records, a full reset drops them all; the terminal answers the support query with the states and kinds it takes.
+- Progress, OSC 9;4: set, error, indeterminate and pause stand as the root record until a program reports OSC 7501, until a full reset.
+- Notifications: OSC 9 (iTerm2), OSC 777 notify (rxvt) and OSC 99 (kitty: title and body in chunks, base64, ids, focus and report on activation, close, expiry, which ones live, and its query; `o` passes by, since a session posts only while unseen, below); ConEmu's other OSC 9 commands are no notifications.
+- Inside herdr, which keeps its panes' OSC 7, the session's folder is that of herdr's focused pane, read from herdr's socket while herdr's client runs in the session, on macOS, Linux and Windows.
+- Inside herdr, which passes no OSC 7501 on, herdr's agent states (idle, working, blocked, done) are the session's status records.
 - Grid: colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks.
 - Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
 - Fonts: JetBrains Mono by default, any installed font by choice; Nerd Font icons the font lacks come from a bundled Nerd Font.
@@ -60,7 +66,9 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
-- The sessions column's right edge drags to set its width, 200 to 640 px and never past the terminal's room, saved when the button comes up. A double click on the column off its rows opens a session.
+- The sessions column and the right column resize by a drag on their border toward the terminal, on macOS, Windows and Linux, from 160 to 960 pixels; the widths are kept in settings once a drag rests, so the window opens with them.
+- The window opens at the size it was left at, on macOS, Windows and Linux: the size is kept in settings once it settles; a maximized or full-screen window keeps the size from before; a kept size past the screen shrinks to it; the window is no smaller than 100 by 100, the least the settings keep.
+- A double click on the column off its rows opens a session.
 - A session's row drags up or down to reorder the sessions; the shown session stays shown.
 - The tea party (Cmd-Shift-O) shows every session's character at one table with what she does; characters speak at the moments that matter; the right column's Activity tab lists the shown agent's steps; sessions and their agents' conversations come back at the next start.
 - Each session has a drawer: Cmd-J opens the user's own shell under the session's terminal, in its folder, and hides it again; it keeps running while hidden, and a job left running there marks the session's row.
@@ -75,6 +83,9 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - New session (+ and Cmd-T), close (row's ×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab and Ctrl-Shift-Tab).
 - A session whose program ends closes its row. The last row closing closes the window.
 - A bell in a hidden session marks its row.
+- A row shows its session's status: working, with its progress where known; waiting on the user, for a permission, a question or a login; done; error; and a mark when the last command failed. Hover shows each record's program, title and message. A hidden session that starts waiting marks its row until it is shown.
+- The mark is 3 by 3 dots that move: work ripples, or fills by its progress; waiting dips; a settled state draws its shape, then holds still.
+- System notifications on macOS, Windows and Linux: a session that starts waiting, finishes or fails, and a program's OSC 9, 777 or 99 notification, post one while the window is not active or the session is hidden, one a session every 3 seconds at most; it names the session, and a press on it shows the window and the session. On macOS only the app bundle posts them.
 
 ## 8. Right panel: Files
 
@@ -144,4 +155,4 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 ## Deferred
 
-Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, OSC 133 prompt marks, session restore, push and pull, quick terminal.
+Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, session restore, push and pull, quick terminal.

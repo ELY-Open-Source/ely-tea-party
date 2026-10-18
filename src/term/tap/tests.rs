@@ -1,28 +1,70 @@
 use super::*;
 
+/// What the scanner finds in `chunks`, each one read: a body, or `RESET`.
 fn scan(chunks: &[&[u8]]) -> Vec<String> {
-    let mut scanner = Osc7::default();
+    let mut scanner = Osc::default();
     let mut found = Vec::new();
     for chunk in chunks {
-        scanner.feed(chunk, &mut |body| {
-            found.push(String::from_utf8(body.to_vec()).expect("utf-8"))
+        scanner.feed(chunk, &mut |thing| {
+            found.push(match thing {
+                Found::Osc(body, _) => String::from_utf8(body.to_vec()).expect("utf-8"),
+                Found::Reset => "RESET".into(),
+                Found::Push => "PUSH".into(),
+                Found::Pop => "POP".into(),
+            })
         });
     }
     found
 }
 
 #[test]
-fn finds_osc_7_ended_by_bel_or_st_across_reads() {
-    assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["file:///a"]);
-    assert_eq!(scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]), ["file:///b"]);
-    assert_eq!(scan(&[b"\x1b", b"]7;x\x07\x1b]7;y\x1b\\"]), ["x", "y"]);
+fn finds_a_full_reset_between_bodies() {
+    assert_eq!(
+        scan(&[b"\x1b]0;a\x07\x1bc\x1b", b"c\x1b]0;b\x1b\\"]),
+        ["0;a", "RESET", "RESET", "0;b"]
+    );
+    assert!(
+        scan(&[b"\x1b[c\x1b]0;c"]).is_empty(),
+        "DA1 and an unfinished body"
+    );
+    // vte passes DEL and high bytes by in an escape, and the reset still comes.
+    assert_eq!(scan(&[b"\x1b\x7fc\x1b\xff", b"c"]), ["RESET", "RESET"]);
 }
 
 #[test]
-fn other_sequences_and_cancels_pass() {
-    assert!(scan(&[b"\x1b]0;title\x07\x1b[31m"]).is_empty());
-    assert!(scan(&[b"\x1b]7;file:///a\x18\x07"]).is_empty());
-    assert_eq!(scan(&[b"\x1b]7;lost\x1b]7;kept\x07"]), ["kept"]);
+fn a_sequence_counts_from_osc_through_st_skipped_controls_too() {
+    let mut lengths = Vec::new();
+    let mut osc = b"\x1b]7501;".to_vec();
+    osc.extend([0; 5000]);
+    osc.extend_from_slice(b"state=done\x07\x1b]0;t\x1b\\");
+    Osc::default().feed(&osc, &mut |found| {
+        if let Found::Osc(body, length) = found {
+            lengths.push((body.len(), length));
+        }
+    });
+    assert_eq!(lengths, [(15, 5018), (3, 7)]);
+}
+
+#[test]
+fn finds_each_osc_body_across_reads_ended_as_vte_ends_it() {
+    assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["7;file:///a"]);
+    assert_eq!(
+        scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]),
+        ["7;file:///b"]
+    );
+    assert_eq!(
+        scan(&[b"\x1b", b"]133;A\x07\x1b]0;t\x1b\\"]),
+        ["133;A", "0;t"]
+    );
+    assert_eq!(scan(&[b"\x1b]7;x\x18\x1b]7;y\x1a"]), ["7;x", "7;y"]);
+    assert_eq!(scan(&[b"\x1b]7;cut\x1b]133;D;1\x07"]), ["7;cut", "133;D;1"]);
+    assert_eq!(scan(&[b"\x1b]0;t\x1b[31m"]), ["0;t"]);
+}
+
+#[test]
+fn controls_vte_skips_stay_out_of_a_body() {
+    assert_eq!(scan(&[b"\x1b\x00]1\x0033;\x1fA\x07"]), ["133;A"]);
+    assert_eq!(scan(&[b"\x1b[31m\x1bc"]), ["RESET"]);
 }
 
 #[test]
@@ -31,7 +73,14 @@ fn an_overlong_body_is_dropped() {
     long.extend(std::iter::repeat_n(b'a', MOST + 1));
     long.push(0x07);
     assert!(scan(&[&long]).is_empty());
-    assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["b"]);
+    assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["7;b"]);
+}
+
+#[test]
+fn an_osc_99_body_holds_its_metadata_and_a_full_payload() {
+    let osc = |length: usize| [&b"\x1b]99;"[..], &vec![b'a'; length - 3], b"\x07"].concat();
+    assert_eq!(scan(&[&osc(notify::BODY)]).concat().len(), notify::BODY);
+    assert!(scan(&[&osc(notify::BODY + 1)]).is_empty());
 }
 
 #[test]
@@ -177,4 +226,55 @@ fn the_tap_reads_mouse_modes_as_vte_does_byte_by_byte() {
             assert_eq!(modes.mode, parsed(&case[..end]), "{case:?} to byte {end}");
         }
     }
+}
+
+#[test]
+fn finds_the_title_stack_s_push_and_pop_as_vte_reads_them() {
+    assert_eq!(scan(&[b"\x1b[22;0t\x1b[23;2t"]), ["PUSH", "POP"]);
+    assert_eq!(
+        scan(&[b"\x1b[2", b"2:1\x07t\x1b[23t"]),
+        ["PUSH", "POP"],
+        "across reads, a control run"
+    );
+    for other in [
+        &b"\x1b[?22t"[..],
+        b"\x1b[22$t",
+        b"\x1b[1;22t",
+        b"\x1b[t",
+        b"\x1b[22\x18t",
+        b"\x1b[24t",
+    ] {
+        assert!(
+            scan(&[other]).is_empty(),
+            "{}",
+            String::from_utf8_lossy(other)
+        );
+    }
+    let mut many = b"\x1b[22".to_vec();
+    many.extend(std::iter::repeat_n(&b";1"[..], 32).flatten());
+    many.push(b't');
+    assert!(scan(&[&many]).is_empty(), "vte drops one past 32 fields");
+    assert_eq!(
+        scan(&[b"\x1b[22t\x1b]2;t\x07\x1b[23t"]),
+        ["PUSH", "2;t", "POP"]
+    );
+}
+
+#[test]
+fn a_title_s_body_holds_65536_bytes_and_another_s_4096() {
+    let osc = |number: &str, length: usize| {
+        [
+            format!("\x1b]{number};").as_bytes(),
+            &vec![b'a'; length],
+            b"\x07",
+        ]
+        .concat()
+    };
+    let longest = scan(&[&osc("2", titles::LONGEST - 2)]);
+    assert_eq!(longest.concat().len(), titles::LONGEST);
+    assert!(scan(&[&osc("0", titles::LONGEST - 1)]).is_empty());
+    assert!(
+        scan(&[&osc("7", MOST - 1)]).is_empty(),
+        "another stays at 4096"
+    );
 }

@@ -11,7 +11,7 @@ use alacritty_terminal::{
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
-use super::{mouse::MouseMode, tap::Tapped};
+use super::{marks::Mark, mouse::MouseMode, notify::Ask, status::Status, tap::Tapped};
 use crate::settings::{CursorStyle, Settings};
 
 /// What a session hears from its pty.
@@ -20,6 +20,15 @@ pub enum PtyEvent {
     Term(Event),
     Folder(PathBuf),
     Mouse(MouseMode),
+    Mark(Mark),
+    /// A program's status, OSC 7501.
+    Status(Status),
+    /// A notification or progress, OSC 9, 777 or 99.
+    Ask(Ask),
+    /// A title a program set, in the output's order: OSC 0 or 2, or the title stack's pop.
+    Title(String),
+    /// A full reset, `ESC c`.
+    Reset,
 }
 
 /// Hands the grid's events to the session; `pid` names the program in logs.
@@ -189,18 +198,14 @@ impl Pty {
             .lock()
             .resize(TermSize::new(size.num_cols.into(), size.num_lines.into()));
     }
+}
 
-    /// The process group the terminal hands its keys to: the shell, or the job it runs.
-    #[cfg(unix)]
-    pub fn foreground(&self) -> Option<u32> {
-        use std::os::fd::AsRawFd;
-        let group = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
-        u32::try_from(group).ok().filter(|group| *group > 0)
-    }
-
-    #[cfg(windows)]
-    pub fn foreground(&self) -> Option<u32> {
-        None
+#[cfg(unix)]
+impl Pty {
+    /// The process group the program runs in the foreground.
+    pub fn foreground(&self) -> std::io::Result<i32> {
+        let group = rustix_openpty::rustix::termios::tcgetpgrp(&self.master)?;
+        Ok(group.as_raw_nonzero().get())
     }
 }
 
@@ -256,173 +261,7 @@ pub fn fit(columns: usize, lines: usize, cell: (u16, u16)) -> WindowSize {
 }
 
 #[cfg(all(test, unix))]
-mod tests {
-    use alacritty_terminal::{
-        grid::Dimensions,
-        index::{Column, Line},
-    };
-    use futures::StreamExt;
-
-    use super::*;
-
-    struct Ran {
-        folders: Vec<PathBuf>,
-        text: String,
-        success: bool,
-        pid: u32,
-        columns: usize,
-    }
-
-    fn run(script: &str, size: (usize, usize)) -> Ran {
-        crate::testlog::init();
-        let launch = Launch {
-            program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
-            cwd: std::env::temp_dir(),
-            env: vec![("ELY".into(), "ok".into())],
-            reports: false,
-        };
-        let (pty, mut events) =
-            spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
-        let (folders, success) = futures::executor::block_on(async {
-            let (mut folders, mut success) = (Vec::new(), false);
-            while let Some(event) = events.next().await {
-                match event {
-                    PtyEvent::Folder(folder) => folders.push(folder),
-                    PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
-                    PtyEvent::Term(Event::Exit) => break,
-                    PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
-                }
-            }
-            (folders, success)
-        });
-        let term = pty.term.lock();
-        let row = &term.grid()[Line(0)];
-        let text: String = (0..24).map(|column| row[Column(column)].c).collect();
-        Ran {
-            folders,
-            text: text.trim_end().to_string(),
-            success,
-            pid: pty.pid,
-            columns: term.columns(),
-        }
-    }
-
-    #[test]
-    fn a_program_prints_into_the_grid_with_its_variables_and_id() {
-        let ran = run("printf 'ely %s %s' \"$ELY\" $$", (40, 4));
-        assert!(ran.folders.is_empty());
-        assert_eq!(ran.text, format!("ely ok {}", ran.pid));
-        assert!(ran.success);
-    }
-
-    #[test]
-    fn osc_7_reaches_the_session_as_a_folder() {
-        let ran = run(
-            "printf '\\033]7;file:///tmp/a%%20b\\007x\\033]7;file://elsewhere.invalid/c\\033\\\\'",
-            (40, 4),
-        );
-        assert_eq!(ran.folders, [PathBuf::from("/tmp/a b")]);
-        assert_eq!(ran.text, "x");
-    }
-
-    #[test]
-    fn a_size_past_the_kernel_is_one_size_for_grid_and_program() {
-        let ran = run("stty size", (9000, 8));
-        assert_eq!(ran.columns, usize::from(u16::MAX / 8));
-        assert_eq!(ran.text, format!("8 {}", u16::MAX / 8));
-    }
-
-    /// Starts `script`, waits for it to print READY, closes it, and waits for the reap's log.
-    fn close_after_ready(script: &str, reaped: &str) {
-        crate::testlog::init();
-        let launch = Launch {
-            program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
-            cwd: std::env::temp_dir(),
-            env: Vec::new(),
-            reports: false,
-        };
-        let (pty, mut events) =
-            spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
-        futures::executor::block_on(async {
-            while let Some(event) = events.next().await {
-                let term = pty.term.lock();
-                let text: String = (0..5)
-                    .map(|column| term.grid()[Line(0)][Column(column)].c)
-                    .collect();
-                drop(term);
-                if matches!(event, PtyEvent::Term(Event::Wakeup)) && text == "READY" {
-                    break;
-                }
-            }
-        });
-        let pid = pty.pid;
-        drop(pty);
-        let hung_up = format!("pty {pid}: hung up, {reaped}");
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !crate::testlog::logged(&hung_up) {
-            assert!(std::time::Instant::now() < deadline, "no `{hung_up}`");
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(crate::testlog::logged(&format!("pty {pid}: closing")));
-        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
-        assert!(!alive, "the program was reaped");
-    }
-
-    #[test]
-    fn closing_a_session_hangs_up_its_program() {
-        close_after_ready("printf READY; exec cat", "signal: 1 (SIGHUP)");
-    }
-
-    #[test]
-    fn a_program_that_ignores_sighup_ends_when_the_pty_closes() {
-        // cat reads EOF on macOS and EIO on Linux; the shell's own exit holds on both.
-        close_after_ready("trap '' HUP; printf READY; cat; exit 7", "exit status: 7");
-    }
-
-    #[test]
-    fn a_missing_folder_stops_the_start() {
-        let launch = Launch {
-            program: None,
-            cwd: "/nonexistent/ely".into(),
-            env: Vec::new(),
-            reports: false,
-        };
-        let error = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()))
-            .err()
-            .expect("a missing folder is an error");
-        assert!(error.to_string().contains("/nonexistent/ely"));
-    }
-
-    #[test]
-    fn a_folder_that_cannot_be_entered_stops_the_start() {
-        use std::os::unix::fs::PermissionsExt;
-        let folder =
-            std::env::temp_dir().join(format!("ely-tea-party-shut-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).expect("a temp folder");
-        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o600)).expect("600");
-        let launch = Launch {
-            program: Some(("/bin/sh".into(), vec!["-c".into(), "true".into()])),
-            cwd: folder.clone(),
-            env: Vec::new(),
-            reports: false,
-        };
-        let started = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()));
-        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");
-        std::fs::remove_dir(&folder).expect("the temp folder goes");
-        let error = started.err().expect("a folder it cannot enter is an error");
-        let error = error.to_string();
-        assert!(error.contains("Permission denied"), "{error}");
-        assert!(error.contains(&folder.display().to_string()), "{error}");
-    }
-
-    #[test]
-    fn sizes_hold_at_least_two_by_one_and_cap_at_the_kernel() {
-        let size = fit(70_000, 24, (8, 16));
-        assert_eq!((size.num_cols, size.num_lines), (u16::MAX / 8, 24));
-        let size = fit(0, 0, (8, 16));
-        assert_eq!((size.num_cols, size.num_lines), (2, 1));
-    }
-}
+mod tests;
 
 #[cfg(test)]
 mod scrollback {

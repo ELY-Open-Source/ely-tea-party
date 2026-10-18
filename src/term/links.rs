@@ -4,13 +4,18 @@ use alacritty_terminal::{
 };
 use ely_gpui_component::terminal::{Target, links};
 
-/// The OSC 8 target at `point`, else a URL in its wrapped line.
+use super::prompts;
+
+/// The OSC 8 target at `point`, else a URL in its wrapped line; a prompt's own link is no target.
 pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
     let grid = term.grid();
     if grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
         point.column -= 1;
     }
-    if let Some(link) = grid[point].hyperlink() {
+    if let Some(link) = grid[point]
+        .hyperlink()
+        .filter(|link| link.uri() != prompts::LINK)
+    {
         return Some(link.uri().to_string());
     }
     let end = term.line_search_right(point);
@@ -63,6 +68,13 @@ mod tests {
         let text = "a \x1b]8;;https://ely.dev/x\x1b\\ely\x1b]8;;\x1b\\ b";
         assert_eq!(link(text, 0, 3).as_deref(), Some("https://ely.dev/x"));
         assert_eq!(link(text, 0, 0), None);
+    }
+
+    #[test]
+    fn a_prompt_s_own_link_is_no_target() {
+        let text = "\x1b]8;;\x7f\x1b\\$ https://ely.dev\x1b]8;;\x1b\\";
+        assert_eq!(link(text, 0, 0), None);
+        assert_eq!(link(text, 0, 4).as_deref(), Some("https://ely.dev"));
     }
 
     #[test]

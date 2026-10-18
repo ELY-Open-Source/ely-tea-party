@@ -1,10 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, rc::Rc, time::Duration};
 
 use anyhow::Context as _;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowDecorations, WindowHandle,
-    WindowOptions, px, size,
+    App, AppContext, Bounds, Context, Pixels, Size, Task, TitlebarOptions, Window, WindowBounds,
+    WindowDecorations, WindowHandle, WindowOptions, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -16,6 +16,9 @@ use crate::{
     themes,
     workspace::{self, TITLE, Workspace},
 };
+
+/// How long the window's size holds before it is kept, so a drag saves once.
+const SETTLE: Duration = Duration::from_millis(500);
 
 /// The id the macOS bundle and Linux desktop entry share.
 pub const APP_ID: &str = "net.toddzheng.ely-tea-party";
@@ -53,6 +56,23 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     workspace::bind_keys(cx);
     settings::window::bind_keys(cx);
     menus::init(cx);
+    cx.set_app_identity(APP_ID, TITLE);
+    // A press on a notification goes to the window whose session posted it.
+    cx.on_system_notification_response(|response, cx| {
+        let tag = response.tag;
+        let pressed = cx
+            .windows()
+            .into_iter()
+            .filter_map(|window| window.downcast::<Workspace>())
+            .any(|workspace| {
+                workspace
+                    .update(cx, |this, window, cx| this.pressed(&tag, window, cx))
+                    .unwrap_or(false)
+            });
+        if !pressed {
+            log::info!("app: notification {tag} pressed, but no session holds it");
+        }
+    });
     // Settings alone hold no terminal, so they go with the last one.
     cx.on_window_closed(|cx, _| {
         let windows = cx.windows();
@@ -102,10 +122,16 @@ pub fn open(
     if let Some(folder) = saved.as_ref().and_then(workspace::restore::first_folder) {
         launch.cwd = folder.to_path_buf();
     }
-    let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
+    let kept = opening_size(cx);
+    // macOS grows a window by a point on a side whose edge falls on a half point.
+    let centered = Bounds::centered(None, kept, cx);
+    let bounds = Bounds::new(centered.origin.map(|at| at.round()), kept);
     let background = blur::appearance(SettingsStore::get(cx));
+    let least = px(*settings::WINDOW.start());
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
+        // No smaller than the settings keep.
+        window_min_size: Some(size(least, least)),
         titlebar: Some(TitlebarOptions {
             title: Some(TITLE.into()),
             appears_transparent: true,
@@ -125,6 +151,7 @@ pub fn open(
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
         cx.new(|cx| {
+            keep_size(window, cx);
             let mut workspace = Workspace::new((id, pty, events), launch, window, cx);
             if let Some(saved) = saved {
                 workspace.restore(saved, window, cx);
@@ -133,8 +160,78 @@ pub fn open(
         })
     })?;
     log::info!(
-        "app: main window open, blur: {background:?} on {}",
+        "app: main window open at {} by {}, blur: {background:?} on {}",
+        f32::from(kept.width),
+        f32::from(kept.height),
         std::env::consts::OS
     );
     Ok(window)
+}
+
+/// The kept size, within the primary display's visible area where that is known.
+fn opening_size(cx: &App) -> Size<Pixels> {
+    let settings = SettingsStore::get(cx);
+    let room = cx
+        .primary_display()
+        .map(|display| display.visible_bounds().size);
+    let fit = |want: f32, side: Option<Pixels>| match side.map(f32::from) {
+        Some(side) if side > 0.0 && want > side => {
+            log::info!(
+                "app: a kept side of {want} px passes the screen's {side}; the window takes {side}"
+            );
+            px(side)
+        }
+        _ => px(want),
+    };
+    size(
+        fit(settings.window_width, room.map(|area| area.width)),
+        fit(settings.window_height, room.map(|area| area.height)),
+    )
+}
+
+/// Keeps the window's size in the settings once it settles; maximized, full screen or hidden, the size before stays.
+fn keep_size(window: &mut Window, cx: &mut Context<Workspace>) {
+    let settling: Rc<RefCell<Option<Task<()>>>> = Rc::default();
+    let settle = move |window: &mut Window, cx: &mut Context<Workspace>| {
+        let task = cx.spawn_in(window, async move |_, cx| {
+            cx.background_executor().timer(SETTLE).await;
+            // Read once settled: X11 marks a window maximized late, and unmaximized while hidden.
+            let kept = cx.update(|window, cx| {
+                if !window.is_visible() || window.is_maximized() || window.is_fullscreen() {
+                    log::debug!(
+                        "app: the window is hidden, maximized or full screen; its kept size stays"
+                    );
+                    return Ok(());
+                }
+                let area = window.window_bounds().get_bounds().size;
+                let (width, height) = (
+                    f32::from(area.width).round(),
+                    f32::from(area.height).round(),
+                );
+                SettingsStore::update(cx, |settings| {
+                    settings.window_width = width;
+                    settings.window_height = height;
+                })
+                .with_context(|| {
+                    format!("app: the window's size, {width} by {height}, is not kept")
+                })
+            });
+            match kept {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => log::error!("{error:#}"),
+                Err(_) => log::debug!("app: the window closed before its size settled"),
+            }
+        });
+        settling.replace(Some(task));
+    };
+    let shown = settle.clone();
+    cx.observe_window_bounds(window, move |_, window, cx| settle(window, cx))
+        .detach();
+    // A size skipped while the window hid is read again once it shows.
+    cx.observe_window_visibility(window, move |_, visibility, window, cx| {
+        if visibility.is_visible() {
+            shown(window, cx);
+        }
+    })
+    .detach();
 }

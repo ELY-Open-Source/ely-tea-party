@@ -77,12 +77,16 @@ pub struct Settings {
     /// Sessions, and their agents' conversations, come back at the next start.
     pub restore_sessions: bool,
     pub show_sessions: bool,
-    /// The sessions column's width in pixels, as its divider was dragged.
-    pub sessions_width: f32,
     /// A drawer's height in pixels, as its divider was dragged.
     pub drawer_height: f32,
     pub show_panel: bool,
     pub panel: PanelTab,
+    /// The sessions and right columns' widths, in pixels, as their borders were dragged.
+    pub sessions_width: f32,
+    pub panel_width: f32,
+    /// The main window's size, unmaximized, in pixels.
+    pub window_width: f32,
+    pub window_height: f32,
 }
 
 impl Default for Settings {
@@ -107,10 +111,13 @@ impl Default for Settings {
             copy_on_select: false,
             restore_sessions: true,
             show_sessions: true,
-            sessions_width: 288.0,
             drawer_height: 260.0,
             show_panel: true,
             panel: PanelTab::Git,
+            sessions_width: 288.0,
+            panel_width: 240.0,
+            window_width: 1200.0,
+            window_height: 760.0,
         }
     }
 }
@@ -120,7 +127,8 @@ pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
 pub const OPACITY: RangeInclusive<f32> = 0.3..=1.0;
 pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
-pub const SESSIONS_WIDTH: RangeInclusive<f32> = 200.0..=640.0;
+pub const COLUMN: RangeInclusive<f32> = 160.0..=960.0;
+pub const WINDOW: RangeInclusive<f32> = 100.0..=16384.0;
 pub const DRAWER_HEIGHT: RangeInclusive<f32> = 100.0..=1600.0;
 
 impl Settings {
@@ -132,7 +140,10 @@ impl Settings {
         within("padding_x", self.padding_x, &PADDING)?;
         within("padding_y", self.padding_y, &PADDING)?;
         within("scrollback", self.scrollback, &SCROLLBACK)?;
-        within("sessions_width", self.sessions_width, &SESSIONS_WIDTH)?;
+        within("sessions_width", self.sessions_width, &COLUMN)?;
+        within("panel_width", self.panel_width, &COLUMN)?;
+        within("window_width", self.window_width, &WINDOW)?;
+        within("window_height", self.window_height, &WINDOW)?;
         within("drawer_height", self.drawer_height, &DRAWER_HEIGHT)?;
         for (field, id) in [
             ("theme", Some(&self.theme)),
@@ -240,6 +251,21 @@ mod tests {
             error.to_string(),
             "scrollback is 100001, outside 0 to 100000"
         );
+        let settings = Settings {
+            window_width: 50.0,
+            ..Settings::default()
+        };
+        let error = settings.validate().expect_err("too narrow");
+        assert_eq!(
+            error.to_string(),
+            "window_width is 50, outside 100 to 16384"
+        );
+        let settings = Settings {
+            panel_width: 1000.0,
+            ..Settings::default()
+        };
+        let error = settings.validate().expect_err("too wide");
+        assert_eq!(error.to_string(), "panel_width is 1000, outside 160 to 960");
     }
 
     #[test]

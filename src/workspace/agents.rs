@@ -21,7 +21,7 @@ pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<(
     let tick = cx.spawn_in(window, async move |this, cx| {
         loop {
             cx.background_executor().timer(EVERY).await;
-            if this.update(cx, |this, cx| this.tick(cx)).is_err() {
+            if this.update(cx, |this, cx| this.follow_agents(cx)).is_err() {
                 break;
             }
         }
@@ -112,7 +112,7 @@ fn follow(agent: &mut Option<Agent>, held: Foreground, drew: Instant, now: Insta
 }
 
 impl Workspace {
-    fn tick(&mut self, cx: &mut Context<Self>) {
+    fn follow_agents(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
         let mut shown = false;
         for session in &mut self.sessions {

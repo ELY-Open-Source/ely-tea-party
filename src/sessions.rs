@@ -7,19 +7,25 @@ use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     lists::ListItem,
     primitives::{Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, ControlSize, IconSize, Radius},
 };
 use gpui::{
-    App, AppContext, Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement,
-    Rems, Render, SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription,
-    Window, div, img, rems, transparent_black,
+    AnyElement, App, Entity, ObjectFit, Rems, SharedString, StyledImage, Subscription, div, img,
+    prelude::*, rems,
 };
 
 use crate::{
     agents::{self, Agent, Pose, Status},
-    term::TerminalView,
+    term::{Kind, Record, Records, State, TerminalView},
     workspace::{Drawer, TITLE, Workspace},
 };
+
+mod drag;
+pub mod orb;
+
+pub use drag::{Moving, after_move, row};
+
+use orb::Look;
 
 /// A program on its own terminal, as the sessions column lists it.
 pub struct Session {
@@ -40,8 +46,30 @@ pub struct Session {
     pub drawer: Option<Drawer>,
     /// A line to type at its first prompt: a restored agent's resume.
     pub pending: Option<String>,
+    /// It started waiting on the user while hidden.
+    pub waiting: bool,
+    /// The look its mark shows, and since when.
+    pub look: Option<(Look, Instant)>,
     pub _events: Subscription,
 }
+
+impl Session {
+    /// Notes the look its mark takes `now`; true while the mark moves.
+    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+        let view = self.terminal.read(cx);
+        let failed = view.ended().is_some_and(|code| code != 0);
+        let shows = look(view.records().shown().map(|(_, record)| record), failed);
+        if self.look.map(|(shown, _)| shown) != shows {
+            self.look = shows.map(|shows| (shows, now));
+        }
+        self.look
+            .is_some_and(|(look, since)| orb::moves(look, now.saturating_duration_since(since)))
+    }
+}
+
+/// The most records hover lists, and the most characters it shows of each part.
+const LISTED: usize = 10;
+const SHORT: usize = 120;
 
 /// `folder` as a row shows it: the home folder as `~`, on one line.
 pub fn shown(folder: &Path, home: Option<&Path>) -> String {
@@ -97,41 +125,6 @@ pub fn after_close(active: usize, closed: usize, left: usize) -> usize {
     }
 }
 
-/// The session shown once session `from` moved to `to`, `active` having been shown.
-pub fn after_move(active: usize, from: usize, to: usize) -> usize {
-    match active {
-        _ if active == from => to,
-        _ if from < active && active <= to => active - 1,
-        _ if to <= active && active < from => active + 1,
-        _ => active,
-    }
-}
-
-/// A session's row on its way to another place.
-pub struct Moving {
-    pub from: usize,
-    title: SharedString,
-}
-
-/// What follows the pointer while a row moves: its title.
-struct Ghost(SharedString);
-
-impl Render for Ghost {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        div()
-            .px_3()
-            .py_1()
-            .rounded(theme.radius(Radius::Md))
-            .bg(theme.colors.overlay)
-            .border_1()
-            .border_color(theme.colors.border)
-            .text_color(theme.colors.fg)
-            .text_sm()
-            .child(self.0.clone())
-    }
-}
-
 /// Its agent waits for an answer.
 pub fn waits(session: &Session) -> bool {
     let agent = session.agent.as_ref();
@@ -154,60 +147,18 @@ pub fn avatar(
         .children(frame.map(|frame| img(frame).size_full().object_fit(ObjectFit::Contain)))
 }
 
-/// Session `index`'s row, which drags to another session's place.
-pub fn row(
-    workspace: &Entity<Workspace>,
-    index: usize,
-    session: &Session,
-    active: bool,
-    when: (Option<&Path>, Instant),
-    cx: &App,
-) -> impl IntoElement {
-    let pid = session.terminal.read(cx).pid() as usize;
-    let title = match &session.agent {
-        Some(agent) => agent.kind.name().to_string(),
-        None if session.title.is_empty() => TITLE.to_string(),
-        None => one_line(&session.title),
-    };
-    let full = shown(&session.folder, when.0);
-    let moving = Moving {
-        from: index,
-        title: title.into(),
-    };
-    let workspace = workspace.clone();
-    let item = item(&workspace, index, session, active, when, cx);
-    div()
-        .id(("session-row", pid))
-        .rounded(cx.theme().radius(Radius::Lg))
-        .border_1()
-        .border_color(transparent_black())
-        .tooltip(Tooltip::text(full))
-        .on_drag(moving, |moving, _, _, cx| {
-            cx.new(|_| Ghost(moving.title.clone()))
-        })
-        .drag_over::<Moving>(move |style, moving, _, cx| {
-            if moving.from == index {
-                style
-            } else {
-                style.border_color(cx.theme().colors.focus)
-            }
-        })
-        .on_drop(move |moving: &Moving, _, cx| {
-            workspace.update(cx, |this, cx| this.move_session(moving.from, index, cx))
-        })
-        .child(item)
-}
-
-/// Session `index`'s item: its title and folder, or its agent's character and doing; a bell; a close button.
+/// Session `index`'s item: its title and folder, or its agent's character and doing; else the mark of its status and a bell while one rang unseen; a button that closes it.
 fn item(
     workspace: &Entity<Workspace>,
     index: usize,
     session: &Session,
     active: bool,
-    (home, now): (Option<&Path>, Instant),
+    home: Option<&Path>,
+    now: Instant,
     cx: &App,
 ) -> ListItem {
-    let pid = session.terminal.read(cx).pid() as usize;
+    let terminal = session.terminal.read(cx);
+    let pid = terminal.pid() as usize;
     let title = if session.title.is_empty() {
         TITLE
     } else {
@@ -243,7 +194,7 @@ fn item(
     };
     let item = item
         .selected(active)
-        .strong(session.bell || waits(session))
+        .strong(session.bell || session.waiting || waits(session))
         .on_click(move |_, window, cx| {
             // The column's own double click opens a session.
             cx.stop_propagation();
@@ -269,89 +220,163 @@ fn item(
                         }),
                 ),
         );
-    if session.bell && session.agent.is_none() {
-        item.leading(Icon::new(IconName::Bell).color(cx.theme().colors.warning))
-    } else {
-        item
+    // A character shows its agent's state itself.
+    if session.agent.is_some() {
+        return item;
     }
+    let mark = mark(session, now, cx);
+    let bell = session
+        .bell
+        .then(|| Icon::new(IconName::Bell).color(cx.theme().colors.warning));
+    if mark.is_none() && bell.is_none() {
+        return item;
+    }
+    item.leading(
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .children(mark)
+            .children(bell),
+    )
+}
+
+/// What a mark shows: the most pressing record's state, else a failed last command.
+pub fn look(record: Option<&Record>, failed: bool) -> Option<Look> {
+    Some(
+        match (record.map(|record| (record.state, record.progress)), failed) {
+            (Some((State::Blocked, _)), _) => Look::Waiting,
+            (Some((State::Error, _)), _) => Look::Error,
+            (Some((State::Working, progress)), _) => Look::Working(progress),
+            (Some((State::Done, _)), _) => Look::Done,
+            (_, true) => Look::Error,
+            (Some((State::Idle, _)), false) => Look::Idle,
+            (None, false) => return None,
+        },
+    )
+}
+
+/// The session's mark: its look's dots in its state's color; hover lists the records.
+fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
+    let (look, since) = session.look?;
+    let theme = cx.theme();
+    let colors = &theme.colors;
+    let color = match look {
+        Look::Working(_) => colors.info,
+        Look::Waiting => colors.warning,
+        Look::Error => colors.danger,
+        Look::Done => colors.success,
+        Look::Idle => colors.fg_muted,
+    };
+    let pid = session.terminal.read(cx).pid() as usize;
+    // Hover reads the records as they stand, so an open one follows them, and scrolls within the window.
+    let watched = session.terminal.downgrade();
+    let tip = Tooltip::rich(move |window, cx| {
+        let lines = watched.upgrade().map_or_else(Vec::new, |terminal| {
+            let view = terminal.read(cx);
+            hover(view.records(), view.ended().filter(|&code| code != 0))
+        });
+        let room = window.viewport_size().height - rems(3.).to_pixels(window.rem_size());
+        div()
+            .id("session-hover")
+            .max_h(room)
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .children(lines)
+            .into_any_element()
+    });
+    // Every mark takes a 24-pixel box, so the title stays put as the state changes.
+    Some(
+        div()
+            .id(("session-status", pid))
+            .size(theme.icon_size(IconSize::Xl))
+            .flex()
+            .items_center()
+            .justify_center()
+            .hoverable_tooltip(tip)
+            .child(orb::lattice(look, color, now, since))
+            .into_any_element(),
+    )
+}
+
+/// What hover shows: a line for each record, ten at most, then a failed command's status.
+pub fn hover(records: &Records, failed: Option<i32>) -> Vec<SharedString> {
+    let mut lines: Vec<SharedString> = records
+        .iter()
+        .take(LISTED)
+        .map(|(id, record)| line(records, id, record).into())
+        .collect();
+    let more = records.iter().count().saturating_sub(LISTED);
+    if more > 0 {
+        lines.push(format!("{more} more").into());
+    }
+    if let Some(code) = failed {
+        lines.push(format!("Last command exited with {code}").into());
+    }
+    lines
+}
+
+/// A record as hover and notifications say it: its state, then its app, title and message.
+pub fn line(records: &Records, id: &str, record: &Record) -> String {
+    let parts = [
+        records.app(id),
+        record.title.as_deref(),
+        record.msg.as_deref(),
+    ];
+    let said: Vec<String> = parts.into_iter().flatten().map(plain).collect();
+    let state = label(record);
+    if said.is_empty() {
+        state
+    } else {
+        format!("{state}: {}", said.join(" · "))
+    }
+}
+
+/// A record's state, as hover names it.
+fn label(record: &Record) -> String {
+    match (record.state, record.kind, record.progress) {
+        (State::Idle, ..) => "Idle".into(),
+        (State::Working, _, Some(value)) => format!("Working, {value}%"),
+        (State::Working, ..) => "Working".into(),
+        (State::Blocked, Some(Kind::Permission), _) => "Waiting for permission".into(),
+        (State::Blocked, Some(Kind::Question), _) => "Waiting for an answer".into(),
+        (State::Blocked, Some(Kind::Auth), _) => "Waiting for a login".into(),
+        (State::Blocked, None, _) => "Waiting".into(),
+        (State::Done, ..) => "Done".into(),
+        (State::Error, ..) => "Error".into(),
+    }
+}
+
+/// A program's text as hover shows it: on one line, 120 characters at most, without what could disguise it.
+pub fn plain(text: &str) -> String {
+    let kept: String = text.chars().filter(|&c| !invisible(c)).collect();
+    let line = one_line(&kept);
+    match line.char_indices().nth(SHORT) {
+        Some((at, _)) => format!("{}…", &line[..at]),
+        None => line,
+    }
+}
+
+/// C1 controls, direction controls and invisible formatting; joiners stay, as scripts and emoji need them.
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{80}'..='\u{9f}'
+            | '\u{ad}'
+            | '\u{61c}'
+            | '\u{180e}'
+            | '\u{200b}'
+            | '\u{200e}'
+            | '\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{feff}'
+            | '\u{fff9}'..='\u{fffb}'
+            | '\u{e0000}'..='\u{e007f}'
+    )
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn folders_under_home_read_from_a_tilde() {
-        let home = PathBuf::from("/Users/ely");
-        let shown = |folder: &str| shown(Path::new(folder), Some(&home));
-        assert_eq!(shown("/Users/ely"), "~");
-        assert_eq!(
-            shown("/Users/ely/src/app"),
-            format!("~{MAIN_SEPARATOR}src/app")
-        );
-        assert_eq!(
-            shown("/Users/elyse"),
-            "/Users/elyse",
-            "a sibling is no child"
-        );
-        assert_eq!(shown("/tmp"), "/tmp");
-        assert_eq!(
-            shown("/Users/ely/line\nbreak"),
-            format!("~{MAIN_SEPARATOR}line␊break")
-        );
-    }
-
-    #[test]
-    fn long_folders_cut_all_but_the_last_name_to_a_letter() {
-        let home = PathBuf::from("/Users/ely");
-        let sep = MAIN_SEPARATOR;
-        // Windows names folders with either separator, so each test folder is written in its own.
-        let brief = |folder: &str| {
-            brief(
-                Path::new(&folder.replace('/', std::path::MAIN_SEPARATOR_STR)),
-                Some(&home),
-            )
-        };
-        assert_eq!(
-            brief("/Users/ely/Documents/notes"),
-            format!("~{sep}Documents{sep}notes"),
-            "short enough"
-        );
-        assert_eq!(
-            brief("/Users/ely/Workspace/other/ely-tea-party/ELYTerminal"),
-            format!("~{sep}W{sep}o{sep}e{sep}ELYTerminal")
-        );
-        assert_eq!(
-            brief("/Users/ely/.config/opencode/plugins/x"),
-            format!("~{sep}.c{sep}o{sep}p{sep}x"),
-            "a hidden folder keeps its dot"
-        );
-        assert_eq!(
-            brief("/opt/homebrew/lib/node_modules/gemini"),
-            format!("{sep}o{sep}h{sep}l{sep}n{sep}gemini"),
-            "outside home"
-        );
-    }
-
-    #[test]
-    fn control_characters_show_as_their_pictures() {
-        assert_eq!(one_line("a\nb\tc\rd\0e\u{7f}"), "a␊b␉c␍d␀e␡");
-        assert_eq!(one_line("café ✓"), "café ✓", "printable text stays");
-    }
-
-    #[test]
-    fn moving_keeps_the_shown_session_shown() {
-        assert_eq!(after_move(0, 0, 2), 2, "the shown one moved");
-        assert_eq!(after_move(1, 0, 2), 0, "one from before it went past it");
-        assert_eq!(after_move(1, 2, 0), 2, "one from after it went before it");
-        assert_eq!(after_move(3, 0, 2), 3, "the move happened above it");
-    }
-
-    #[test]
-    fn closing_shows_the_next_session_or_keeps_the_shown_one() {
-        assert_eq!(after_close(2, 0, 3), 1, "one before it went");
-        assert_eq!(after_close(1, 1, 3), 1, "it went: the next one");
-        assert_eq!(after_close(3, 3, 3), 2, "the last went: the one before");
-        assert_eq!(after_close(1, 2, 3), 1, "one after it went");
-    }
-}
+mod tests;

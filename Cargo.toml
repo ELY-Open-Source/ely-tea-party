@@ -10,8 +10,9 @@ publish = false
 [dependencies]
 alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
+base64 = "0.22"
 dirs = "7"
-ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "cdc5ce8247b58a876ffed9626953c3cb490a67ed" }
+ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "da3fdcaf39f2fa85ce1dd9cad07c3c81cf1dd721" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
@@ -57,6 +58,13 @@ unicode-normalization = "0.1"
 core-graphics = { version = "0.24", features = ["highsierra"] }
 foreign-types = "0.5"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Pipes"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_System_IO"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }

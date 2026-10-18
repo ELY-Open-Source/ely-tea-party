@@ -1701,7 +1701,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 [[package]]
 name = "ely-gpui-component"
 version = "0.1.1"
-source = "git+https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git?rev=cdc5ce8247b58a876ffed9626953c3cb490a67ed#cdc5ce8247b58a876ffed9626953c3cb490a67ed"
+source = "git+https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git?rev=da3fdcaf39f2fa85ce1dd9cad07c3c81cf1dd721#da3fdcaf39f2fa85ce1dd9cad07c3c81cf1dd721"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1751,6 +1751,7 @@ version = "0.3.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
+ "base64",
  "block",
  "core-graphics 0.24.0",
  "dirs 7.0.0",
@@ -1775,11 +1776,13 @@ dependencies = [
  "serde_path_to_error",
  "sha2 0.10.9",
  "signal-hook",
+ "sysinfo 0.39.6",
  "unicode-normalization",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols",
  "wayland-server",
+ "windows-sys 0.61.2",
  "x11rb",
 ]
 
@@ -4465,6 +4468,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6508,6 +6521,20 @@ dependencies = [
  "ntapi",
  "rayon",
  "windows 0.57.0",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.39.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2071df9448915b71c4fe6d25deaf1c22f12bd234f01540b77312bb8e41361e6"
+dependencies = [
+ "libc",
+ "memchr",
+ "ntapi",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -8556,7 +8583,7 @@ dependencies = [
  "rand 0.8.8",
  "screencapturekit",
  "screencapturekit-sys",
- "sysinfo",
+ "sysinfo 0.31.4",
  "tao-core-video-sys",
  "windows 0.61.3",
  "windows-capture",

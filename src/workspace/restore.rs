@@ -164,6 +164,8 @@ impl Workspace {
                     self.add((id, pty, events), launch, window, cx);
                     if let Some(session) = self.sessions.last_mut() {
                         session.pending = place.resume;
+                        // Out of view until shown, so it posts notifications.
+                        session.terminal.update(cx, |view, _| view.set_front(false));
                     }
                 }
                 Err(error) => log::error!("restore: a session did not start: {error:#}"),
