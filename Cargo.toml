@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 base64 = "0.22"
 dirs = "7"
 ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "da3fdcaf39f2fa85ce1dd9cad07c3c81cf1dd721" }

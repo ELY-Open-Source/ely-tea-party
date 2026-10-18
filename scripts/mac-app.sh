@@ -1,8 +1,15 @@
 #!/bin/sh
-# mac-app.sh: Ely Tea Party.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized.
+# mac-app.sh: Ely Tea Party.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized; DEV=1 makes Ely Tea Party (dev).app alone, to sit beside a release.
 set -eu
 cd "$(dirname "$0")/.."
 sign=${SIGN_IDENTITY:-}
+name="Ely Tea Party"
+id=net.toddzheng.ely-tea-party
+if [ -n "${DEV:-}" ]; then
+  [ -z "$sign" ] || { echo "mac-app: a dev build is signed ad hoc, not by SIGN_IDENTITY" >&2; exit 1; }
+  name="Ely Tea Party (dev)"
+  id=$id.dev
+fi
 if [ -n "$sign" ]; then
   [ -s "${NOTARY_KEY:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER:-}" ] || {
     echo "mac-app: SIGN_IDENTITY needs NOTARY_KEY (a .p8 file), NOTARY_KEY_ID and NOTARY_ISSUER" >&2
@@ -18,7 +25,7 @@ version=$(cargo pkgid)
 version=${version##*[#@]}
 case $version in [0-9]*) ;; *) echo "mac-app: cargo pkgid names no version" >&2; exit 1 ;; esac
 out=${CARGO_TARGET_DIR:-target}/release
-app="$out/Ely Tea Party.app"
+app="$out/$name.app"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cargo run --release --locked --quiet --example icons -- \
@@ -33,12 +40,12 @@ cat > "$app/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>Ely Tea Party</string>
+  <key>CFBundleDisplayName</key><string>$name</string>
   <key>CFBundleExecutable</key><string>ely-tea-party</string>
   <key>CFBundleIconFile</key><string>ely-tea-party</string>
-  <key>CFBundleIdentifier</key><string>net.toddzheng.ely-tea-party</string>
+  <key>CFBundleIdentifier</key><string>$id</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Ely Tea Party</string>
+  <key>CFBundleName</key><string>$name</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -53,6 +60,10 @@ if [ -n "$sign" ]; then
   codesign --force --options runtime --timestamp --sign "$sign" "$app"
 else
   codesign --force --sign - "$app"
+fi
+if [ -n "${DEV:-}" ]; then
+  echo "mac-app: $app"
+  exit 0
 fi
 mkdir "$work/disk"
 ditto "$app" "$work/disk/Ely Tea Party.app"

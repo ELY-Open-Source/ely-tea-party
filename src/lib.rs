@@ -10,4 +10,5 @@ pub mod term;
 #[cfg(all(test, unix))]
 mod testlog;
 pub mod themes;
+pub mod usage;
 pub mod workspace;

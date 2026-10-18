@@ -145,6 +145,7 @@ impl Workspace {
         }
         self.type_pending(now, cx);
         self.keep();
+        self.meter(now, cx);
         // Poses turn and times count up, so rows with agents redraw each tick.
         if shown {
             cx.notify();

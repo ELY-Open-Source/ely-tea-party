@@ -22,6 +22,7 @@ mod order;
 mod panel;
 mod party;
 pub mod restore;
+mod usage;
 mod widths;
 
 #[cfg(unix)]
@@ -79,6 +80,8 @@ pub struct Workspace {
     /// The sessions as last saved for the next start.
     saved: Option<restore::Saved>,
     party_focus: FocusHandle,
+    /// The shown agents' subscription use.
+    meters: usage::Meters,
     _settings: Subscription,
     _acted: Subscription,
     _agents: [Task<()>; 3],
@@ -111,6 +114,7 @@ impl Workspace {
             party: false,
             saved: None,
             party_focus: cx.focus_handle(),
+            meters: usage::Meters::default(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();

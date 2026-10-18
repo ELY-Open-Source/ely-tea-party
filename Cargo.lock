@@ -1753,6 +1753,7 @@ dependencies = [
  "anyhow",
  "base64",
  "block",
+ "chrono",
  "core-graphics 0.24.0",
  "dirs 7.0.0",
  "ely-gpui-component",

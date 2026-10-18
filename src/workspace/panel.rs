@@ -58,6 +58,7 @@ impl Workspace {
             .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
             .child(body(tab == PanelTab::Files).child(self.files.clone().cached(fill())))
             .children((tab == PanelTab::Activity).then(|| body(true).child(activity(session, cx))))
+            .children(self.usage(cx))
     }
 }
 
