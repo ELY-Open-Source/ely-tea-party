@@ -1,18 +1,21 @@
 //! The whale girl in Ely's place: the sessions column's 鲸鱼娘. Ely's act picks her animation while the sessions are busy; at rest she stands still, and the longer nobody touches the app, the more she gets up to.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui::{
-    App, FontWeight, Global, IntoElement, ObjectFit, ParentElement, Styled, StyledImage, div, img,
-    prelude::FluentBuilder, px,
+    App, Context, FontWeight, Global, IntoElement, ObjectFit, ParentElement, Styled, StyledImage,
+    Task, div, img, prelude::FluentBuilder, px,
 };
 
 use super::{
-    HEAD, ROOM,
+    HEAD, Pet, ROOM,
     look::{Act, Pose},
     rig::UNIT,
 };
-use crate::agents::Kind;
+use crate::{
+    agents::Kind,
+    settings::{Mascot, SettingsStore},
+};
 
 /// Her art's side, in points.
 const SIDE: f32 = 112.0;
@@ -26,6 +29,26 @@ const TURN: f64 = 20.0;
 /// Seconds a sleeper's z takes to rise and fade, and how many rise at once.
 const RISE: f64 = 2.4;
 const ZS: usize = 3;
+
+/// How often she moves to her art's next frame: 12 a second.
+const FRAME: Duration = Duration::from_millis(83);
+
+/// Draws her at each of her art's frames, whether or not the app is active, unless the system asks for less motion: gpui gives an inactive app's windows no animation frames, which froze her.
+pub fn frames(cx: &mut Context<Pet>) -> Task<()> {
+    cx.spawn(async move |pet, cx| {
+        loop {
+            cx.background_executor().timer(FRAME).await;
+            let drawn = pet.update(cx, |_, cx| {
+                if SettingsStore::get(cx).mascot == Mascot::Whale && !cx.reduce_motion() {
+                    cx.notify();
+                }
+            });
+            if drawn.is_err() {
+                break;
+            }
+        }
+    })
+}
 
 /// When the user last typed into a terminal or pressed the mouse in the main window.
 pub struct Touched(Instant);

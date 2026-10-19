@@ -59,6 +59,7 @@ pub struct Pet {
     /// What keeps her window on the main window's edge, where the platform does not.
     glue: Option<platform::Glue>,
     _watch: Vec<Subscription>,
+    _frames: gpui::Task<()>,
 }
 
 /// Shows Ely over `main` while the settings want her.
@@ -192,6 +193,7 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 left: at,
                 glue: None,
                 _watch: vec![feel],
+                _frames: whale::frames(cx),
             }
         })
     })?;
@@ -380,6 +382,7 @@ mod tests {
             left: LEFT,
             glue: None,
             _watch: Vec::new(),
+            _frames: gpui::Task::ready(()),
         }
     }
 
