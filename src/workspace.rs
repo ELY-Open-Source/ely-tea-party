@@ -22,6 +22,7 @@ mod order;
 mod panel;
 mod party;
 pub mod restore;
+mod update;
 mod usage;
 mod widths;
 
@@ -83,6 +84,7 @@ pub struct Workspace {
     /// The shown agents' subscription use.
     meters: usage::Meters,
     _settings: Subscription,
+    _updates: Subscription,
     _acted: Subscription,
     _agents: [Task<()>; 3],
 }
@@ -119,6 +121,7 @@ impl Workspace {
                 this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();
             }),
+            _updates: cx.observe_global::<crate::update::Updates>(|_, cx| cx.notify()),
             _acted: acted,
             _agents: agents::watch(window, cx),
         };
@@ -349,6 +352,7 @@ impl Render for Workspace {
             .flex()
             .items_center()
             .gap_2()
+            .children(update::update_button(cx))
             .children(gear)
             .child(right);
         let mut shell = ColumnShell::new("workspace").glass();

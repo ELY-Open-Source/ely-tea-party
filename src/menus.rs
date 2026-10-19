@@ -4,6 +4,7 @@ use gpui::{App, InteractiveElement, KeyBinding, Menu, MenuItem, OsAction, action
 use crate::{
     settings::window::OpenSettings,
     term::{input::Find, zoom},
+    update::CheckForUpdates,
     workspace::{CloseSession, NewSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions},
 };
 
@@ -24,6 +25,7 @@ pub fn menus() -> Vec<Menu> {
             "Ely Tea Party",
             vec![
                 MenuItem::action("Settings…", OpenSettings),
+                MenuItem::action("Check for Updates…", CheckForUpdates),
                 MenuItem::separator(),
                 MenuItem::action("Quit Ely Tea Party", Quit),
             ],

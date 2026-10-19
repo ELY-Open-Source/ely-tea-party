@@ -59,6 +59,8 @@ Each girl has eight animations: working, researching, her special move, slacking
 
 Grab the latest build from [Releases](https://github.com/qiz029/ely-tea-party/releases/latest).
 
+From 0.3.4 on, the app checks Releases itself: when a newer version is out, a button in the title bar says so. On macOS one press downloads it, checks its signature and puts it in place, and a second press restarts into it; on Windows and Linux the button opens the release's page.
+
 | Platform | Build | |
 |---|---|---|
 | macOS 11+, Apple silicon | `ely-tea-party-VERSION.dmg` | Signed with Developer ID and notarized: open it and drag Ely Tea Party into Applications. |

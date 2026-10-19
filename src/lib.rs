@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod app;
 pub mod blur;
+pub mod curl;
 pub mod files;
 pub mod git;
 pub mod menus;
@@ -13,5 +14,6 @@ mod testlog;
 #[cfg(all(test, target_os = "linux"))]
 mod testx11;
 pub mod themes;
+pub mod update;
 pub mod usage;
 pub mod workspace;

@@ -1,10 +1,9 @@
 //! Claude Code's plan limits, from the usage endpoint its `/usage` asks, with the login Claude Code keeps; that login is never refreshed here, which would sign Claude Code out.
 
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
+
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 use anyhow::Context as _;
 use serde::Deserialize;
@@ -67,7 +66,7 @@ pub fn read() -> anyhow::Result<Usage> {
         "Authorization: Bearer {}\nanthropic-beta: oauth-2025-04-20\nUser-Agent: ely-tea-party\n",
         login.token
     );
-    let answer: Answer = serde_json::from_slice(&fetch(&headers)?)
+    let answer: Answer = serde_json::from_slice(&crate::curl::get("usage", ENDPOINT, &headers)?)
         .context("usage: Claude's answer does not parse")?;
     Ok(usage(answer, login.subscription))
 }
@@ -99,48 +98,6 @@ fn login() -> anyhow::Result<Login> {
     serde_json::from_slice::<Stored>(&text)
         .map(|stored| stored.oauth)
         .with_context(|| format!("usage: {} does not parse", file.display()))
-}
-
-/// The endpoint's answer through curl, the headers on its stdin so the token shows in no process list.
-fn fetch(headers: &str) -> anyhow::Result<Vec<u8>> {
-    let mut command = Command::new("curl");
-    #[cfg(windows)]
-    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
-    let mut child = command
-        .args([
-            "-sS",
-            "--max-time",
-            "15",
-            "-w",
-            "\n%{http_code}",
-            "-H",
-            "@-",
-            ENDPOINT,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("usage: cannot run curl")?;
-    child
-        .stdin
-        .take()
-        .context("usage: curl has no stdin")?
-        .write_all(headers.as_bytes())?;
-    let output = child.wait_with_output()?;
-    anyhow::ensure!(
-        output.status.success(),
-        "usage: curl failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-    let text = output.stdout;
-    let cut = text
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .context("usage: curl gave no status")?;
-    let status = String::from_utf8_lossy(&text[cut + 1..]).trim().to_string();
-    anyhow::ensure!(status == "200", "usage: Claude answered HTTP {status}");
-    Ok(text[..cut].to_vec())
 }
 
 fn usage(answer: Answer, plan: Option<String>) -> Usage {

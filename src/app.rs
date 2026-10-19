@@ -13,7 +13,7 @@ use crate::{
     agents, blur, menus,
     settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
-    themes,
+    themes, update,
     workspace::{self, TITLE, Workspace},
 };
 
@@ -56,6 +56,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     workspace::bind_keys(cx);
     settings::window::bind_keys(cx);
     menus::init(cx);
+    update::init(cx);
     cx.set_app_identity(APP_ID, TITLE);
     // A press on a notification goes to the window whose session posted it.
     cx.on_system_notification_response(|response, cx| {
