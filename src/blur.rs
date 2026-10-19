@@ -1,6 +1,4 @@
-#[cfg(target_os = "linux")]
-use gpui::{Bounds, Decorations, Pixels, Size, point};
-use gpui::{Window, WindowBackgroundAppearance};
+use gpui::{Bounds, Decorations, Pixels, Size, Window, WindowBackgroundAppearance, point};
 
 use crate::settings::Settings;
 
@@ -91,8 +89,11 @@ impl Blur {
 }
 
 /// The window's pane in its surface: all of it, less the inset on each free edge of a client-drawn window, as Ely's `ResizeBorder` pads it.
-#[cfg(target_os = "linux")]
-fn pane(size: Size<Pixels>, inset: Option<Pixels>, decorations: Decorations) -> Bounds<Pixels> {
+pub(crate) fn pane(
+    size: Size<Pixels>,
+    inset: Option<Pixels>,
+    decorations: Decorations,
+) -> Bounds<Pixels> {
     let mut pane = Bounds::new(point(Pixels::ZERO, Pixels::ZERO), size);
     let (Decorations::Client { tiling }, Some(inset)) = (decorations, inset) else {
         return pane;

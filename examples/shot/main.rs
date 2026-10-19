@@ -42,10 +42,25 @@ fn main() {
                     number.expect("the window lives").expect("a window number")
                 };
                 let mut aim = main;
+                let mut snaps = 0;
                 capture::front(number(aim, cx)).expect("the window on screen");
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 for spec in &keys {
                     match spec.as_str() {
+                        "wait" => cx.background_executor().timer(Duration::from_secs(1)).await,
+                        "snap" => {
+                            snaps += 1;
+                            let frames = capture::frames(number(aim, cx)).expect("the frames");
+                            for (index, (child, _)) in frames.into_iter().skip(1).enumerate() {
+                                let path =
+                                    out.replace(".png", &format!(".child{index}.snap{snaps}.png"));
+                                capture::snapshot(child, std::path::Path::new(&path))
+                                    .expect("a child's picture");
+                                log::info!(
+                                    "shot: snap {snaps}, child window {child}, wrote {path}"
+                                );
+                            }
+                        }
                         "to:main" => {
                             aim = main;
                             capture::front(number(aim, cx)).expect("the window on screen");
@@ -71,6 +86,14 @@ fn main() {
                 let title = aim.update(cx, |_, window, _| window.window_title());
                 let title = title.expect("the window lives");
                 capture::snapshot(number(aim, cx), std::path::Path::new(&out)).expect("a picture");
+                let frames = capture::frames(number(aim, cx)).expect("the window's frames");
+                log::info!("shot: the window at {:?}", frames[0].1);
+                for (index, (child, at)) in frames.into_iter().skip(1).enumerate() {
+                    let path = out.replace(".png", &format!(".child{index}.png"));
+                    capture::snapshot(child, std::path::Path::new(&path))
+                        .expect("a child's picture");
+                    log::info!("shot: child window {child} at {at:?}, wrote {path}");
+                }
                 let views = capture::views(number(aim, cx)).expect("the window's views");
                 log::info!("shot: wrote {out}, titled {title:?}, over {views:?}");
                 for line in capture::menus() {

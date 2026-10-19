@@ -21,6 +21,40 @@ pub fn number(window: &gpui::Window) -> anyhow::Result<u32> {
     u32::try_from(number).context("window number out of range")
 }
 
+/// The window and each of its child windows: number and frame, in AppKit's screen points.
+pub fn frames(number: u32) -> anyhow::Result<Vec<(u32, [f64; 4])>> {
+    use core_graphics::geometry::CGRect;
+    unsafe {
+        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let window: *mut Object = msg_send![app, windowWithWindowNumber: i64::from(number)];
+        anyhow::ensure!(!window.is_null(), "no window {number}");
+        let children: *mut Object = msg_send![window, childWindows];
+        let count: u64 = if children.is_null() {
+            0
+        } else {
+            msg_send![children, count]
+        };
+        let children = (0..count).map(|ix| msg_send![children, objectAtIndex: ix]);
+        std::iter::once(window)
+            .chain(children)
+            .map(|window: *mut Object| {
+                let number: i64 = msg_send![window, windowNumber];
+                let frame: CGRect = msg_send![window, frame];
+                let corners = [
+                    frame.origin.x,
+                    frame.origin.y,
+                    frame.size.width,
+                    frame.size.height,
+                ];
+                Ok((
+                    u32::try_from(number).context("window number out of range")?,
+                    corners,
+                ))
+            })
+            .collect()
+    }
+}
+
 /// Shows the window as key, the app left inactive.
 pub fn front(number: u32) -> anyhow::Result<()> {
     unsafe {

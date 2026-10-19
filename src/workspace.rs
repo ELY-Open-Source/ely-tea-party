@@ -258,6 +258,11 @@ impl Workspace {
         }
     }
 
+    /// Its sessions, in their rows' order.
+    pub fn sessions(&self) -> &[Session] {
+        &self.sessions
+    }
+
     /// The shown session's title, or the app's name while its program names none.
     fn title(&self) -> &str {
         self.sessions

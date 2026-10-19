@@ -92,37 +92,44 @@ impl TerminalView {
         if event.prefer_character_input {
             return;
         }
-        self.held.insert(event.keystroke.key.clone());
-        let facts = self.facts();
+        let facts = self.facts(&event.keystroke);
         let action = if event.is_held || facts.repeat {
             Action::Repeat
         } else {
             Action::Press
         };
-        if self.send(&event.keystroke, action, facts, cx) {
+        let id = held(&event.keystroke, facts);
+        let pressed = self.held.get(&id) == Some(&true);
+        let went = self.send(&event.keystroke, action, facts, pressed, cx);
+        self.held.insert(id, went == Some(true));
+        if went.is_some() {
             cx.stop_propagation();
         }
     }
 
     /// A release goes out only for a press this terminal saw: none for one a binding took.
     pub(super) fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.held.remove(&event.keystroke.key) {
+        let facts = self.facts(&event.keystroke);
+        let Some(record) = self.held.remove(&held(&event.keystroke, facts)) else {
             return;
-        }
-        let facts = self.facts();
-        if self.send(&event.keystroke, Action::Release, facts, cx) {
+        };
+        if self
+            .send(&event.keystroke, Action::Release, facts, record, cx)
+            .is_some()
+        {
             cx.stop_propagation();
         }
     }
 
-    /// Sends what `keystroke` means to the program; false when it is text the input method types.
+    /// Sends what `keystroke` means to the program: none when it is text the input method types, else whether it went as Windows' record; `pressed` says that of a held key's press.
     fn send(
         &mut self,
         keystroke: &Keystroke,
         action: Action,
         facts: Facts,
+        pressed: bool,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) -> Option<bool> {
         let modifiers = keystroke.modifiers;
         let alt = modifiers.alt && Self::alt_is_meta(facts, cx);
         let text = match &keystroke.key_char {
@@ -138,6 +145,7 @@ impl TerminalView {
             alt,
             platform: modifiers.platform,
             action,
+            unshifted: facts.unshifted,
         };
         let mode = *self.pty.term.lock().mode();
         let kitty = Kitty {
@@ -147,29 +155,62 @@ impl TerminalView {
             all: mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
             text: mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
         };
-        let Some(bytes) = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty) else {
-            return false;
-        };
+        #[cfg(windows)]
+        if self.win32 && records(kitty, action, keys::types(&key), pressed) {
+            match super::win32::record(keystroke, action) {
+                Some(bytes) => {
+                    log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
+                    self.input(bytes, cx);
+                    return Some(true);
+                }
+                None => log::debug!(
+                    "terminal {}: no virtual key for {:?}, so it goes as bytes",
+                    self.pty.pid,
+                    keystroke.key
+                ),
+            }
+        }
+        #[cfg(not(windows))]
+        debug_assert!(!pressed, "only Windows sends records");
+        let bytes = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty)?;
         log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
         self.input(bytes, cx);
-        true
+        Some(false)
     }
 
     /// AppKit's facts of the key; logged and none when unreadable.
     #[cfg(target_os = "macos")]
-    fn facts(&self) -> Facts {
-        super::mac::key_facts().unwrap_or_else(|error| {
+    fn facts(&self, keystroke: &Keystroke) -> Facts {
+        super::mac::key_facts(&keystroke.key, keystroke.modifiers.shift).unwrap_or_else(|error| {
             log::error!("terminal {}: {error:#}", self.pty.pid);
             Facts {
                 left_option: false,
                 right_option: false,
                 repeat: false,
+                unshifted: None,
+                code: None,
             }
         })
     }
 
-    #[cfg(not(target_os = "macos"))]
-    fn facts(&self) -> Facts {
+    /// Windows' layout names the key gpui named by what Shift made of it.
+    #[cfg(windows)]
+    fn facts(&self, keystroke: &Keystroke) -> Facts {
+        let unshifted = if keystroke.modifiers.shift {
+            None
+        } else {
+            super::win32::unshifted(&keystroke.key)
+        };
+        Facts {
+            repeat: false,
+            unshifted,
+            code: super::win32::virtual_key(&keystroke.key).map(|(key, _)| key),
+        }
+    }
+
+    /// gpui keeps no key code on Linux, so a shifted symbol stays as gpui names it.
+    #[cfg(not(any(target_os = "macos", windows)))]
+    fn facts(&self, _: &Keystroke) -> Facts {
         Facts::default()
     }
 
@@ -199,6 +240,33 @@ type Facts = super::mac::KeyFacts;
 #[derive(Clone, Copy, Debug, Default)]
 struct Facts {
     repeat: bool,
+    unshifted: Option<char>,
+    /// The key's virtual key, which Shift does not change; none off Windows.
+    code: Option<u16>,
+}
+
+/// A key while it is down: its code where the platform gives one, else gpui's name, which Shift may change.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) enum Held {
+    Code(u16),
+    Name(String),
+}
+
+/// Whether a key goes as Windows' record, as in Windows Terminal: kitty's flags go first, text stays text, and a repeat or release goes as its press did.
+#[cfg(any(windows, test))]
+fn records(kitty: Kitty, action: Action, types: bool, pressed: bool) -> bool {
+    kitty == Kitty::default()
+        && match action {
+            Action::Press => !types,
+            Action::Repeat => pressed || !types,
+            Action::Release => pressed,
+        }
+}
+
+fn held(keystroke: &Keystroke, facts: Facts) -> Held {
+    facts
+        .code
+        .map_or_else(|| Held::Name(keystroke.key.clone()), Held::Code)
 }
 
 impl EntityInputHandler for TerminalView {
@@ -285,5 +353,31 @@ impl EntityInputHandler for TerminalView {
         _: &mut Context<Self>,
     ) -> Option<usize> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_press_takes_its_repeats_and_release_with_it() {
+        let plain = Kitty::default();
+        // Ctrl-Shift-] goes as a record; Ctrl and Shift come up while ] repeats and types.
+        assert!(records(plain, Action::Press, false, false));
+        assert!(records(plain, Action::Repeat, true, true));
+        assert!(records(plain, Action::Release, true, true));
+        // A key that types goes as text, and so does its release.
+        assert!(!records(plain, Action::Press, true, false));
+        assert!(!records(plain, Action::Repeat, true, false));
+        assert!(!records(plain, Action::Release, true, false));
+        let kitty = Kitty {
+            disambiguate: true,
+            ..plain
+        };
+        assert!(
+            !records(kitty, Action::Press, false, false),
+            "kitty's flags go first"
+        );
     }
 }

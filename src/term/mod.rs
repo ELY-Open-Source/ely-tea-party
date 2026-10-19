@@ -24,6 +24,8 @@ mod titles;
 #[cfg(unix)]
 mod unix;
 mod view;
+#[cfg(windows)]
+mod win32;
 pub mod zoom;
 
 pub use pty::{Events, Launch, Listener, Pty, PtyEvent, config, fit, spawn};

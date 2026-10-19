@@ -1,4 +1,5 @@
 use super::*;
+use crate::term::mouse::MouseMode;
 
 /// What the scanner finds in `chunks`, each one read: a body, or `RESET`.
 fn scan(chunks: &[&[u8]]) -> Vec<String> {
@@ -86,7 +87,7 @@ fn an_osc_99_body_holds_its_metadata_and_a_full_payload() {
 #[test]
 fn mouse_modes_follow_private_modes_in_order_across_reads() {
     use crate::term::mouse::{Format, Tracking};
-    let mut modes = MouseModes::default();
+    let mut modes = Modes::default();
     assert_eq!(modes.feed(b"a\x1b[?"), None);
     assert!(modes.feed(b"1006;9h").is_some());
     assert_eq!(modes.mode.format, Format::Sgr);
@@ -106,7 +107,7 @@ fn mouse_modes_follow_private_modes_in_order_across_reads() {
 #[test]
 fn mouse_modes_read_through_controls_as_the_parser_does() {
     use crate::term::mouse::{Format, Tracking};
-    let mut modes = MouseModes::default();
+    let mut modes = Modes::default();
     modes.feed(b"\x1b[?1000\x00h\x1b[?1006");
     modes.feed(b"\x00h");
     let on = MouseMode {
@@ -220,7 +221,7 @@ fn the_tap_reads_mouse_modes_as_vte_does_byte_by_byte() {
         .chain([values(31), values(32)])
     {
         let case = case.as_slice();
-        let mut modes = MouseModes::default();
+        let mut modes = Modes::default();
         for end in 1..=case.len() {
             modes.feed(&case[end - 1..end]);
             assert_eq!(modes.mode, parsed(&case[..end]), "{case:?} to byte {end}");
@@ -277,4 +278,16 @@ fn a_title_s_body_holds_65536_bytes_and_another_s_4096() {
         scan(&[&osc("7", MOST - 1)]).is_empty(),
         "another stays at 4096"
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn win32_input_mode_follows_conptys_ask_until_a_full_reset() {
+    let mut modes = Modes::default();
+    modes.feed(b"\x1b[c\x1b[?1004h\x1b[?9001h");
+    assert!(modes.win32);
+    modes.feed(b"\x1b[?9001l");
+    assert!(!modes.win32);
+    modes.feed(b"\x1b[?9001h\x1bc");
+    assert!(!modes.win32, "a full reset ends it");
 }

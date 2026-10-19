@@ -217,3 +217,40 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T43
 
 - No review: the owner waived it for this change, its release included.
+
+## T44
+
+- Round 1, fc10c4d: FAIL. Under kitty's events flag alone, Option-Shift-[ as Alt sent ESC [ for ESC {, since the legacy bytes a key falls back to took the restored key; a key that is down was known by gpui's name, which Shift changes, so a release after Shift came up went nowhere, which on Windows keeps herdr's lease on the key. Fixed in 6f8bfae: legacy bytes keep gpui's character; a key that is down is known by AppKit's key code or Windows' virtual key; shot posts a press or a release alone.
+- Round 2, 6f8bfae: FAIL. On Windows a repeat that types after its modifiers came up overwrote the record its press made, so its release went as no record. Fixed in 3f47134: a repeat goes as a record where its press did, through one function, records, tested on every system.
+- Round 3, 3f47134: PASS. The reviewer's replay of the Windows handlers with herdr 0.9.5's lease code passed both release orders after a typing repeat, and a mutant that drops the fix failed; on macOS real herdr switched one, two, three, two, one with Shift, Ctrl or every modifier let go first; kitty flags 2 and 7 and plain text and an IME commit sent the bytes they should; check.sh, 226 Linux tests and the Windows cross-check passed.
+
+## T45
+
+- Round 1, ae3de24: FAIL. Inside herdr a plain file:// link the app had opened before went to herdr, whose client opens web links only, so nothing opened. Changed in af66a70: a link the app found of another kind it opened itself.
+- Round 2, af66a70: FAIL. herdr keeps its panes' OSC 8 targets from the terminal while it takes the mouse, so an OSC 8 link labelled with a file:// URL and aimed at a web page opened the label's file. Fixed in c30bd51: while herdr takes the mouse every press is herdr's again, its web-only rule with it, as its client and docs say; Shift with the press, herdr's named way past it, lets the terminal open what it sees.
+- Round 3, c30bd51: PASS. With real herdr 0.9.5 the label's prefix and its file:// part both opened the web target through herdr; Shift-Cmd-press opened a visible file:///etc/hosts in the app; with herdr's mouse capture off the app opened OSC 8 web and file targets and plain file URLs itself; wrapped, tail, OSC 8 and long web links opened whole through herdr, and links outside herdr in the app; check.sh passed.
+
+## T46
+
+- Round 1, 9aeb3f3: FAIL. A press on Ely made her panel AppKit's key window, so keys typed after it went nowhere; switched back on during an error she opened calm, since her mood waited for the next change; on a 100-point window her fixed 140-point offset left her beside it. Fixed in 6df7534: on macOS her panel becomes key only if needed, and on Windows her window answers a press's activation with none; she opens with the sessions' mood; she stands 140 points in or less, so she holds the pane's edge at any width, and on Wayland she opens again when a new width moves her.
+- Round 2, 6df7534: PASS. A native AppKit press on her kept the main window key and the program read abc; switched off and on during an error she came back worried; on a 100-point window she stood at its left edge, and 140 points in once it grew; minimized, both hid, and restored, both showed; check.sh, 8 Linux pet tests under Xvfb and the Windows cross-check passed, and on the Windows VM cargo test passed 200 tests at 6df7534. Native Windows interaction and a real Wayland desktop went unexercised.
+
+## T47
+
+- Round 1, 2d9180e and cdafdc2 with release v0.1.4: PASS. The reviewer compared Cargo.lock with its parent, where of 844 packages only elyterminal moved, to 0.1.4; found the release public, its tag and target at 2d9180e; downloaded the three files anonymously against the SHA-256 in the notes, and matched the notes to notes.md and to T44 to T46; read CI run 1215's three jobs, 228 tests on macOS, 234 on Ubuntu and 200 on Windows, done before the release was published, and Release run 1216's notarization; checked the disk image's stapled ticket and Gatekeeper, its app's Developer ID signature, hardened runtime, version 0.1.4, arm64 and macOS 11.0, the zip's icon against its source byte for byte, its manifest and its imports, no C runtime DLL among them, and the tarball's three files, their modes and glibc 2.35; and ran the downloaded app with a HOME of its own: it loaded its settings, started its shell, showed Ely, followed working, waiting, error and done, and quit with its last shell. check.sh passed.
+
+## T48
+
+- Round 1, c1cdddf: FAIL. With two displays of different DPI, her height came from the main window's DPI while her size came from her own, so her box fell 62 pixels into the terminal or stood above it. Fixed in 8ddf470: her height is her own DPI's and her bottom the pane's top; at a new DPI she kept her bottom left corner.
+- Round 2, 8ddf470: FAIL. Between two displays side by side, a corner kept always set her DPI back and forth. Fixed in f7e5563: her corner follows once the move is done, posted, and only where her box would lie mostly on a display of that DPI; else Windows' rect stands.
+- Round 3, f7e5563: FAIL. With two places piled up, a keep posted at a DPI no longer hers moved her to a display of it, and the keeps renewed each other. Fixed in 47826ee: a keep moves her only while its DPI is still hers. The three reviews spent, the owner allowed a fourth. Preparing it, e4b0107 fixed a place sized when it was posted, which left her the old DPI's size on the new display: a place now carries her corner, and her window sizes her when it lands.
+- Round 4, 47826ee and e4b0107: PASS. The reviewer's replays drained round 3's queue, left no stale size, and across 1,000 crossings of side-by-side and stacked display borders at 96 to 192 DPI, 8,432 messages, each place brought at most one DPI change and each keep none; check.sh and the Windows cross-check passed. Native multi-display runs remain out of reach.
+
+## T49
+
+- Round 1, 9d9144f: FAIL. Only a change of act started her ease, so a mood that changed inside a wink dropped her 12 points mid-hop, an old finish cleared mid-glance snapped her eyes back, and a second press mid-hop dropped her too. Fixed in a9be8ab: a change of mood and a press each ease her from the pose she was in, as a change of act does; her brows ease with her.
+- Round 2, a9be8ab: PASS. In the reviewer's replays a mood that changed inside a wink kept her lift at 40.3 and faded the wait's mark over 0.3 s, an old finish cleared mid-glance eased her look and tilt back, and a second press mid-hop kept her lift; 160 mixes of moods, times and winks passed; macOS shot replays of all three showed the ease; check.sh passed with 237 tests. Windows ran at 9d9144f, 212 tests, and drew her; the VM was offline for the fix, which changes no Windows code.
+
+## T50
+
+- Round 1, a54f4ff and 5d10979 with v0.1.4 rebuilt: PASS. The reviewer found T50's code, resources, scripts and workflows those of a9be8ab, where CI run 1253 passed on macOS, Ubuntu and Windows; read Release run 1256 notarize and staple the disk image at a54f4ff and put it on the release; downloaded the three files anonymously against the notes' SHA-256, each unlike the first 0.1.4's; matched the tag's source archive to a54f4ff file by file and the notes to notes.md; checked the disk image's ticket, signatures, Gatekeeper, version 0.1.4 and macOS 11.0, the zip's icon and manifest against the first build byte for byte and its imports, no C runtime DLL among them, and the tarball's files, modes and glibc 2.35; and ran the downloaded app with a HOME of its own, where Ely stood 112 by 124 on the window's top edge and moved between captures. check.sh passed. Windows and Linux windows, live multi-display DPI and Wayland went unexercised.

@@ -1,10 +1,4 @@
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    process::ExitStatus,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
 
 use alacritty_terminal::{
     event::Event,
@@ -27,7 +21,7 @@ use super::{
     find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Find, NextPrompt, PreviousPrompt},
+    input::{self, Find, Held, NextPrompt, PreviousPrompt},
     marks::Mark,
     mouse::MouseMode,
     paint::{self, Look},
@@ -73,8 +67,13 @@ pub struct TerminalView {
     pub(super) pointer: Pointer,
     /// The mouse mode, as the tap follows it.
     pub(super) mouse: MouseMode,
-    /// Keys whose press this terminal saw, so their releases may go out.
-    pub(super) held: HashSet<String>,
+    /// Keys go as Windows' records, as ConPTY asks.
+    #[cfg(windows)]
+    pub(super) win32: bool,
+    /// herdr's client leads the session, so herdr opens its panes' links.
+    pub(super) herdr: bool,
+    /// Keys whose press this terminal saw, so their releases may go out; true where it went as Windows' record.
+    pub(super) held: HashMap<Held, bool>,
     pub(super) finder: Option<Finder>,
     pub(super) size: (usize, usize),
     /// How many folders the program has reported.
@@ -99,7 +98,7 @@ pub struct TerminalView {
     blinking: bool,
     shown: bool,
     /// When the program last drew.
-    pub(super) drew: Instant,
+    pub(super) drew: std::time::Instant,
     _events: Task<()>,
     _blink: Task<()>,
     _herdr: Task<()>,
@@ -138,7 +137,10 @@ impl TerminalView {
             caret: Bounds::default(),
             pointer: Pointer::default(),
             mouse: MouseMode::default(),
-            held: HashSet::new(),
+            #[cfg(windows)]
+            win32: false,
+            herdr: false,
+            held: HashMap::new(),
             finder: None,
             size,
             reports: 0,
@@ -153,7 +155,7 @@ impl TerminalView {
             focused: false,
             blinking: false,
             shown: true,
-            drew: Instant::now(),
+            drew: std::time::Instant::now(),
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
             _herdr: super::herdr::follow(cx),
@@ -269,6 +271,8 @@ impl TerminalView {
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
+                #[cfg(windows)]
+                PtyEvent::Win32(on) => self.win32 = on,
                 PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
                 // A new prompt ends what was working, waiting or idle; done and error stay.
                 PtyEvent::Mark(Mark::Prompt) => {
@@ -308,7 +312,7 @@ impl TerminalView {
         match event {
             Event::Wakeup => {
                 self.shown = true;
-                self.drew = Instant::now();
+                self.drew = std::time::Instant::now();
             }
             // The tap reads the title in the output's order; alacritty's title events come after it.
             Event::MouseCursorDirty

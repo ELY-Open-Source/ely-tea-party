@@ -77,7 +77,11 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                         "terminal {pid}: herdr left the foreground, its agents' records with it"
                     );
                     states.clear();
-                    if view.update(cx, |view, cx| view.agents(&[], cx)).is_err() {
+                    let left = view.update(cx, |view, cx| {
+                        view.herdr = false;
+                        view.agents(&[], cx);
+                    });
+                    if left.is_err() {
                         break;
                     }
                 }
@@ -101,6 +105,10 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                         "terminal {pid}: herdr runs here, its server at {}",
                         socket.display()
                     );
+                }
+                let runs = socket.is_some();
+                if view.update(cx, |view, _| view.herdr = runs).is_err() {
+                    break;
                 }
             }
             let Some(path) = socket.clone() else {

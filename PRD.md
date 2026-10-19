@@ -54,11 +54,11 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
 - Fonts: JetBrains Mono by default, any installed font by choice; Nerd Font icons the font lacks come from a bundled Nerd Font.
 - Cursor: block, bar, underline, hollow block; blinking per setting and per DECSCUSR; hollow when the window is not focused.
-- Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
+- Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags; a key Shift makes a symbol of goes as its own key with Shift, the symbol its alternate, as Ghostty sends it, on macOS and Windows. On Windows keys go as win32-input-mode records while ConPTY asks, as Windows Terminal sends them. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
 - IME: marked text drawn at the cursor; committed text sent to the program.
 - Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen.
 - Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.
-- Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them.
+- Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees.
 - Focus reporting, title (OSC 0/2), scrollback limit per setting, find in scrollback (Ely's `FindWidget`).
 - Bell: no sound. The session row marks it until the session is shown.
 
@@ -75,6 +75,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Each session has a drawer: Cmd-J opens the user's own shell under the session's terminal, in its folder, and hides it again; it keeps running while hidden, and a job left running there marks the session's row.
 - The title shows the active session's title, and no other text.
 - The pointer over the terminal is the arrow.
+- Ely, the icon's girl, peeks over the window's top edge from behind it, on macOS, Windows and Linux. She moves all the time, as she does in the films: she breathes, sways and blinks, and how the sessions are doing, waiting, an error, work, a finish or calm, moves her. A press pets her. A switch in Settings, Terminal, turns her off.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.
 - Every control in the title bar takes its own press on every platform, the window buttons Ely draws on Windows and Linux too.
 
@@ -121,6 +122,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Scrollback lines.
   - Option as Alt: off, left, right, both (macOS only).
   - Copy on select.
+  - Ely: a switch.
   - Shortcuts: every shortcut, as this platform's keys, with a search.
 
 ## 11. Background blur

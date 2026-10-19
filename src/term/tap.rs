@@ -9,7 +9,6 @@ use polling::{Event, PollMode, Poller};
 
 use super::{
     marks,
-    mouse::MouseMode,
     notify::{self, Kitty},
     prompts::{self, Prompts},
     pty::PtyEvent,
@@ -24,7 +23,7 @@ pub(super) const MOST: usize = 4096;
 pub(crate) struct Tapped<P> {
     pub inner: P,
     scanner: Osc,
-    mouse: MouseModes,
+    modes: Modes,
     prompts: Prompts,
     kitty: Kitty,
     titles: Titles,
@@ -38,7 +37,7 @@ impl<P> Tapped<P> {
         Self {
             inner,
             scanner: Osc::default(),
-            mouse: MouseModes::default(),
+            modes: Modes::default(),
             prompts: Prompts::default(),
             kitty: Kitty::default(),
             titles: Titles::default(),
@@ -66,10 +65,22 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         self.scanner.feed(read, &mut |found| {
             report(found, events, pid, last, kitty, titles)
         });
-        if let Some(mode) = self.mouse.feed(read) {
+        #[cfg(windows)]
+        let win32 = self.modes.win32;
+        if let Some(mode) = self.modes.feed(read) {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
                 log::debug!("pty {pid}: a mouse mode after its session closed");
+            }
+        }
+        #[cfg(windows)]
+        if self.modes.win32 != win32 {
+            log::info!("pty {pid}: win32-input-mode {}", self.modes.win32);
+            if events
+                .unbounded_send(PtyEvent::Win32(self.modes.win32))
+                .is_err()
+            {
+                log::debug!("pty {pid}: win32-input-mode after its session closed");
             }
         }
         let out = self.prompts.pass(&buf[..count]);
@@ -338,89 +349,6 @@ impl Osc {
 /// The most values, subparameters too, one sequence holds before vte drops it.
 const PARAMS: usize = 32;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-enum Csi {
-    #[default]
-    Ground,
-    Escape,
-    Bracket,
-    Private,
-}
-
-/// The mouse modes as xterm holds them, read as vte reads; alacritty drops 9.
-#[derive(Default)]
-pub(crate) struct MouseModes {
-    state: Csi,
-    params: Vec<u32>,
-    /// Values begun, subparameters too.
-    fields: usize,
-    /// Past a `:`, whose subparameters the parser's mode sets skip.
-    sub: bool,
-    mode: MouseMode,
-}
-
-impl MouseModes {
-    /// The mode after `bytes`, when they changed it.
-    pub fn feed(&mut self, bytes: &[u8]) -> Option<MouseMode> {
-        let was = self.mode;
-        let mut rest = bytes;
-        while !rest.is_empty() {
-            if self.state == Csi::Ground {
-                let Some(at) = rest.iter().position(|&byte| byte == 0x1b) else {
-                    break;
-                };
-                self.state = Csi::Escape;
-                rest = &rest[at + 1..];
-                continue;
-            }
-            let byte = rest[0];
-            rest = &rest[1..];
-            self.state = match (self.state, byte) {
-                (_, 0x18 | 0x1a) => Csi::Ground,
-                (_, 0x1b) => Csi::Escape,
-                // Mid-sequence, C0 runs and DEL is skipped, as in vte.
-                (state, 0x00..=0x1f | 0x7f..=0xff) => state,
-                (Csi::Escape, b'[') => Csi::Bracket,
-                (Csi::Escape, b'c') => {
-                    self.mode = MouseMode::default();
-                    Csi::Ground
-                }
-                (Csi::Bracket, b'?') => {
-                    self.params = vec![0];
-                    self.fields = 1;
-                    self.sub = false;
-                    Csi::Private
-                }
-                (Csi::Private, b'0'..=b'9') => {
-                    if !self.sub {
-                        let last = self.params.last_mut().expect("a parameter in progress");
-                        *last = last
-                            .saturating_mul(10)
-                            .saturating_add(u32::from(byte - b'0'));
-                    }
-                    Csi::Private
-                }
-                (Csi::Private, b':' | b';') if self.fields < PARAMS => {
-                    self.fields += 1;
-                    self.sub = byte == b':';
-                    if !self.sub {
-                        self.params.push(0);
-                    }
-                    Csi::Private
-                }
-                (Csi::Private, b'h' | b'l') => {
-                    for &mode in &self.params {
-                        self.mode.apply(mode, byte == b'h');
-                    }
-                    Csi::Ground
-                }
-                _ => Csi::Ground,
-            };
-        }
-        (self.mode != was).then_some(self.mode)
-    }
-}
-
 /// The local folder an OSC 7 `file://host/path` names; another host's folder is none.
 pub(crate) fn folder(body: &[u8]) -> Option<PathBuf> {
     let Some(rest) = body.strip_prefix(b"file://") else {
@@ -480,5 +408,8 @@ fn decode(bytes: &[u8]) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
+mod modes;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use modes::Modes;

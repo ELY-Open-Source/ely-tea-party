@@ -29,6 +29,9 @@ pub enum PtyEvent {
     Title(String),
     /// A full reset, `ESC c`.
     Reset,
+    /// win32-input-mode set or reset.
+    #[cfg(windows)]
+    Win32(bool),
 }
 
 /// Hands the grid's events to the session; `pid` names the program in logs.

@@ -54,11 +54,25 @@ pub struct Session {
 }
 
 impl Session {
-    /// Notes the look its mark takes `now`; true while the mark moves.
-    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+    /// The look its mark takes from its terminal now.
+    pub fn looks(&self, cx: &App) -> Option<Look> {
         let view = self.terminal.read(cx);
         let failed = view.ended().is_some_and(|code| code != 0);
-        let shows = look(view.records().shown().map(|(_, record)| record), failed);
+        look(view.records().shown().map(|(_, record)| record), failed)
+    }
+
+    /// The look its agent's state takes, as hooks and its output tell it.
+    pub fn agent_look(&self) -> Option<Look> {
+        Some(match self.agent.as_ref()?.status {
+            Status::Working => Look::Working(None),
+            Status::NeedsInput => Look::Waiting,
+            Status::Idle => Look::Idle,
+        })
+    }
+
+    /// Notes the look its mark takes `now`; true while the mark moves.
+    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+        let shows = self.looks(cx);
         if self.look.map(|(shown, _)| shown) != shows {
             self.look = shows.map(|shows| (shows, now));
         }

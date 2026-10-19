@@ -24,6 +24,8 @@ pub struct Key<'a> {
     /// Cmd, the Windows key or Super: kitty's super.
     pub platform: bool,
     pub action: Action,
+    /// The key's own character, where gpui named the one Shift made and dropped Shift.
+    pub unshifted: Option<char>,
 }
 
 /// The kitty keyboard flags a program set.
@@ -79,7 +81,7 @@ fn printable(name: &str) -> Option<char> {
 }
 
 /// Whether the key types its text: some, none of it control, and no modifier that stops text.
-fn types(key: &Key) -> bool {
+pub(super) fn types(key: &Key) -> bool {
     let control = key.text.chars().any(char::is_control);
     !key.text.is_empty() && !control && !key.ctrl && !key.alt && !key.platform
 }
@@ -171,16 +173,22 @@ fn typed(key: &Key, ch: char, kitty: Kitty) -> Option<Vec<u8>> {
     if typing && !kitty.all && key.action != Action::Release {
         return None;
     }
+    // gpui names what Shift made of a key and drops Shift; CSI u names the key, with Shift.
+    let (own, shift, made) = match key.unshifted {
+        Some(own) => (own, true, Some(ch).filter(|&made| made != own)),
+        None => (ch, key.shift, None),
+    };
     let shifted = key
         .text
         .chars()
         .next()
-        .filter(|&typed| typing && typed != ch && !typed.is_control())
-        .or_else(|| (key.shift && ch.is_ascii_lowercase()).then(|| ch.to_ascii_uppercase()))
-        .filter(|_| key.shift && kitty.alternates);
+        .filter(|&typed| typing && typed != own && !typed.is_control())
+        .or(made)
+        .or_else(|| (shift && own.is_ascii_lowercase()).then(|| own.to_ascii_uppercase()))
+        .filter(|_| shift && kitty.alternates);
     let event = event(key, kitty);
     let text = typing && kitty.text && key.action != Action::Release;
-    let mods = code(key);
+    let mods = code(&Key { shift, ..*key });
     if shifted.is_none() && event.is_none() && !text {
         if mods == 1 && !kitty.all {
             return None;
@@ -193,7 +201,7 @@ fn typed(key: &Key, ch: char, kitty: Kitty) -> Option<Vec<u8>> {
             return Some(bytes);
         }
     }
-    let mut out = format!("\x1b[{}", ch.to_ascii_lowercase() as u32);
+    let mut out = format!("\x1b[{}", own.to_ascii_lowercase() as u32);
     if let Some(shifted) = shifted {
         out.push_str(&format!(":{}", shifted as u32));
     }

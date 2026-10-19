@@ -159,6 +159,7 @@ pub fn open(
             workspace
         })
     })?;
+    crate::pet::follow(window, cx);
     log::info!(
         "app: main window open at {} by {}, blur: {background:?} on {}",
         f32::from(kept.width),

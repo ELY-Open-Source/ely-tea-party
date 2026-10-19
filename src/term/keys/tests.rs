@@ -12,6 +12,7 @@ fn key(spec: &'static str, text: &'static str) -> Key<'static> {
         alt: parts.contains(&"alt"),
         platform: parts.contains(&"cmd"),
         action: Action::Press,
+        unshifted: None,
     }
 }
 
@@ -293,6 +294,75 @@ fn flags_that_only_add_fields_keep_legacy_keys() {
     assert_eq!(
         encode(&released("escape"), false, events),
         Some(b"\x1b[27;1:3u".to_vec())
+    );
+}
+
+#[test]
+fn kitty_reports_the_key_shift_turned_into_a_symbol() {
+    // gpui names Shift-[ by its `{` and drops Shift; the platform gives back `[`.
+    let made = |spec, text, action| Key {
+        unshifted: Some('['),
+        action,
+        ..key(spec, text)
+    };
+    let herdr = Kitty {
+        events: true,
+        alternates: true,
+        ..DISAMBIGUATE
+    };
+    assert_eq!(
+        kitty(made("cmd+ctrl+{", "", Action::Press), herdr).as_deref(),
+        Some("\x1b[91:123;14u")
+    );
+    assert_eq!(
+        kitty(made("cmd+ctrl+{", "", Action::Release), herdr).as_deref(),
+        Some("\x1b[91:123;14:3u")
+    );
+    assert_eq!(
+        kitty(made("ctrl+{", "", Action::Press), DISAMBIGUATE).as_deref(),
+        Some("\x1b[91;6u")
+    );
+    assert_eq!(
+        kitty(made("{", "{", Action::Press), herdr),
+        None,
+        "it types"
+    );
+    let all = Kitty {
+        all: true,
+        alternates: true,
+        ..DISAMBIGUATE
+    };
+    assert_eq!(
+        kitty(made("{", "{", Action::Press), all).as_deref(),
+        Some("\x1b[91:123;2u")
+    );
+    assert_eq!(
+        legacy(made("ctrl+{", "", Action::Press), false).as_deref(),
+        Some("\x1b[123;5u"),
+        "legacy keeps fixterms' shifted character"
+    );
+    let events = Kitty {
+        events: true,
+        ..Kitty::default()
+    };
+    assert_eq!(
+        kitty(made("alt+{", "", Action::Press), events).as_deref(),
+        Some("\x1b{"),
+        "a flag that adds no field keeps the legacy bytes gpui's name gives"
+    );
+    let bang = Key {
+        unshifted: Some('1'),
+        ..key("alt+!", "")
+    };
+    assert_eq!(kitty(bang, events).as_deref(), Some("\x1b!"));
+    let same = Key {
+        unshifted: Some('7'),
+        ..key("ctrl+7", "")
+    };
+    assert_eq!(
+        kitty(same, herdr).as_deref(),
+        Some("\x1b[55;6u"),
+        "no alternate where Shift made the same character"
     );
 }
 
