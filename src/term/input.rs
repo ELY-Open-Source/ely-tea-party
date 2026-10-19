@@ -77,6 +77,7 @@ impl TerminalView {
         }
         drop(term);
         self.pty.write(bytes);
+        crate::pet::touch(cx);
         if self.records.seen() {
             self.restate(cx);
         }

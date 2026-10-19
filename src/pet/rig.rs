@@ -16,7 +16,7 @@ type Device = (f32, f32);
 /// The head's box in the icon's units; the edge she holds runs along its bottom.
 const VIEW: [f32; 4] = [110.0, 6.0, 292.0, 280.0];
 /// Points a unit draws at.
-const UNIT: f32 = WIDTH / VIEW[2];
+pub(super) const UNIT: f32 = WIDTH / VIEW[2];
 
 /// How a layer moves.
 #[derive(Clone, Copy, PartialEq)]

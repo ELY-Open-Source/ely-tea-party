@@ -13,7 +13,7 @@ use gpui::{
 use super::{OpenSettings, SettingsWindow, choice, set, switch};
 use crate::{
     menus::{Bigger, Minimize, Quit, ResetSize, Smaller},
-    settings::{OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
+    settings::{Mascot, OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
     term::input::{self, Find, NextPrompt, PreviousPrompt},
     workspace::{
         self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
@@ -22,6 +22,11 @@ use crate::{
 };
 
 /// Each way Option types Alt, its key and its name.
+const MASCOTS: [(Mascot, &str, &str); 2] = [
+    (Mascot::Whale, "whale", "Whale girl"),
+    (Mascot::Ely, "ely", "Ely"),
+];
+
 const OPTIONS: [(OptionAsAlt, &str, &str); 4] = [
     (OptionAsAlt::Off, "off", "Off"),
     (OptionAsAlt::Left, "left", "Left"),
@@ -106,14 +111,22 @@ impl SettingsWindow {
             |settings, on| settings.restore_sessions = on,
         );
         let ely = switch(&this, "ely", settings.ely, |settings, on| settings.ely = on);
+        let mascot = choice(
+            &this,
+            "mascot",
+            &MASCOTS,
+            settings.mascot,
+            |settings, mascot| settings.mascot = mascot,
+        );
         let section = section
             .row(SettingsRow::new("Copy on select").control(copy))
             .row(SettingsRow::new("Restore sessions at start").control(restore))
             .row(
-                SettingsRow::new("Ely")
+                SettingsRow::new("Mascot")
                     .description("Peeks over the window, her face as your sessions are")
                     .control(ely),
-            );
+            )
+            .row(SettingsRow::new("Who peeks").control(mascot));
         let keys = SettingsSection::new("Shortcuts")
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
         div().flex().flex_col().gap_6().child(section).child(keys)

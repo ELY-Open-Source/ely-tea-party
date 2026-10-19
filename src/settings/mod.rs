@@ -10,6 +10,15 @@ use crate::themes;
 
 pub use store::{SettingsStore, load, save};
 
+/// Who peeks over the main window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mascot {
+    #[default]
+    Whale,
+    Ely,
+}
+
 /// Where a new session starts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -78,6 +87,7 @@ pub struct Settings {
     pub restore_sessions: bool,
     /// Ely peeks over the main window's top edge.
     pub ely: bool,
+    pub mascot: Mascot,
     pub show_sessions: bool,
     /// A drawer's height in pixels, as its divider was dragged.
     pub drawer_height: f32,
@@ -113,6 +123,7 @@ impl Default for Settings {
             copy_on_select: false,
             restore_sessions: true,
             ely: true,
+            mascot: Mascot::Whale,
             show_sessions: true,
             drawer_height: 260.0,
             show_panel: true,

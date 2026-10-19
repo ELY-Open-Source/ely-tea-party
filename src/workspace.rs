@@ -413,6 +413,8 @@ impl Render for Workspace {
         div()
             .size_full()
             .key_context(CONTEXT)
+            // A press anywhere wakes the mascot; the terminals note the keys.
+            .capture_any_mouse_down(|_, _, cx| crate::pet::touch(cx))
             .map(menus::window_actions)
             .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
                 this.toggle(

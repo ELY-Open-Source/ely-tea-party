@@ -71,6 +71,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - A double click on the column off its rows opens a session.
 - A session's row drags up or down to reorder the sessions; the shown session stays shown.
 - The tea party (Cmd-Shift-O) shows every session's character at one table with what she does; characters speak at the moments that matter; the right column's Activity tab lists the shown agent's steps; sessions and their agents' conversations come back at the next start.
+- The whale girl peeks over the main window's top edge in Ely's place, her animation following the sessions: at rest she stands still; after a minute with nothing happening she snacks and slacks off by turns, and after 5 minutes she falls asleep; Settings can bring Ely back or hide her.
 - The right column's foot shows how much of the shown agent's subscription is used, for Claude Code and Codex: each window's share, when it resets, and Codex's credits.
 - Each session has a drawer: Cmd-J opens the user's own shell under the session's terminal, in its folder, and hides it again; it keeps running while hidden, and a job left running there marks the session's row.
 - The title shows the active session's title, and no other text.

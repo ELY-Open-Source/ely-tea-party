@@ -4,6 +4,9 @@ mod look;
 #[cfg(target_os = "macos")]
 mod macos;
 mod rig;
+mod whale;
+
+pub use whale::touch;
 #[cfg(windows)]
 mod windows;
 #[cfg(target_os = "linux")]
@@ -27,7 +30,10 @@ use self::{
     look::{Act, EASE, Mood, Pose, blend, mood, pose},
     rig::Rig,
 };
-use crate::{settings::SettingsStore, workspace::Workspace};
+use crate::{
+    settings::{Mascot, SettingsStore},
+    workspace::Workspace,
+};
 
 /// Her head's box, in points, and the room above it her hops take.
 const WIDTH: f32 = 112.0;
@@ -265,6 +271,16 @@ impl Pet {
         self.eased = self.last.clone().map(|last| (last, now));
     }
 
+    /// Seconds since the sessions' mood changed, she was pressed, or the user touched the main window.
+    fn quiet(&self, now: Instant, cx: &App) -> f64 {
+        let last = [Some(self.since), self.petted, whale::touched(cx)]
+            .into_iter()
+            .flatten()
+            .max()
+            .unwrap_or(self.since);
+        now.saturating_duration_since(last).as_secs_f64()
+    }
+
     /// Her pose now, eased from where she was while a change of act or mood, or a press, is fresh.
     fn pose(&mut self, now: Instant) -> Pose {
         let since = |at: Instant| now.saturating_duration_since(at).as_secs_f64();
@@ -315,9 +331,20 @@ impl Pet {
 
 impl Render for Pet {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let pose = self.pose(Instant::now());
+        let now = Instant::now();
+        let pose = self.pose(now);
         // gpui gives a hidden window no frames, so she rests while unseen.
         window.request_animation_frame();
+        let press = cx.listener(|pet: &mut Pet, _: &gpui::MouseDownEvent, _, cx| {
+            pet.press(Instant::now());
+            cx.notify();
+        });
+        if SettingsStore::get(cx).mascot == Mascot::Whale {
+            return div()
+                .size_full()
+                .child(whale::whale(&pose, self.quiet(now, cx), now))
+                .on_mouse_down(MouseButton::Left, press);
+        }
         let rig = self.rig.clone();
         let drawn = canvas(
             |_, _, _| {},
@@ -326,13 +353,10 @@ impl Render for Pet {
                 rig.paint(head, &pose, window, cx);
             },
         );
-        div().size_full().child(drawn.size_full()).on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|pet, _, _, cx| {
-                pet.press(Instant::now());
-                cx.notify();
-            }),
-        )
+        div()
+            .size_full()
+            .child(drawn.size_full())
+            .on_mouse_down(MouseButton::Left, press)
     }
 }
 
