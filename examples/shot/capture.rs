@@ -55,6 +55,18 @@ pub fn frames(number: u32) -> anyhow::Result<Vec<(u32, [f64; 4])>> {
     }
 }
 
+/// Keeps the window above others without taking the keys, so macOS never deems it covered and gpui keeps drawing it.
+pub fn float(number: u32) -> anyhow::Result<()> {
+    unsafe {
+        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let window: *mut Object = msg_send![app, windowWithWindowNumber: i64::from(number)];
+        anyhow::ensure!(!window.is_null(), "no window {number}");
+        // NSFloatingWindowLevel.
+        let _: () = msg_send![window, setLevel: 3i64];
+    }
+    Ok(())
+}
+
 /// Shows the window as key, the app left inactive.
 pub fn front(number: u32) -> anyhow::Result<()> {
     unsafe {

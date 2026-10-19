@@ -45,9 +45,24 @@ fn main() {
                 let mut snaps = 0;
                 capture::front(number(aim, cx)).expect("the window on screen");
                 cx.background_executor().timer(Duration::from_secs(1)).await;
+                let film = std::env::var("SHOT_RECORD").ok().map(|path| {
+                    let fps =
+                        std::env::var("SHOT_FPS").map_or(15, |fps| fps.parse().expect("SHOT_FPS"));
+                    let mut frames = capture::frames(number(main, cx)).expect("the frames");
+                    for (window, _) in &frames {
+                        capture::float(*window).expect("the window floats");
+                    }
+                    let main = frames.remove(0);
+                    record::start(main, frames, &path, fps).expect("the film starts")
+                });
                 for spec in &keys {
                     match spec.as_str() {
                         "wait" => cx.background_executor().timer(Duration::from_secs(1)).await,
+                        "beat" => {
+                            cx.background_executor()
+                                .timer(Duration::from_millis(250))
+                                .await
+                        }
                         "snap" => {
                             snaps += 1;
                             let frames = capture::frames(number(aim, cx)).expect("the frames");
@@ -73,6 +88,23 @@ fn main() {
                             aim = settings.expect("a settings window");
                             capture::front(number(aim, cx)).expect("the window on screen");
                         }
+                        // An action by name, as a menu item sends it, which needs no active app.
+                        spec if spec.starts_with("do:") => {
+                            let name = format!("ely_tea_party::{}", &spec[3..]);
+                            aim.update(cx, |_, window, cx| {
+                                let action = cx.build_action(&name, None).unwrap_or_else(|error| {
+                                    let known = cx
+                                        .all_action_names()
+                                        .iter()
+                                        .filter(|known| known.contains("Session"))
+                                        .collect::<Vec<_>>();
+                                    panic!("no action {name}: {error}; known: {known:?}")
+                                });
+                                window.dispatch_action(action, cx);
+                            })
+                            .expect("the window lives");
+                            log::info!("shot: {name}");
+                        }
                         spec => typing::post(spec, number(aim, cx)).expect("a key event"),
                     }
                     if spec.starts_with("to:") {
@@ -83,6 +115,10 @@ fn main() {
                         .await;
                 }
                 cx.background_executor().timer(Duration::from_secs(1)).await;
+                if let Some(film) = film {
+                    let frames = film.finish().expect("the film is written");
+                    log::info!("shot: filmed {frames} frames");
+                }
                 let title = aim.update(cx, |_, window, _| window.window_title());
                 let title = title.expect("the window lives");
                 capture::snapshot(number(aim, cx), std::path::Path::new(&out)).expect("a picture");
@@ -107,6 +143,9 @@ fn main() {
 
 #[cfg(target_os = "macos")]
 mod capture;
+
+#[cfg(target_os = "macos")]
+mod record;
 
 #[cfg(target_os = "macos")]
 mod typing;
