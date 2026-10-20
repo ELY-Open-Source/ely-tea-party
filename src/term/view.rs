@@ -28,9 +28,11 @@ use super::{
     paint,
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
+    rail::Rail,
     reports::Notices,
     scrollbar::{self, Span},
     status::{Records, State},
+    turns::Turns,
     zoom,
 };
 use crate::{settings::SettingsStore, themes};
@@ -83,6 +85,9 @@ pub struct TerminalView {
     pub(super) notices: Notices,
     /// The program's title; empty while it names none.
     pub(super) title: String,
+    /// The prompts an agent here took, and the rail that marks them.
+    pub(super) turns: Turns,
+    pub(super) rail: Rail,
     /// It is the session shown.
     pub(super) front: bool,
     /// Its window is active.
@@ -145,6 +150,8 @@ impl TerminalView {
             shell: Shell::Busy,
             notices: Notices::default(),
             title: String::new(),
+            turns: Turns::default(),
+            rail: Rail::default(),
             front: true,
             active: false,
             cell: (8, 16),
@@ -350,7 +357,10 @@ impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let settings = SettingsStore::get(cx).clone();
         let theme = themes::active(&settings, window.appearance(), cx);
-        let term = self.pty.term.lock();
+        let mut term = self.pty.term.lock();
+        self.turns.follow(&mut term, std::time::Instant::now());
+        let grid = term.grid();
+        let scrollback = (grid.history_size(), grid.screen_lines());
         let ink = Ink::new(&theme, term.colors());
         let lit = self.finder.as_ref().map_or_else(Vec::new, |finder| {
             finder.lit(&term, cx.theme().colors.warning)
@@ -430,11 +440,13 @@ impl Render for TerminalView {
                 root.text_color(ink.fg).child(format!("{error:#}"))
             }
         };
+        let rail = self.rail(scrollback, settings.padding_y, window, cx);
         div()
             .relative()
             .size_full()
             .child(root)
             .children(scrollbar::bar(span, window, cx))
+            .children(rail)
             .children(
                 self.find_box(cx)
                     .map(|found| div().absolute().top_2().right_4().child(found)),

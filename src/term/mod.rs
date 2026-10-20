@@ -19,12 +19,14 @@ mod paint;
 mod pointer;
 mod prompts;
 mod pty;
+mod rail;
 mod reports;
 mod scrollbar;
 pub mod shell;
 mod status;
 mod tap;
 mod titles;
+mod turns;
 #[cfg(unix)]
 mod unix;
 mod view;

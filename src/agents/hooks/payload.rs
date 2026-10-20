@@ -93,6 +93,7 @@ fn detail(payload: &Value) -> Option<String> {
     .or_else(|| field(&["description"], input).map(str::to_string))
     .or_else(|| {
         let keys = [
+            "prompt",
             "message",
             "last_assistant_message",
             "last-assistant-message",
@@ -137,6 +138,9 @@ mod tests {
         let long = json!({ "type": "x", "tool_input": { "pattern": "x".repeat(100) } });
         let long = said("claude", None, long).and_then(|said| said.detail);
         assert_eq!(long.map(|text| text.chars().count()), Some(DETAIL + 1));
+        let asked = json!({ "hook_event_name": "UserPromptSubmit", "prompt": "\nfix it\nnow" });
+        let asked = said("claude", None, asked).and_then(|said| said.detail);
+        assert_eq!(asked.as_deref(), Some("fix it"));
         assert_eq!(said("claude", None, json!({})), None, "no event");
     }
 

@@ -199,6 +199,17 @@ impl Workspace {
         }
         let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
         agent.note(&report.event, tool, detail, now);
+        if let Some(said) = report.detail.clone() {
+            match report.event.as_str() {
+                "UserPromptSubmit" => session
+                    .terminal
+                    .update(cx, |view, cx| view.prompted(said, cx)),
+                "Stop" | "agent-turn-complete" => session
+                    .terminal
+                    .update(cx, |view, cx| view.replied(said, cx)),
+                _ => {}
+            }
+        }
         if agent.set(status, now) {
             log::info!("agents: session {}'s {kind:?} is {status:?}", session.id);
             if status == crate::agents::Status::NeedsInput && index != self.active {
