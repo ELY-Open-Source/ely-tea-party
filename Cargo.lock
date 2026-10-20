@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "ely-tea-party"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
