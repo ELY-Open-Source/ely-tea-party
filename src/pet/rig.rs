@@ -61,10 +61,10 @@ const fn part(name: &'static str, color: u32, frame: [f32; 4], bone: Bone, shape
 /// Every layer, back to front.
 #[rustfmt::skip]
 const PARTS: &[Part] = &[
-    part("hair-back", 0xEC86B5, [117.0, 45.0, 278.0, 262.0], Bone::Head, r#"<path d="M256 46C192 46 142 90 136 158C131 214 126 262 118 306L394 306C386 262 381 214 376 158C370 90 320 46 256 46Z"/>"#),
+    part("hair-back", 0xEC86B5, [117.0, 45.0, 278.0, 296.0], Bone::Head, r#"<path d="M256 46C192 46 142 90 136 158C131 214 126 262 118 306L118 340L394 340L394 306C386 262 381 214 376 158C370 90 320 46 256 46Z"/>"#),
     part("shade-back", 0xD9659A, [193.0, 199.0, 126.0, 78.0], Bone::Head, r#"<path d="M194 200C198 238 214 262 230 276L282 276C298 262 314 238 318 200Z"/>"#),
     part("neck", 0xF7CDBE, [235.0, 221.0, 42.0, 50.0], Bone::Body, r#"<path d="M236 222L276 222L276 266C268 270 244 270 236 266Z"/>"#),
-    part("collar", 0xFFFFFF, [197.0, 255.0, 118.0, 30.0], Bone::Body, r#"<path d="M198 284C204 268 222 258 238 256L256 272L274 256C290 258 308 268 314 284Z"/>"#),
+    part("collar", 0xFFFFFF, [193.0, 255.0, 126.0, 86.0], Bone::Body, r#"<path d="M198 284C204 268 222 258 238 256L256 272L274 256C290 258 308 268 314 284L318 340L194 340Z"/>"#),
     part("bow", 0xF05A97, [221.0, 247.0, 70.0, 32.0], Bone::Body, r#"<path d="M256 264C244 250 226 248 224 258C222 270 236 278 256 264ZM256 264C268 250 286 248 288 258C290 270 276 278 256 264Z"/>"#),
     part("knot", 0xD94683, [247.0, 255.0, 18.0, 18.0], Bone::Body, r#"<circle cx="256" cy="264" r="8"/>"#),
     part("skin", 0xFFE7DC, [177.0, 93.0, 158.0, 152.0], Bone::Head, concat!(r#"<path d=""#, "M178 164C178 116 212 94 256 94C300 94 334 116 334 164C334 202 312 228 284 238C274 242 264 244 256 244C248 244 238 242 228 238C200 228 178 202 178 164Z", r#""/>"#)),
@@ -266,6 +266,43 @@ mod tests {
                     && drawn.bottom() <= height,
                 "{}: {drawn:?} spills out of {width} by {height}",
                 part.name
+            );
+        }
+    }
+
+    #[test]
+    fn her_shirt_and_hair_run_below_the_edge_at_her_highest_hop() {
+        use super::super::look::{Mood, pose};
+        let moods = [
+            Mood::Calm,
+            Mood::Done,
+            Mood::Working,
+            Mood::Error,
+            Mood::Waiting,
+        ];
+        let mut highest = 0.0_f32;
+        for mood in moods {
+            for held in (0..130).map(|step| f64::from(step) * 0.02) {
+                for petted in [None]
+                    .into_iter()
+                    .chain((0..31).map(|step| Some(f64::from(step) * 0.02)))
+                {
+                    let pose = pose(mood, held, 10.0, petted);
+                    highest = highest.max(pose.lift + pose.bob);
+                }
+            }
+        }
+        assert!(
+            highest > 40.0,
+            "a press inside a hop lifts her {highest} units"
+        );
+        let edge = VIEW[1] + VIEW[3];
+        for name in ["collar", "hair-back"] {
+            let part = PARTS.iter().find(|part| part.name == name).expect(name);
+            let bottom = part.frame[1] + part.frame[3] - highest;
+            assert!(
+                bottom > edge,
+                "{name} ends at {bottom}, above the edge at {edge}"
             );
         }
     }

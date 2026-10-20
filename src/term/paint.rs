@@ -54,7 +54,11 @@ pub fn grid(
                 if let Some((row, column)) = at {
                     let corner =
                         origin + point(cell.width * column as f32, cell.height * row as f32);
-                    view.caret = Bounds::new(corner, cell);
+                    let caret = Bounds::new(corner, cell);
+                    if caret != view.caret {
+                        log::trace!("terminal {}: the caret moves to {caret:?}", view.pty.pid);
+                        view.caret = caret;
+                    }
                 }
                 if view.fit(columns, lines, cx) {
                     cx.notify();

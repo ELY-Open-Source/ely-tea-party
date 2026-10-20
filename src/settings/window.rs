@@ -17,7 +17,7 @@ use gpui::{
 };
 
 use super::{Settings, SettingsStore};
-use crate::{app::APP_ID, menus, term::BLINK};
+use crate::{app::APP_ID, menus, term::BLINK, update::Updates};
 
 mod appearance;
 mod terminal;
@@ -96,10 +96,15 @@ pub struct SettingsWindow {
     /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
     drafts: usize,
     font: Entity<TextInput>,
+    /// A picker's input for each fallback family, and one for the family being added.
+    fallbacks: Vec<Entity<TextInput>>,
+    /// The empty picker that adds a fallback shows.
+    adding: bool,
     /// Whether the cursor preview shows, as it blinks.
     lit: bool,
     _typed: Subscription,
     _settings: Subscription,
+    _updates: Subscription,
     _blink: Task<()>,
 }
 
@@ -130,9 +135,12 @@ impl SettingsWindow {
             failed: None,
             drafts: 0,
             font,
+            fallbacks: Vec::new(),
+            adding: false,
             lit: true,
             _typed: typed,
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
+            _updates: cx.observe_global::<Updates>(|_, cx| cx.notify()),
             _blink: Self::blink(cx),
         }
     }
@@ -283,7 +291,10 @@ fn set(
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = match self.section.as_ref() {
-            "appearance" => self.appearance(window, cx).into_any_element(),
+            "appearance" => {
+                self.grow_fallbacks(window, cx);
+                self.appearance(window, cx).into_any_element()
+            }
             "terminal" => self.terminal(cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };

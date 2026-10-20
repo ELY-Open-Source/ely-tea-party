@@ -11,7 +11,7 @@ use alacritty_terminal::{
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
-use super::{marks::Mark, mouse::MouseMode, notify::Ask, status::Status, tap::Tapped};
+use super::{drop::Quote, marks::Mark, mouse::MouseMode, notify::Ask, status::Status, tap::Tapped};
 use crate::settings::{CursorStyle, Settings};
 
 /// What a session hears from its pty.
@@ -61,12 +61,15 @@ pub struct Launch {
     pub env: Vec<(String, String)>,
     /// Shell integration makes it report its folder.
     pub reports: bool,
+    /// How its shell reads a path dropped on it.
+    pub quote: Quote,
 }
 
 /// A running program on a pseudo-terminal and the grid it draws into.
 pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
     pub pid: u32,
+    pub quote: Quote,
     notifier: Notifier,
     #[cfg(unix)]
     master: std::fs::File,
@@ -159,6 +162,7 @@ pub fn spawn(
         Pty {
             term,
             pid,
+            quote: launch.quote,
             notifier,
             #[cfg(unix)]
             master,

@@ -42,6 +42,28 @@ fn deliver(window: HWND) {
     }
 }
 
+/// Moves `window` to `(x, y)`, 800 by 600.
+fn move_main(window: HWND, (x, y): (i32, i32)) {
+    let flags = SWP_NOZORDER | SWP_NOACTIVATE;
+    let moved = unsafe { SetWindowPos(window, std::ptr::null_mut(), x, y, 800, 600, flags) };
+    assert_ne!(moved, 0, "the main window moves");
+}
+
+/// The work area of the display under most of `window`.
+fn work_area(window: HWND) -> RECT {
+    let mut display = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) };
+    assert_ne!(
+        unsafe { GetMonitorInfoW(monitor, &mut display) },
+        0,
+        "its display"
+    );
+    display.rcWork
+}
+
 fn info(window: HWND) -> WINDOWINFO {
     let mut info = WINDOWINFO {
         cbSize: size_of::<WINDOWINFO>() as u32,
@@ -70,7 +92,7 @@ unsafe extern "system" fn standin(
 }
 
 #[test]
-fn her_bottom_stands_on_the_panes_top_edge_whatever_the_two_windows_dpi() {
+fn her_bottom_stands_on_either_edge_of_the_pane_whatever_the_two_windows_dpi() {
     let client = RECT {
         left: 100,
         top: 20,
@@ -79,24 +101,26 @@ fn her_bottom_stands_on_the_panes_top_edge_whatever_the_two_windows_dpi() {
     };
     let pane = Bounds::new(point(px(10.), px(8.)), size(px(800.), px(600.)));
     for (scale, dpi) in [(1.0, 96), (1.0, 144), (1.5, 96), (2.0, 120)] {
-        let her = boxed(stand(client, scale, pane), dpi);
-        let own = dpi as f32 / 96.0;
-        let own_box = (
-            (WIDTH * own).round() as i32,
-            ((HEAD + ROOM) * own).round() as i32,
-        );
-        let corner = (
-            100 + ((10.0 + left(px(800.))) * scale).round() as i32,
-            20 + (8.0 * scale).round() as i32,
-        );
-        assert_eq!(
-            (
-                (her.right - her.left, her.bottom - her.top),
-                (her.left, her.bottom)
-            ),
-            (own_box, corner),
-            "the main window at {scale}, hers at {dpi} DPI"
-        );
+        for (edge, y) in [(Edge::Top, 8.0), (Edge::Bottom, 608.0)] {
+            let her = boxed(stand(client, scale, pane, edge, 140.0), dpi);
+            let own = dpi as f32 / 96.0;
+            let own_box = (
+                (WIDTH * own).round() as i32,
+                ((HEAD + ROOM) * own).round() as i32,
+            );
+            let corner = (
+                100 + ((10.0 + left(px(800.), 140.0)) * scale).round() as i32,
+                20 + (y * scale).round() as i32,
+            );
+            assert_eq!(
+                (
+                    (her.right - her.left, her.bottom - her.top),
+                    (her.left, her.bottom)
+                ),
+                (own_box, corner),
+                "the main window at {scale}, hers at {dpi} DPI, on the {edge:?} edge"
+            );
+        }
     }
 }
 
@@ -234,7 +258,7 @@ fn places_that_pile_up_across_two_displays_drain_in_her_dpis_size() {
 }
 
 #[test]
-fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edge() {
+fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_an_edge_of_the_pane() {
     let main = window(WS_OVERLAPPEDWINDOW, 0);
     // gpui's popup: style 0, an overlapped window, which Windows gives a caption.
     let pet = window(0, WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
@@ -245,8 +269,10 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edg
     );
     unsafe { SetWindowLongPtrW(pet, GWLP_WNDPROC, standin as *const () as isize) };
     let glue = Glue::hold(pet, main).expect("held");
+    let work = work_area(main);
+    move_main(main, (work.left + 200, work.top + 400));
     let pane = Bounds::new(point(px(0.), px(0.)), size(px(380.), px(280.)));
-    glue.put(1.0, pane).expect("placed");
+    let roomy = glue.put(1.0, pane, 140.0).expect("placed");
     let made = info(pet).rcWindow;
     deliver(pet);
     let (her, under) = (info(pet), info(main));
@@ -269,6 +295,11 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edg
     };
     let (_, _, kept) = change(display);
     let (suggested, taken, stood) = change(display + 48);
+    // At the work area's top the main window leaves her no room above it.
+    move_main(main, (work.left + 200, work.top));
+    let cramped = glue.put(1.0, pane, 140.0).expect("placed again");
+    deliver(pet);
+    let (inside, low) = (info(pet).rcWindow, info(main).rcClient);
     unsafe {
         DestroyWindow(pet);
         DestroyWindow(main);
@@ -286,7 +317,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edg
         ((HEAD + ROOM) * own).round() as i32,
     );
     let edge = (
-        under.rcClient.left + left(px(380.)).round() as i32,
+        under.rcClient.left + left(px(380.), 140.0).round() as i32,
         under.rcClient.top,
     );
     let rect = |rect: RECT| (rect.left, rect.top, rect.right, rect.bottom);
@@ -310,5 +341,10 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edg
         (made.right - made.left, made.bottom - made.top),
         own_box,
         "no size until her window takes the posted place"
+    );
+    assert_eq!(
+        (roomy, cramped, inside.left, inside.bottom),
+        (Edge::Top, Edge::Bottom, low.left + 140, low.top + 280),
+        "with no room above, inside on the pane's bottom edge"
     );
 }

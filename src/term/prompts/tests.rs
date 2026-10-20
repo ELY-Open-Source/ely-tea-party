@@ -40,7 +40,12 @@ fn target_of(term: &Term<VoidListener>, line: i32, column: usize) -> Option<Stri
 fn a_mark_becomes_its_prompt_s_numbered_link() {
     assert_eq!(
         passed(&[b"\x1b]133;A\x07$ \x1b]133;B\x1b\\x"]),
-        b"\x1b]8;id=\x7f1;\x7f\x07$ \x1b]8;;\x07\x1b\\x"
+        b"\x1b]8;id=\x7f1;\x7f\x07$ \x1b]8;id=\x7f0i;\x7f\x07\x1b\\x"
+    );
+    assert_eq!(
+        passed(&[b"\x1b]133;A\x07$ \x1b]133;B\x07ls\x1b]133;C\x07out"]),
+        b"\x1b]8;id=\x7f1;\x7f\x07$ \x1b]8;id=\x7f0i;\x7f\x07ls\x1b]8;;\x07out",
+        "the input runs from B to C"
     );
     assert_eq!(
         passed(&[b"\x1b]133;A;k=i\x07\x1b]133;D;1\x18"]),
@@ -63,7 +68,11 @@ fn the_rewrite_reads_a_mark_as_the_session_hears_it() {
         "A", "A;k=i", "N", "B", "I", "C;x", "D;1", "D;abc", "D", "", "AB", "L", "P;k=i", "Q", "a",
     ];
     for body in bodies {
-        let heard = marks::read(body.as_bytes()).map(|mark| mark == Mark::Prompt);
+        let heard = marks::read(body.as_bytes()).map(|mark| match mark {
+            Mark::Prompt(_) => Edge::Prompt,
+            Mark::Input => Edge::Input,
+            Mark::Output | Mark::Done(_) => Edge::End,
+        });
         assert_eq!(mark(body.as_bytes()), heard, "{body}");
     }
 }
@@ -154,14 +163,11 @@ fn a_program_s_link_inside_a_prompt_carries_its_number() {
         &open.grid()[Line(0)][Column(1)],
         &open.grid()[Line(0)][Column(2)],
     );
-    assert!(
-        z.hyperlink()
-            .is_some_and(|link| !link.id().starts_with(NUMBERED))
-    );
+    assert_eq!(part(z), Some(Part::Input(0)), "the input inside it");
     assert_eq!(
         target_of(&open, 0, 2).as_deref(),
         Some("file:///x"),
-        "its own again past the prompt"
+        "its own target past the prompt"
     );
     assert!(
         y.hyperlink()
@@ -178,16 +184,12 @@ fn a_long_target_numbers_a_prompt_in_either_order() {
     for bytes in [before, inside] {
         let term = parsed(bytes.as_bytes(), 8, 2);
         let row = &term.grid()[Line(0)];
-        let numbered = |column: usize| {
-            row[Column(column)]
-                .hyperlink()
-                .is_some_and(|link| link.id().starts_with(NUMBERED))
-        };
         assert_eq!(prompt(row), Some(1), "{bytes:?}");
         assert!(
-            numbered(1) && !numbered(2),
+            prompted(&row[Column(1)]) && !prompted(&row[Column(2)]),
             "the prompt's cell alone: {bytes:?}"
         );
+        assert_eq!(part(&row[Column(2)]), Some(Part::Input(0)), "{bytes:?}");
         assert_eq!(target_of(&term, 0, 2).as_deref(), Some(target.as_str()));
     }
 }
@@ -215,7 +217,7 @@ fn controls_after_an_osc_s_closing_escape_run_where_vte_runs_them() {
 fn del_and_high_bytes_in_an_escape_go_on_after_it() {
     assert_eq!(
         passed(&[b"\x1b\x7f]133;A\x07$\x1b\xff", b"]133;B\x07"]),
-        b"\x1b\x7f]8;id=\x7f1;\x7f\x07$\x1b\xff]8;;\x07"
+        b"\x1b\x7f]8;id=\x7f1;\x7f\x07$\x1b\xff]8;id=\x7f0i;\x7f\x07"
     );
 }
 
@@ -228,7 +230,7 @@ fn controls_vte_runs_inside_an_escape_go_on_before_the_link() {
 }
 
 #[test]
-fn a_prompt_s_cells_carry_its_link_through_sgr_0_and_its_input_none() {
+fn a_prompt_s_cells_carry_its_link_through_sgr_0_and_its_input_its_own() {
     let term = parsed(
         b"x\r\n\x1b]133;A\x07\x1b[31m$\x1b[0m \x1b]133;B\x07ls",
         8,
@@ -237,7 +239,17 @@ fn a_prompt_s_cells_carry_its_link_through_sgr_0_and_its_input_none() {
     assert_eq!(prompt(&term.grid()[Line(0)]), None);
     assert_eq!(prompt(&term.grid()[Line(1)]), Some(1));
     assert_eq!(target_of(&term, 1, 1).as_deref(), Some(LINK));
-    assert_eq!(target_of(&term, 1, 2), None, "input");
+    assert_eq!(
+        part(&term.grid()[Line(1)][Column(2)]),
+        Some(Part::Input(0)),
+        "input"
+    );
+    let ran = parsed(
+        b"\x1b]133;A\x07$\x1b]133;B\x07ls\x1b]133;C\x07\r\nout",
+        8,
+        2,
+    );
+    assert_eq!(target_of(&ran, 1, 0), None, "output");
 }
 
 #[test]
@@ -328,4 +340,34 @@ fn a_prompt_keeps_its_start_through_a_resize() {
     let offset = jump(&term, true).expect("a prompt above");
     let top = term.topmost_line().0 + first.expect("prompt 1") as i32;
     assert_eq!(offset as i32, -top);
+}
+
+#[test]
+fn input_carries_the_commands_ended_before_it() {
+    let line = b"\x1b]133;A\x07$\x1b]133;B\x07ab\x1b]133;A\x07R\x1b]133;B\x07c";
+    let term = parsed(line, 8, 2);
+    let at = |column: usize| part(&term.grid()[Line(0)][Column(column)]);
+    assert_eq!(
+        (at(0), at(1), at(3)),
+        (
+            Some(Part::Prompt(1)),
+            Some(Part::Input(0)),
+            Some(Part::Prompt(2))
+        )
+    );
+    assert_eq!(
+        at(4),
+        Some(Part::Input(0)),
+        "a prompt drawn again keeps the line"
+    );
+    let next = parsed(
+        b"\x1b]133;A\x07$\x1b]133;B\x07a\x1b]133;C\x07\x1b]133;D\x07\x1b]133;A\x07$\x1b]133;B\x07b",
+        8,
+        2,
+    );
+    assert_eq!(
+        part(&next.grid()[Line(0)][Column(3)]),
+        Some(Part::Input(2)),
+        "C and D each end it"
+    );
 }

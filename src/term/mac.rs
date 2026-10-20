@@ -50,7 +50,7 @@ const LEFT_OPTION: u64 = 0x20;
 const RIGHT_OPTION: u64 = 0x40;
 
 /// What gpui drops from the key event AppKit is handling.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct KeyFacts {
     pub left_option: bool,
     pub right_option: bool,

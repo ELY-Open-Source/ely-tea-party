@@ -6,6 +6,8 @@ use crate::settings::Settings;
 mod macos;
 #[cfg(target_os = "linux")]
 mod wayland;
+#[cfg(windows)]
+mod windows;
 #[cfg(target_os = "linux")]
 mod x11;
 
@@ -27,6 +29,8 @@ pub struct Blur {
     wayland: Option<wayland::Effect>,
     #[cfg(target_os = "linux")]
     x11: Option<x11::Effect>,
+    #[cfg(windows)]
+    moves: Option<windows::Moves>,
 }
 
 impl Blur {
@@ -37,14 +41,23 @@ impl Blur {
         if shown == WindowBackgroundAppearance::Blurred {
             macos::blur(window);
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        let _ = window;
+        #[cfg(windows)]
+        let moves = windows::Moves::on(window).unwrap_or_else(|error| {
+            log::error!("{error:#}");
+            None
+        });
+        #[cfg(windows)]
+        if let Some(moves) = &moves {
+            moves.blurred(shown == WindowBackgroundAppearance::Blurred);
+        }
         Self {
             shown,
             #[cfg(target_os = "linux")]
             wayland: wayland::Effect::on(window),
             #[cfg(target_os = "linux")]
             x11: x11::Effect::on(window),
+            #[cfg(windows)]
+            moves,
         }
     }
 
@@ -65,6 +78,10 @@ impl Blur {
         #[cfg(target_os = "macos")]
         if wanted == WindowBackgroundAppearance::Blurred {
             macos::blur(window);
+        }
+        #[cfg(windows)]
+        if let Some(moves) = &self.moves {
+            moves.blurred(wanted == WindowBackgroundAppearance::Blurred);
         }
     }
 

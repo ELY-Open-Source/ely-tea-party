@@ -9,6 +9,8 @@ use serde::Deserialize;
 #[cfg(target_os = "macos")]
 mod macos;
 
+use crate::settings::SettingsStore;
+
 actions!(ely_tea_party, [CheckForUpdates]);
 
 const LATEST: &str = "https://api.github.com/repos/qiz029/ely-tea-party/releases/latest";
@@ -124,7 +126,7 @@ pub fn asked(cx: &App) -> bool {
     cx.global::<Updates>().asking == Some(true)
 }
 
-/// Checks at start and every few hours, and binds Check for Updates.
+/// Checks at start and every few hours while the settings ask, and binds Check for Updates.
 pub fn init(cx: &mut App) {
     cx.set_global(Updates {
         state: State::Idle,
@@ -136,7 +138,11 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &CheckForUpdates, cx| check(true, cx));
     cx.spawn(async move |cx| {
         loop {
-            cx.update(|cx| check(false, cx));
+            cx.update(|cx| {
+                if SettingsStore::get(cx).check_updates {
+                    check(false, cx);
+                }
+            });
             cx.background_executor().timer(EVERY).await;
         }
     })

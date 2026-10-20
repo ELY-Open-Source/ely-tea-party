@@ -1,7 +1,7 @@
 use ely_gpui_component::{
-    buttons::SegmentedControl,
+    buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
-    forms::{Copy, NumberInput, Paste, PathInput, SelectAll},
+    forms::{Copy, NumberInput, Paste, PathInput, SelectAll, Switch},
     primitives::Severity,
     settings::{KeyboardShortcutsList, SettingsRow, SettingsSection, Shortcut},
     theme::{ActiveTheme, ControlSize},
@@ -15,6 +15,7 @@ use crate::{
     menus::{Bigger, Minimize, Quit, ResetSize, Smaller},
     settings::{Mascot, OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
     term::input::{self, Find, NextPrompt, PreviousPrompt},
+    update::{self, State, VERSION},
     workspace::{
         self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
         ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
@@ -47,7 +48,7 @@ const PLACES: [&str; 8] = [
 ];
 
 impl SettingsWindow {
-    /// Shell, start in, scrollback, Option as Alt on macOS and copy on select, then the shortcuts.
+    /// Shell, start in, scrollback, Option as Alt on macOS, copy on select, Ely and updates, then the shortcuts.
     pub(super) fn terminal(&self, cx: &Context<Self>) -> Div {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
@@ -126,11 +127,71 @@ impl SettingsWindow {
                     .description("Peeks over the window, her face as your sessions are")
                     .control(ely),
             )
-            .row(SettingsRow::new("Who peeks").control(mascot));
+            .row(SettingsRow::new("Who peeks").control(mascot))
+            .row(
+                SettingsRow::new("Check for updates automatically")
+                    .description("At start and every few hours")
+                    .control(auto_check(&this, settings.check_updates)),
+            )
+            .row(updates_row(cx));
         let keys = SettingsSection::new("Shortcuts")
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
         div().flex().flex_col().gap_6().child(section).child(keys)
     }
+}
+
+/// The switch for automatic checks; turning it on checks at once.
+fn auto_check(this: &Entity<SettingsWindow>, on: bool) -> Switch {
+    let this = this.clone();
+    Switch::new("check_updates", on).on_change(move |on, _, cx| {
+        let change = format!("check_updates is {on}");
+        if set(&this, change, cx, |settings| settings.check_updates = on) && on {
+            update::check(false, cx);
+        }
+    })
+}
+
+/// Where the updater stands, a button that checks now, and one that does what the title bar's button does.
+fn updates_row(cx: &App) -> SettingsRow {
+    let status: SharedString = match update::state(cx) {
+        State::Idle | State::Current => format!("Ely Tea Party {VERSION}").into(),
+        State::Unchecked(why) => format!("The check failed: {why}").into(),
+        State::Available(release) => format!(
+            "Ely Tea Party {} is out; this is {VERSION}",
+            release.version
+        )
+        .into(),
+        State::Installing(release) => format!("Installing {}…", release.version).into(),
+        State::Ready(release) => {
+            format!("{} is in place; a restart runs it", release.version).into()
+        }
+        State::Failed(_, why) => format!("The update failed: {why}").into(),
+    };
+    let next = match update::state(cx) {
+        State::Available(_) => Some("Update"),
+        State::Ready(_) => Some("Restart"),
+        State::Failed(..) => Some("Download"),
+        _ => None,
+    };
+    let check = Button::new("check-updates", "Check now")
+        .size(ControlSize::Sm)
+        .loading(update::asked(cx))
+        .on_click(|_, _, cx| update::check(true, cx));
+    let next = next.map(|label| {
+        Button::new("update-next", label)
+            .primary()
+            .size(ControlSize::Sm)
+            .on_click(|_, _, cx| update::press(cx))
+    });
+    let control = div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .children(next)
+        .child(check);
+    SettingsRow::new("Updates")
+        .description(status)
+        .control(control)
 }
 
 /// Where new sessions start, as the settings keep it.

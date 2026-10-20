@@ -5,6 +5,7 @@ use std::{
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
+    forms::{Input, TextInput},
     lists::ListItem,
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize, Radius},
@@ -36,6 +37,10 @@ pub struct Session {
     pub terminal: Entity<TerminalView>,
     /// The program's title; empty while it names none.
     pub title: String,
+    /// The name the user gave it; empty leaves the title to its program.
+    pub name: String,
+    /// The field its row shows while the user renames it.
+    pub editing: Option<(Entity<TextInput>, Subscription)>,
     /// The folder it reports, else the one it started in.
     pub folder: PathBuf,
     /// Its shell has integration, or it reported a folder anyway.
@@ -54,6 +59,14 @@ pub struct Session {
 }
 
 impl Session {
+    /// What it is called: the user's name, else its program's title, else the app's name.
+    pub fn named(&self) -> &str {
+        [self.name.as_str(), self.title.as_str()]
+            .into_iter()
+            .find(|title| !title.is_empty())
+            .unwrap_or(TITLE)
+    }
+
     /// The look its mark takes from its terminal now.
     pub fn looks(&self, cx: &App) -> Option<Look> {
         let view = self.terminal.read(cx);
@@ -173,13 +186,9 @@ fn item(
 ) -> ListItem {
     let terminal = session.terminal.read(cx);
     let pid = terminal.pid() as usize;
-    let title = if session.title.is_empty() {
-        TITLE
-    } else {
-        &session.title
-    };
     let folder = brief(&session.folder, home);
     let (select, close) = (workspace.clone(), workspace.clone());
+    let editing = session.editing.is_some();
     // A job left running in a drawer out of sight.
     let running = session
         .drawer
@@ -189,7 +198,12 @@ fn item(
         Some(agent) => {
             let pose = agent.pose(now, session.id);
             let since = agents::ago(now.saturating_duration_since(agent.since));
-            ListItem::new(("session", pid), agent.kind.name())
+            // A name the user gave stands over the agent's.
+            let name = match session.name.as_str() {
+                "" => agent.kind.name(),
+                name => name,
+            };
+            ListItem::new(("session", pid), name.to_string())
                 .description(format!("{} · {since}", agent.kind.label(pose)))
                 .detail(match agent.bubble(now) {
                     Some((_, line)) => format!("「{line}」"),
@@ -204,15 +218,19 @@ fn item(
                     cx,
                 ))
         }
-        None => ListItem::new(("session", pid), title.to_string()).description(folder),
+        None => ListItem::new(("session", pid), session.named().to_string()).description(folder),
     };
     let item = item
         .selected(active)
         .strong(session.bell || session.waiting || waits(session))
-        .on_click(move |_, window, cx| {
-            // The column's own double click opens a session.
+        // The column's own double click opens a session; a press in the field it renames with stays the field's.
+        .on_click(move |event, window, cx| {
             cx.stop_propagation();
-            select.update(cx, |this, cx| this.select(index, window, cx))
+            match (editing, event.click_count()) {
+                (true, _) => {}
+                (false, 2..) => select.update(cx, |this, cx| this.rename(index, window, cx)),
+                (false, _) => select.update(cx, |this, cx| this.select(index, window, cx)),
+            }
         })
         .trailing(
             div()
@@ -234,6 +252,10 @@ fn item(
                         }),
                 ),
         );
+    let item = match &session.editing {
+        Some((input, _)) => item.editor(editor(workspace, session, input)),
+        None => item,
+    };
     // A character shows its agent's state itself.
     if session.agent.is_some() {
         return item;
@@ -253,6 +275,23 @@ fn item(
             .children(mark)
             .children(bell),
     )
+}
+
+/// The field a session's row renames it with; Escape drops what it holds.
+fn editor(
+    workspace: &Entity<Workspace>,
+    session: &Session,
+    input: &Entity<TextInput>,
+) -> impl IntoElement {
+    let (workspace, id) = (workspace.clone(), session.terminal.entity_id());
+    div()
+        .on_key_down(move |event, window, cx| {
+            if event.keystroke.key == "escape" {
+                cx.stop_propagation();
+                workspace.update(cx, |this, cx| this.end_rename(id, false, window, cx));
+            }
+        })
+        .child(Input::new(input).size(ControlSize::Sm))
 }
 
 /// What a mark shows: the most pressing record's state, else a failed last command.

@@ -7,7 +7,7 @@ use std::{
 use anyhow::Context as _;
 use gpui::{App, Global};
 
-use super::pty::Launch;
+use super::{drop::Quote, pty::Launch};
 
 /// Each script, by its path under the integration folder.
 const SCRIPTS: [(&str, &str); 4] = [
@@ -89,6 +89,11 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
         cwd,
         env: Vec::new(),
         reports: true,
+        quote: match name.as_str() {
+            "pwsh" | "powershell" => Quote::PowerShell,
+            "cmd" => Quote::Cmd,
+            _ => Quote::Posix,
+        },
     };
     let script = |name: &str| dir.join(name).display().to_string();
     match name.as_str() {

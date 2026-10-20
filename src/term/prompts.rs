@@ -13,6 +13,24 @@ pub(crate) const LINK: &str = "\u{7f}";
 /// What a link's id starts with when it carries a prompt's number: the prompt's own link, or a program's inside it.
 const NUMBERED: char = '\u{7f}';
 
+/// What ends the id of a link on the line typed after a prompt.
+const TYPED: char = 'i';
+
+/// What the terminal's own link stamps: a prompt's cells, by its number, or the line typed after it, OSC 133 B to C, by the commands ended before it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Part {
+    Prompt(u32),
+    Input(u32),
+}
+
+/// How a mark moves the link: a prompt starts, its input starts, or the command ends it.
+#[derive(Debug, PartialEq)]
+enum Edge {
+    Prompt,
+    Input,
+    End,
+}
+
 /// What ends a prompt's link.
 const CLOSE: &[u8] = b"\x1b]8;;\x07";
 
@@ -53,12 +71,14 @@ pub(crate) struct Prompts {
     overflow: bool,
     /// The held OSC's ESC has gone on: it ended the OSC before.
     sent: bool,
-    /// The prompt open now, from its start mark to its end.
-    prompt: Option<u32>,
+    /// The prompt or input open now, from its mark to the next.
+    open: Option<Part>,
     /// The target of a program's link open now, to open it again with a prompt's number and without.
     target: Option<Vec<u8>>,
     /// The last prompt's number.
     count: u32,
+    /// Commands ended, C or D, so every prompt a shell draws again on one line shares its input's number.
+    ended: u32,
     /// What goes to the parser from the last read.
     out: Vec<u8>,
 }
@@ -116,7 +136,7 @@ impl Prompts {
             (State::Escape { .. }, _) => {
                 // A full reset clears the link the parser writes with.
                 if byte == b'c' {
-                    (self.prompt, self.target) = (None, None);
+                    (self.open, self.target) = (None, None);
                 }
                 self.held.push(byte);
                 self.release();
@@ -175,7 +195,7 @@ impl Prompts {
             let length = self.body.len().min(prefix.len());
             self.body[..length] == prefix[..length]
         };
-        !self.overflow && (fits(b"133;") || (self.prompt.is_some() && fits(b"8;")))
+        !self.overflow && (fits(b"133;") || (self.open.is_some() && fits(b"8;")))
     }
 
     fn release(&mut self) {
@@ -186,27 +206,31 @@ impl Prompts {
     fn end(&mut self, end: Option<u8>) -> bool {
         let rewrite = if self.overflow {
             None
-        } else if let Some(opens) = self.body.strip_prefix(b"133;").and_then(mark) {
-            if opens {
-                self.count = self.count.wrapping_add(1);
-                self.prompt = Some(self.count);
-                // A prompt inside a program's link carries its number on that link.
-                Some(match &self.target {
-                    Some(target) => link(self.count, target),
-                    None => link(self.count, LINK.as_bytes()),
-                })
-            } else {
-                match (self.prompt.take(), &self.target) {
-                    (Some(_), Some(target)) => Some(plain(target)),
-                    (Some(_), None) => Some(CLOSE.to_vec()),
-                    (None, _) => None,
+        } else if let Some(edge) = self.body.strip_prefix(b"133;").and_then(mark) {
+            // A prompt or input inside a program's link carries its number on that link.
+            let target = self.target.as_deref().unwrap_or(LINK.as_bytes());
+            match (edge, self.open) {
+                (Edge::Prompt, _) => {
+                    self.count = self.count.wrapping_add(1);
+                    self.open = Some(Part::Prompt(self.count));
+                    Some(link(Part::Prompt(self.count), target))
+                }
+                (Edge::Input, Some(Part::Prompt(_))) => {
+                    self.open = Some(Part::Input(self.ended));
+                    Some(link(Part::Input(self.ended), target))
+                }
+                (Edge::Input, _) => None,
+                (Edge::End, open) => {
+                    self.ended = self.ended.wrapping_add(1);
+                    self.open = None;
+                    open.map(|_| self.target.as_deref().map_or_else(|| CLOSE.to_vec(), plain))
                 }
             }
         } else if let Some((opens, target)) = user(&self.body) {
             self.target = opens.then(|| target.to_vec());
-            // Inside a prompt a program's link carries the prompt's number; its end takes the prompt's link up again.
+            // Inside a prompt or input a program's link carries its number; its end takes the terminal's link up again.
             let target = if opens { target } else { LINK.as_bytes() };
-            self.prompt.map(|number| link(number, target))
+            self.open.map(|part| link(part, target))
         } else {
             None
         };
@@ -232,15 +256,16 @@ impl Prompts {
     }
 }
 
-/// Whether a mark's body opens a prompt or ends one, as `marks::read` reads its letter; none for neither.
-fn mark(body: &[u8]) -> Option<bool> {
+/// How a mark's body moves the link, as `marks::read` reads its letter; none for no mark.
+fn mark(body: &[u8]) -> Option<Edge> {
     let (&letter, rest) = body.split_first()?;
     if !rest.is_empty() && rest[0] != b';' {
         return None;
     }
     match letter {
-        b'A' | b'N' => Some(true),
-        b'B' | b'I' | b'C' | b'D' => Some(false),
+        b'A' | b'N' => Some(Edge::Prompt),
+        b'B' | b'I' => Some(Edge::Input),
+        b'C' | b'D' => Some(Edge::End),
         _ => None,
     }
 }
@@ -255,9 +280,13 @@ fn user(body: &[u8]) -> Option<(bool, &[u8])> {
     Some((opens, target))
 }
 
-/// A link to `target` whose id carries prompt `number`.
-fn link(number: u32, target: &[u8]) -> Vec<u8> {
-    let mut link = format!("\x1b]8;id={NUMBERED}{number};").into_bytes();
+/// A link to `target` whose id carries `part`'s prompt number.
+fn link(part: Part, target: &[u8]) -> Vec<u8> {
+    let id = match part {
+        Part::Prompt(number) => format!("{NUMBERED}{number}"),
+        Part::Input(number) => format!("{NUMBERED}{number}{TYPED}"),
+    };
+    let mut link = format!("\x1b]8;id={id};").into_bytes();
     link.extend_from_slice(target);
     link.push(0x07);
     link
@@ -271,12 +300,46 @@ fn plain(target: &[u8]) -> Vec<u8> {
     link
 }
 
-/// The number of the prompt `row` shows, as a link's id carries it.
+/// The prompt or input `cell` belongs to, as its link's id says.
+pub(super) fn part(cell: &Cell) -> Option<Part> {
+    let link = cell.hyperlink()?;
+    let number = link.id().strip_prefix(NUMBERED)?;
+    match number.strip_suffix(TYPED) {
+        Some(typed) => typed.parse().ok().map(Part::Input),
+        None => number.parse().ok().map(Part::Prompt),
+    }
+}
+
+/// Whether `cell` belongs to a prompt.
+pub(super) fn prompted(cell: &Cell) -> bool {
+    matches!(part(cell), Some(Part::Prompt(_)))
+}
+
+/// The number of the prompt `row` shows.
 fn prompt(row: &Row<Cell>) -> Option<u32> {
-    row.into_iter().find_map(|cell| {
-        let link = cell.hyperlink()?;
-        link.id().strip_prefix(NUMBERED)?.parse().ok()
+    row.into_iter().find_map(|cell| match part(cell) {
+        Some(Part::Prompt(number)) => Some(number),
+        _ => None,
     })
+}
+
+/// The first row of the nearest prompt at or above `line`, blank rows within it passed.
+pub(super) fn start<T>(term: &Term<T>, line: i32) -> Option<i32> {
+    let first = term.topmost_line().0;
+    let number = |line: i32| prompt(&term.grid()[Line(line)]);
+    // ponytail: a scan of the rows on the way; index prompt rows if long histories lag.
+    let (found, own) = (first..=line)
+        .rev()
+        .find_map(|line| number(line).map(|own| (line, own)))?;
+    let mut start = found;
+    for above in (first..found).rev() {
+        match number(above) {
+            Some(other) if other != own => break,
+            Some(_) => start = above,
+            None => {}
+        }
+    }
+    Some(start)
 }
 
 /// The display offset that puts the prompt before or after the view's top at the top, as Ghostty jumps.
@@ -284,21 +347,8 @@ pub fn jump<T>(term: &Term<T>, up: bool) -> Option<usize> {
     let top = -(term.grid().display_offset() as i32);
     let (first, last) = (term.topmost_line().0, term.bottommost_line().0);
     let number = |line: i32| prompt(&term.grid()[Line(line)]);
-    // ponytail: a scan of the rows on the way; index prompt rows if long histories lag.
     let found = if up {
-        // The nearest prompt above the view's top, then its first row, blank rows within it passed.
-        let (line, own) = (first..top)
-            .rev()
-            .find_map(|line| number(line).map(|own| (line, own)))?;
-        let mut start = line;
-        for above in (first..line).rev() {
-            match number(above) {
-                Some(other) if other != own => break,
-                Some(_) => start = above,
-                None => {}
-            }
-        }
-        start
+        start(term, top - 1)?
     } else {
         // The prompt at or above the view's top may go on below it; the next one starts.
         let here = (first..=top).rev().find_map(number);

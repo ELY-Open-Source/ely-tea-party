@@ -37,7 +37,7 @@ pub fn mood(looks: impl IntoIterator<Item = Look>) -> Mood {
         .unwrap_or(Mood::Calm)
 }
 
-/// Seconds she cheers a program that finished, and calm lasts before she dozes.
+/// Seconds she cheers a program that finished, and calm lasts, from her mood's start or the last press, before she dozes.
 const CHEER: f64 = 4.0;
 const DOZE: f64 = 300.0;
 /// Seconds a press keeps her wink.
@@ -127,14 +127,15 @@ pub struct Pose {
     pub marks: Vec<(Mark, Motion)>,
 }
 
-/// Her pose `held` seconds into `mood`, `shown` seconds after she came, and `petted` seconds after a press.
+/// Her pose `held` seconds into `mood`, `shown` seconds after she came, and `petted` seconds after a press, which wakes her from a doze for `DOZE` more.
 pub fn pose(mood: Mood, held: f64, shown: f64, petted: Option<f64>) -> Pose {
+    let stirred = petted.map_or(held, |since| held.min(since));
     let mut pose = match mood {
         Mood::Waiting => waiting(held),
         Mood::Error => fretting(held),
         Mood::Working => working(held),
         Mood::Done if held < CHEER => cheering(held),
-        Mood::Calm | Mood::Done if held >= DOZE => dozing(held - DOZE),
+        Mood::Calm | Mood::Done if stirred >= DOZE => dozing(stirred - DOZE),
         Mood::Calm => calm(held),
         Mood::Done => calm(held - CHEER),
     };

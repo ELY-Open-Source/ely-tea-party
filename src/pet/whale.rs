@@ -88,7 +88,7 @@ fn zs(quiet: f64) -> [f32; ZS] {
 }
 
 /// Her, in `pose` at `now`, after `quiet` seconds with nothing new, filling her window.
-pub fn whale(pose: &Pose, quiet: f64, now: Instant) -> impl IntoElement {
+pub fn whale(pose: &Pose, quiet: f64, now: Instant) -> impl IntoElement + use<> {
     let name = drawn(pose.act, quiet);
     let frame = crate::agents::assets::mascot(name, now);
     // Standing still, she breathes as Ely does.

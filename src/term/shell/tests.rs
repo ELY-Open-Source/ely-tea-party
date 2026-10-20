@@ -9,7 +9,11 @@ use futures::channel::mpsc::TryRecvError;
 use super::*;
 use crate::{
     settings::Settings,
-    term::{Events, Pty, PtyEvent, config, marks::Mark, spawn},
+    term::{
+        Events, Pty, PtyEvent, config,
+        marks::{Click, Mark},
+        spawn,
+    },
 };
 
 /// A folder name with a space, a percent, a bell and a newline.
@@ -146,9 +150,9 @@ impl Run {
 
     /// The prompt's folder, the script loaded by `probe`, then a cd into the inner folder.
     fn walk(&mut self, probe: &str) {
-        let first = [Mark::Prompt, Mark::Input];
+        let first = [Mark::Prompt(Click::Arrows), Mark::Input];
         self.until("the first prompt's marks", |run| {
-            run.marks.starts_with(&first)
+            run.marks.len() >= 2 && ends_like(&run.marks[..2], &first)
         });
         let start = self.start.clone();
         self.send(probe);
@@ -173,7 +177,7 @@ impl Run {
         let from = self.marks.len();
         self.send(line);
         self.until(&format!("the marks of {line}"), |run| {
-            run.marks[from..].ends_with(marks)
+            ends_like(&run.marks[from..], marks)
         });
     }
 
@@ -222,9 +226,20 @@ fn ended(status: i32) -> [Mark; 4] {
     [
         Mark::Output,
         Mark::Done(Some(status)),
-        Mark::Prompt,
+        Mark::Prompt(Click::Arrows),
         Mark::Input,
     ]
+}
+
+/// Whether `heard` ends as `wanted` does, a prompt's way of taking a click aside: fish from 4.1 takes clicks itself.
+fn ends_like(heard: &[Mark], wanted: &[Mark]) -> bool {
+    let Some(start) = heard.len().checked_sub(wanted.len()) else {
+        return false;
+    };
+    heard[start..].iter().zip(wanted).all(|pair| match pair {
+        (Mark::Prompt(_), Mark::Prompt(_)) => true,
+        (heard, wanted) => heard == wanted,
+    })
 }
 
 #[test]
@@ -289,7 +304,8 @@ fn zsh_says_why_it_marks_no_prompt_without_prompt_percent() {
     run.send("false");
     let ended = [Mark::Output, Mark::Done(Some(1))];
     run.until("the command's marks", |run| run.marks.ends_with(&ended));
-    assert!(!run.marks.contains(&Mark::Prompt), "{:?}", run.marks);
+    let prompted = run.marks.iter().any(|mark| matches!(mark, Mark::Prompt(_)));
+    assert!(!prompted, "{:?}", run.marks);
     run.finish();
 }
 
@@ -349,7 +365,7 @@ fn bash_says_why_it_marks_no_command_without_promptvars() {
         run.shows("Ely Tea Party: bash marks no command while promptvars is off")
     });
     run.walk("declare -F _ely_prompt >/dev/null && echo ELY-LOAD''ED");
-    run.ends("false", &[Mark::Prompt, Mark::Input]);
+    run.ends("false", &[Mark::Prompt(Click::Arrows), Mark::Input]);
     run.finish();
 }
 
@@ -420,4 +436,25 @@ fn an_unknown_shell_starts_without_integration() {
     let launch = launch("/bin/sh", PathBuf::from("/"), &dir).expect("a launch");
     assert_eq!(launch.program, Some(("/bin/sh".into(), Vec::new())));
     assert!(launch.env.is_empty());
+}
+
+#[test]
+fn each_shell_reads_a_dropped_path_its_own_way() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = folder("quote");
+    for (name, quote) in [
+        ("zsh", Quote::Posix),
+        ("fish", Quote::Posix),
+        ("pwsh", Quote::PowerShell),
+        ("powershell", Quote::PowerShell),
+        ("cmd", Quote::Cmd),
+        ("other", Quote::Posix),
+    ] {
+        let program = dir.join(name);
+        fs::write(&program, "").expect("a program");
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).expect("its mode");
+        let shell = program.to_str().expect("utf-8");
+        let launch = launch(shell, PathBuf::from("/"), &dir).expect("a launch");
+        assert_eq!(launch.quote, quote, "{name}");
+    }
 }

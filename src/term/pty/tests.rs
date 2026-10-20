@@ -5,6 +5,7 @@ use alacritty_terminal::{
 use futures::StreamExt;
 
 use super::*;
+use crate::term::{drop::Quote, marks::Click};
 use crate::term::{
     notify::Ask,
     status::{Record, State},
@@ -34,6 +35,7 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
         cwd: std::env::temp_dir(),
         env: vec![("ELY".into(), "ok".into())],
         reports: false,
+        quote: Quote::Posix,
     };
     let (pty, mut events) =
         spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
@@ -115,7 +117,12 @@ fn osc_133_reaches_the_session_as_marks() {
         "printf '\\033]133;A\\007>\\033]133;B\\007\\033]133;C\\033\\\\x\\033]133;D;3\\007'",
         (40, 4),
     );
-    let marks = [Mark::Prompt, Mark::Input, Mark::Output, Mark::Done(Some(3))];
+    let marks = [
+        Mark::Prompt(Click::Arrows),
+        Mark::Input,
+        Mark::Output,
+        Mark::Done(Some(3)),
+    ];
     assert_eq!(ran.marks, marks);
     assert_eq!(ran.text, ">x");
     assert_eq!(ran.prompt, [0], "the prompt's cell, not the output's");
@@ -235,6 +242,7 @@ fn the_foreground_is_the_program_s_own_group() {
         cwd: std::env::temp_dir(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let (pty, _events) =
         spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
@@ -264,6 +272,7 @@ fn close_after_ready(script: &str, reaped: &str) {
         cwd: std::env::temp_dir(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let (pty, mut events) =
         spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
@@ -310,6 +319,7 @@ fn a_missing_folder_stops_the_start() {
         cwd: "/nonexistent/ely".into(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let error = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()))
         .err()
@@ -328,6 +338,7 @@ fn a_folder_that_cannot_be_entered_stops_the_start() {
         cwd: folder.clone(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let started = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()));
     std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");

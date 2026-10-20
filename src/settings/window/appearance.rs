@@ -1,8 +1,10 @@
 use std::ops::RangeInclusive;
 
 use ely_gpui_component::{
-    forms::{FontPicker, NumberInput, RadioCard, Slider, Switch},
+    buttons::{Button, ButtonVariant, IconButton},
+    forms::{FontPicker, NumberInput, RadioCard, Slider, Switch, TextInput},
     layout::SimpleGrid,
+    primitives::IconName,
     settings::{SettingsRow, SettingsSection},
     theme::{ActiveTheme, ControlSize, Mix, Radius, TextSize},
 };
@@ -72,8 +74,12 @@ impl SettingsWindow {
                     }
                 }
             });
+        let fallbacks = SettingsRow::new("Fallbacks")
+            .description("Tried in order for characters the family lacks")
+            .control(self.fallback_list(cx));
         let font = SettingsSection::new("Font")
             .row(SettingsRow::new("Family").control(div().w(theme.prose_width()).child(family)))
+            .row(fallbacks)
             .row(SettingsRow::new("Size").control(self.number(
                 "font_size",
                 settings.font_size,
@@ -173,6 +179,98 @@ impl SettingsWindow {
             .child(background)
     }
 
+    /// An input for each fallback picker and the one that adds a family.
+    pub(super) fn grow_fallbacks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let wanted = SettingsStore::get(cx).font_fallbacks.len() + 1;
+        while self.fallbacks.len() < wanted {
+            let input = cx.new(|cx| TextInput::new(window, cx));
+            self.fallbacks.push(input);
+        }
+    }
+
+    /// Each fallback family, a picker that replaces it and a button that removes it, then Add or the empty picker it opens.
+    fn fallback_list(&self, cx: &Context<Self>) -> Div {
+        let this = cx.entity();
+        let families = SettingsStore::get(cx).font_fallbacks.clone();
+        let width = cx.theme().prose_width();
+        let row = |index: usize, picker: FontPicker, remove: IconButton| {
+            let tip = if index < families.len() {
+                "Remove"
+            } else {
+                "Cancel"
+            };
+            div()
+                .flex()
+                .items_start()
+                .gap_2()
+                .child(div().w(width).child(picker))
+                .child(
+                    remove
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .tooltip(tip),
+                )
+        };
+        let rows = families.iter().enumerate().map(|(index, family)| {
+            let picker = FontPicker::new(keyed(&self.fallbacks[index]), &self.fallbacks[index])
+                .selected(family.clone())
+                .on_change(pick(&this, index));
+            let remove = IconButton::new(("remove_fallback", index), IconName::X).on_click({
+                let (this, family) = (this.clone(), family.clone());
+                move |_, window, cx| {
+                    let dropped = format!("font_fallbacks drops {family:?}");
+                    let removed = set(&this, dropped, cx, |settings| {
+                        settings.font_fallbacks.remove(index);
+                    });
+                    // Each input left keeps its own family, and none the dropped one.
+                    if removed {
+                        this.update(cx, |this, _| this.fallbacks.remove(index));
+                        window.blur(cx);
+                    }
+                }
+            });
+            row(index, picker, remove)
+        });
+        let next = families.len();
+        let add = if self.adding {
+            let picker = FontPicker::new(keyed(&self.fallbacks[next]), &self.fallbacks[next])
+                .on_change(pick(&this, next));
+            let cancel = IconButton::new("cancel_fallback", IconName::X).on_click({
+                let this = this.clone();
+                move |_, window, cx| {
+                    this.update(cx, |this, cx| this.leave_adding(cx));
+                    window.blur(cx);
+                }
+            });
+            row(next, picker, cancel)
+        } else {
+            let add = Button::new("add_fallback", "Add fallback")
+                .icon(IconName::Plus)
+                .size(ControlSize::Sm)
+                .on_click({
+                    let this = this.clone();
+                    move |_, _, cx| {
+                        this.update(cx, |this, cx| {
+                            this.adding = true;
+                            cx.notify();
+                        })
+                    }
+                });
+            div().child(add)
+        };
+        div().flex().flex_col().gap_2().children(rows).child(add)
+    }
+
+    /// Closes the empty picker, its text gone.
+    fn leave_adding(&mut self, cx: &mut Context<Self>) {
+        let next = SettingsStore::get(cx).font_fallbacks.len();
+        if let Some(input) = self.fallbacks.get(next) {
+            input.update(cx, |input, cx| input.set_text("", cx));
+        }
+        self.adding = false;
+        cx.notify();
+    }
+
     /// A field over `range`, by `step` to `places`, that saves each committed number through `put`; a refusal starts it again from the settings.
     fn number(
         &self,
@@ -195,6 +293,50 @@ impl SettingsWindow {
                     put(settings, value)
                 });
             })
+    }
+}
+
+/// A fallback picker's id, its input's: Ely's combobox keeps state by id and listens to the input it met first.
+fn keyed(input: &Entity<TextInput>) -> (&'static str, u64) {
+    ("font_fallback", input.entity_id().as_u64())
+}
+
+/// Saves the family picked at fallback `index`, past the last adds one; a refusal shows the saved family again, the list closed.
+fn pick(
+    this: &Entity<SettingsWindow>,
+    index: usize,
+) -> impl Fn(&SharedString, &mut Window, &mut App) + 'static {
+    let this = this.clone();
+    move |family, window, cx| {
+        let family = family.to_string();
+        let adds = index == SettingsStore::get(cx).font_fallbacks.len();
+        let saved = set(
+            &this,
+            format!("font_fallbacks[{index}] is {family:?}"),
+            cx,
+            |settings| {
+                if adds {
+                    settings.font_fallbacks.push(family)
+                } else {
+                    settings.font_fallbacks[index] = family
+                }
+            },
+        );
+        if adds && saved {
+            this.update(cx, |this, cx| {
+                this.adding = false;
+                cx.notify();
+            });
+        } else if !saved {
+            let shown = SettingsStore::get(cx)
+                .font_fallbacks
+                .get(index)
+                .cloned()
+                .unwrap_or_default();
+            let input = this.read(cx).fallbacks[index].clone();
+            input.update(cx, |input, cx| input.set_text(shown, cx));
+            window.blur(cx);
+        }
     }
 }
 

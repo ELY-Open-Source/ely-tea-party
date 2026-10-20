@@ -26,7 +26,10 @@ impl Workspace {
         };
         let session = &mut self.sessions[index];
         match event {
-            TerminalEvent::Title(title) => session.title.clone_from(title),
+            TerminalEvent::Title(title) => {
+                log::debug!("app: session {}'s program names it {title:?}", index + 1);
+                session.title.clone_from(title);
+            }
             TerminalEvent::Folder(folder) => {
                 session.folder.clone_from(folder);
                 session.reports = true;

@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.95"
 license = "MIT"
 description = "A terminal for coding agents, on GPUI and Ely; a fork of Ely Tea Party."
+repository = "https://github.com/qiz029/ely-tea-party"
 publish = false
 
 [dependencies]
@@ -13,7 +14,7 @@ anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 base64 = "0.22"
 dirs = "7"
-ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "da3fdcaf39f2fa85ce1dd9cad07c3c81cf1dd721" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "7f7a715d797d8450eed4f17ae8002b5427d01d28" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
@@ -43,7 +44,7 @@ raw-window-handle = "0.6"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-x11rb = "0.13"
+x11rb = { version = "0.13", features = ["randr"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 wayland-protocols = { version = "0.32", features = ["server", "staging"] }
@@ -63,7 +64,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Pipes", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_System_IO"] }

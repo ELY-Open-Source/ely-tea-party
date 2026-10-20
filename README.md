@@ -23,7 +23,7 @@
   <img src="docs/screenshot.png" width="900" alt="Ely Tea Party with five agents: Claude学姐 editing, GPT娘 running tests, Gemini星 reading, Kimi兔 waiting for an answer, Grok娘 done; the whale girl peeks over the window, and the right column shows Git and Codex's plan usage">
 </p>
 
-Ely Tea Party is a fork of [ELYTerminal](https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal) by Zachary Zhang, made with their permission. The terminal, its engine and its design are theirs; this fork adds one opinion on top: **a terminal for running coding agents**, where a glance at the left column tells you who is working, who is thinking and who is waiting for you.
+Ely Tea Party is a fork of [ELYTerminal](https://github.com/ELY-Open-Source/ELYTerminal) by Zachary Zhang, made with their permission. The terminal, its engine and its design are theirs; this fork adds one opinion on top: **a terminal for running coding agents**, where a glance at the left column tells you who is working, who is thinking and who is waiting for you.
 
 ## Meet the party
 
@@ -59,7 +59,7 @@ Each girl has eight animations: working, researching, her special move, slacking
 
 Grab the latest build from [Releases](https://github.com/qiz029/ely-tea-party/releases/latest).
 
-From 0.3.4 on, the app checks Releases itself: when a newer version is out, a button in the title bar says so. On macOS one press downloads it, checks its signature and puts it in place, and a second press restarts into it; on Windows and Linux the button opens the release's page.
+From 0.3.4 on, the app checks Releases itself, unless Settings › Terminal › Check for updates automatically is off: when a newer version is out, a button in the title bar says so. On macOS one press downloads it, checks its signature and puts it in place, and a second press restarts into it; on Windows and Linux the button opens the release's page.
 
 | Platform | Build | |
 |---|---|---|
@@ -94,7 +94,7 @@ It covers Claude Code, Codex, Gemini, Antigravity, Grok, Kimi Code and dscode, p
   <img src="docs/mascot.png" width="560" alt="The whale girl standing, snacking, slacking off with chips, and asleep among her empty bowls">
 </p>
 
-At rest she just stands there. After a minute with nothing happening she sneaks a snack and slacks off by turns, and after five she falls asleep. Typing in a terminal, a click in the window or any change in your sessions wakes her; click her for her special move. Settings › Terminal › **Mascot** hides her, and **Who peeks** brings back upstream's Ely in her place.
+At rest she just stands there. After a minute with nothing happening she sneaks a snack and slacks off by turns, and after five she falls asleep. Typing in a terminal, a click in the window or any change in your sessions wakes her; click her for her special move, or drag her along the edge to move her. Settings › Terminal › **Mascot** hides her, and **Who peeks** brings back upstream's Ely in her place.
 
 ## Keys
 
@@ -164,9 +164,9 @@ scripts/release-asset.sh target/release/ely-tea-party-VERSION.dmg
 <details>
 <summary><b>Under the hood</b></summary>
 
-- **Terminal.** `alacritty_terminal`: 256 colors and truecolor, bold, dim, italic, five underline styles, wide characters and combining marks. Box drawing, block elements and powerline shapes are drawn as geometry, so lines join across cells. Keys follow xterm and the kitty keyboard protocol, and on Windows win32-input-mode, so herdr's shortcuts work; input methods compose at the cursor; programs can track the mouse; pastes are bracketed when a program asks; OSC 8 and plain links open with the link press; find searches the scrollback.
+- **Terminal.** `alacritty_terminal`: 256 colors and truecolor, bold, dim, italic, five underline styles, wide characters and combining marks. Box drawing, block elements and powerline shapes are drawn as geometry, so lines join across cells. Keys follow xterm and the kitty keyboard protocol, and on Windows win32-input-mode, so herdr's shortcuts work; input methods compose at the cursor; programs can track the mouse; pastes are bracketed when a program asks; OSC 8 and plain links open with the link press; find searches the scrollback. A scrollbar along the right edge scrolls the history, even while a program takes the wheel. A click on the line the shell reads moves its cursor there. Files dropped on the terminal type their paths, quoted for the session's shell. Fallback fonts cover characters the font lacks.
 - **Shell integration** for zsh, bash, fish and PowerShell: each prompt reports its folder and title, and OSC 133 marks each prompt, each command and its exit status.
-- **Sessions.** A bell marks a hidden session's row. A session without an agent shows a mark of what its programs report through OSC 7501, OSC 9;4 or herdr: waiting on you, an error, work with its progress, done or idle. Rows drag up and down to reorder; long folders shorten fish-style, with the whole path on hover.
+- **Sessions.** A double click on a row renames the session; an empty name gives it back its title. A bell marks a hidden session's row. A session without an agent shows a mark of what its programs report through OSC 7501, OSC 9;4 or herdr: waiting on you, an error, work with its progress, done or idle. Rows drag up and down to reorder; long folders shorten fish-style, with the whole path on hover.
 - **Notifications.** While the window is in the background or the session hidden, a session that starts waiting, finishes or fails, and a program's OSC 9, 777 or 99, post a system notification; a press shows the session. On macOS only the app bundle posts them.
 - **Plan usage.** Codex's is read from its own session logs, with no login. Claude Code's comes from the endpoint its `/usage` asks, every 5 minutes, with the login Claude Code keeps, sent through `curl` so the token never appears in a process list; the app never refreshes that login.
 - **Panels.** Files shows the session's folder as a tree with Git's marks. Git shows the branch, stages, unstages, discards, commits, lists recent commits and opens diffs, all through the `git` command line. Both side columns resize by dragging their border, and the window opens at the size it was left at.
@@ -176,7 +176,7 @@ scripts/release-asset.sh target/release/ely-tea-party-VERSION.dmg
 
 ## Credits
 
-- [ELYTerminal](https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal) by Zachary Zhang, the terminal this forks, and its [Ely components](https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components) on [GPUI](https://www.gpui.rs).
+- [ELYTerminal](https://github.com/ELY-Open-Source/ELYTerminal) by Zachary Zhang, the terminal this forks, and its [Ely components](https://github.com/ELY-Open-Source/Ely-GPUI-Components) on [GPUI](https://www.gpui.rs).
 - The characters come from cmux-todd-ui, which draws the same girls for cmux; `scripts/agents.py` and `scripts/mascot.py` turn its art into the animations built into the app.
 
 ## License

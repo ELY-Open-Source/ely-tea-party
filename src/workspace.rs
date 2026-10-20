@@ -21,6 +21,7 @@ mod keys;
 mod order;
 mod panel;
 mod party;
+mod rename;
 pub mod restore;
 mod update;
 mod usage;
@@ -149,6 +150,8 @@ impl Workspace {
             agent: None,
             terminal,
             title: String::new(),
+            name: String::new(),
+            editing: None,
             folder: launch.cwd,
             reports: launch.reports,
             bell: false,
@@ -266,13 +269,9 @@ impl Workspace {
         &self.sessions
     }
 
-    /// The shown session's title, or the app's name while its program names none.
+    /// What the shown session is called.
     fn title(&self) -> &str {
-        self.sessions
-            .get(self.active)
-            .map(|session| session.title.as_str())
-            .filter(|title| !title.is_empty())
-            .unwrap_or(TITLE)
+        self.sessions.get(self.active).map_or(TITLE, Session::named)
     }
 
     fn retitle(&self, window: &mut Window) {

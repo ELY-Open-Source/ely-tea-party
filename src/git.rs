@@ -25,9 +25,9 @@ fn line<A: AsRef<OsStr>>(args: &[A]) -> String {
     args.join(" ")
 }
 
-/// Keeps Windows from opening a console window for git.
+/// Keeps Windows from opening a console window for git and curl.
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Runs git in `folder`: English messages, literal paths, no lock the user's own git could meet; `input` feeds stdin.
 fn git<A: AsRef<OsStr>>(folder: &Path, args: &[A], input: &[u8]) -> anyhow::Result<Output> {

@@ -129,3 +129,37 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 27. Release
 
 - [x] T50 v0.1.4 rebuilt with T48 and T49, which the owner asked for in place of a v0.1.5: the version stays 0.1.4; the macOS disk image, the Windows zip and the Linux tarball, each from its script, replace the old ones on the release; the tag moves to their commit; the notes give the new SHA-256 and what changed.
+
+## 28. Ely's place, sleep and frame
+
+- [x] T51 Ely stands inside the main window at its bottom left while no room lies above it, which the owner asked for after 0.1.4, where on a window at the screen's top or full screen she stuck between the menu bar and the terminal, on macOS, Windows and Linux: her bottom stands on the pane's top edge while her box fits under the top of the work area of the main window's display, else on the pane's bottom edge, as far in from the left; on Wayland, which tells a client nothing of its place, on the bottom edge while the window is full screen, maximized or tiled at its top as gpui reports it, which it does for a window it draws itself.
+- [x] T52 A press wakes Ely from her doze, which the owner asked for: she dozes after five calm minutes since the later of her mood's start and the last press, so a press wakes her for five more.
+- [x] T53 Ely's window shows nothing but her, which the owner asked for after a line showed along its top on macOS: there her window is a borderless panel, without the titled frame gpui's popup carries, whose edge macOS draws; on Windows and Linux her window shows no frame, border or shadow.
+
+## 29. Release
+
+- [x] T54 Release v0.1.5 with T51 to T53: version 0.1.5; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed.
+
+## 30. Ely's drag, updates and the scrollbar
+
+- [x] T55 A drag moves Ely along the edge she stands on, which the owner asked for after 0.1.5: she follows the pointer sideways inside the pane, on macOS, Windows and X11 as it moves, on Wayland, whose popup keeps its place, once it lets go; where she stands, in points from the pane's left edge, the settings keep as `ely_left`.
+- [x] T56 Settings › Terminal checks for updates, which the owner asked for after 0.1.5: under Ely, a switch checks ELYTerminal's latest release at start and once a day, on by default, and a button checks at once; the row says what the check found, and a newer release brings a button that opens its page; a newer release an automatic check finds posts a system notification, whose press opens that page.
+- [x] T58 The terminal shows a scrollbar over its history, which a user asked for in issue #2 after 0.1.5, since a program that takes the mouse takes the wheel too: a thumb along its right edge, in Ely's sizes and colors, stands where the view stands in the history, and a drag on it moves the view through it; none shows without history, as on the alternate screen, and a press on it never reaches the terminal.
+
+## 31. Release
+
+- [x] T57 Release v0.1.6 with T55, T56 and T58: version 0.1.6; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed.
+
+## 32. User feedback after 0.1.6
+
+- [x] T59 A plain click on the line typed at the shell prompt moves the cursor there, which a user asked for after 0.1.6, as Ghostty's `cursor-click-to-move`: while the shell's OSC 133 marks say it reads a line, a click that does not drag sends Left or Right arrows, one per character, to the clicked cell of the cursor's line, soft wraps joined; never on the alternate screen, under mouse tracking, with a selection, or before the prompt's end.
+- [x] T66 Files dropped on the terminal type their paths, which a user asked for after 0.1.6, as macOS Terminal does: each path quoted for the shell, joined by spaces, sent as a paste, on macOS, Windows and Linux.
+- [x] T60 Fallback fonts, which a user asked for after 0.1.6: `font_fallbacks` in the settings, a list of installed families tried in order for a character Font family lacks, CJK among them; Settings › Appearance lists them under Font family, each an Ely `FontPicker` with a remove button, and an Add button; each saves only when gpui loads it.
+- [x] T61 On Windows the IME's candidate window stays at the cursor, which a user found jumping after 0.1.6: find why it moves, fix the cause, and log what the input handler tells the IME. Not reproduced on the owner's PC, so the owner closed it; the caret the IME is told is logged.
+- [x] T62 Ely's body runs on below the edge she holds, which a user asked for after 0.1.6, where a hop lifted her off the window and left a gap under her collar: her shirt continues down, hidden behind the edge, so a hop shows more of her and never a gap.
+- [x] T63 A double-click on a session's title renames it, which a user asked for after 0.1.6: the row's title turns into a field, Enter keeps the name, Escape drops it; the name shows in the row, the terminal's header and the window's title over the program's own until renamed again, and an empty name gives the title back to the program; it lives as long as the session.
+- [x] T65 Dragging the window on Windows 10 with Background blur on follows the pointer, which a user found lagging seconds behind in issue #3 after 0.1.5: find where the lag comes from in gpui's acrylic path, fix the cause on Windows 10 alone, log what changes, and reply on the issue.
+
+## 33. Release
+
+- [ ] T64 Release v0.1.7 with T59 to T63, T65 and T66: version 0.1.7; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed in English and Chinese.

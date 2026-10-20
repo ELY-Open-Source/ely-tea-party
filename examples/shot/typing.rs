@@ -318,3 +318,20 @@ fn key(spec: &str, number: u32, kinds: &[u64]) -> anyhow::Result<()> {
     log::info!("shot: typed {spec}, the app {state}");
     Ok(())
 }
+
+/// A file drop of `paths`, one a line, at `at`, `x,y` from the content's top-left, as gpui's AppKit view sends it.
+pub fn drop(at: &str, paths: &str) -> anyhow::Result<[gpui::PlatformInput; 4]> {
+    use gpui::{ExternalPaths, FileDropEvent, PlatformInput, point, px};
+    let (x, y) = at
+        .split_once(',')
+        .with_context(|| format!("a point in {at}"))?;
+    let position = point(px(x.parse()?), px(y.parse()?));
+    let paths = ExternalPaths(paths.lines().map(Into::into).collect());
+    Ok([
+        FileDropEvent::Entered { position, paths },
+        FileDropEvent::Pending { position },
+        FileDropEvent::Submit { position },
+        FileDropEvent::Ended,
+    ]
+    .map(PlatformInput::FileDrop))
+}

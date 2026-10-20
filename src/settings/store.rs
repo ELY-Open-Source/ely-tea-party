@@ -24,7 +24,7 @@ impl SettingsStore {
         let folder = dirs::config_dir().context("settings: the platform names no config folder")?;
         let path = folder.join("ely-tea-party").join("settings.json");
         let settings = load(&path)?;
-        loads(&settings.font_family, cx)
+        fonts(&settings, cx)
             .with_context(|| format!("settings: {} holds a bad value", path.display()))?;
         cx.set_global(Self { settings, path });
         Ok(())
@@ -43,8 +43,10 @@ impl SettingsStore {
             return Ok(());
         }
         next.validate()?;
-        if next.font_family != store.settings.font_family {
-            loads(&next.font_family, cx)?;
+        if (&next.font_family, &next.font_fallbacks)
+            != (&store.settings.font_family, &store.settings.font_fallbacks)
+        {
+            fonts(&next, cx)?;
         }
         save(&store.path, &next)?;
         cx.global_mut::<Self>().settings = next;
@@ -52,9 +54,18 @@ impl SettingsStore {
     }
 }
 
-/// Checks the terminal can load `family`.
-fn loads(family: &str, cx: &App) -> anyhow::Result<()> {
-    crate::term::load_font(&gpui::font(family.to_string()), cx.text_system()).map(|_| ())
+/// Checks the terminal can load its family and each fallback; the error names the field.
+fn fonts(settings: &Settings, cx: &App) -> anyhow::Result<()> {
+    let fallbacks = settings
+        .font_fallbacks
+        .iter()
+        .map(|family| ("font_fallbacks", family));
+    for (field, family) in std::iter::once(("font_family", &settings.font_family)).chain(fallbacks)
+    {
+        crate::term::load_font(&gpui::font(family.clone()), cx.text_system())
+            .with_context(|| field.to_string())?;
+    }
+    Ok(())
 }
 
 /// The file's settings; defaults when there is no file. A file that fails to read or check is an error.

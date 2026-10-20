@@ -170,6 +170,23 @@ fn a_press_winks_with_a_heart_that_rises() {
 }
 
 #[test]
+fn a_press_wakes_her_from_her_doze_for_five_minutes_more() {
+    assert_eq!(at(Mood::Calm, 400.0).act, Act::Doze, "asleep, unpressed");
+    let pressed = |since: f64| pose(Mood::Calm, 400.0 + since, 410.0 + since, Some(since));
+    assert_eq!(pressed(0.5).act, Act::Wink);
+    assert_eq!(
+        (pressed(2.0).act, pressed(2.0).eyes),
+        (Act::Calm, Eyes::Open),
+        "awake after the wink"
+    );
+    assert_eq!(pressed(299.0).act, Act::Calm, "awake five minutes");
+    assert_eq!(pressed(301.0).act, Act::Doze, "then asleep again");
+    assert!(pressed(300.3).open[0] < 1.0, "her eyes fall shut again");
+    let finished = pose(Mood::Done, 400.0, 410.0, Some(2.0));
+    assert_eq!(finished.act, Act::Calm, "a finish long past wakes alike");
+}
+
+#[test]
 fn she_rises_from_behind_the_edge_when_she_comes() {
     assert!(pose(Mood::Calm, 0.0, 0.0, None).lift <= -DEPTH);
     assert!(pose(Mood::Calm, 0.3, 0.3, None).lift < 0.0);
