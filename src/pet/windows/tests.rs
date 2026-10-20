@@ -272,7 +272,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_an_edge_of_the_pa
     let work = work_area(main);
     move_main(main, (work.left + 200, work.top + 400));
     let pane = Bounds::new(point(px(0.), px(0.)), size(px(380.), px(280.)));
-    let roomy = glue.put(1.0, pane, 140.0).expect("placed");
+    let roomy = glue.put(1.0, pane, 140.0, None).expect("placed");
     let made = info(pet).rcWindow;
     deliver(pet);
     let (her, under) = (info(pet), info(main));
@@ -297,7 +297,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_an_edge_of_the_pa
     let (suggested, taken, stood) = change(display + 48);
     // At the work area's top the main window leaves her no room above it.
     move_main(main, (work.left + 200, work.top));
-    let cramped = glue.put(1.0, pane, 140.0).expect("placed again");
+    let cramped = glue.put(1.0, pane, 140.0, None).expect("placed again");
     deliver(pet);
     let (inside, low) = (info(pet).rcWindow, info(main).rcClient);
     unsafe {

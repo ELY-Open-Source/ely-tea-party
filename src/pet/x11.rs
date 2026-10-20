@@ -49,9 +49,9 @@ impl Glue {
         Ok(glue)
     }
 
-    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the monitor holding most of the pane, or of the work area where that lies lower, else on its bottom edge, `at` in as far as its width allows, stacked just above the main window's frame, and gives the edge.
-    pub fn place(&self, main: &Window, at: f32) -> anyhow::Result<Edge> {
-        self.put(main.scale_factor(), pane(main), at)
+    /// Stands her on the main window's pane, `at` in as far as its width allows, stacked just above the main window's frame, on `on` or else the edge the room gives, and gives that edge: the top while her box fits under the top of the monitor holding most of the pane, or of the work area where that lies lower, else the bottom.
+    pub fn place(&self, main: &Window, at: f32, on: Option<Edge>) -> anyhow::Result<Edge> {
+        self.put(main.scale_factor(), pane(main), at, on)
     }
 
     /// The pointer's x on the screen, in points at `scale`.
@@ -64,7 +64,13 @@ impl Glue {
     }
 
     /// Places her at `scale` on an edge of `pane`, in the main window's points.
-    fn put(&self, scale: f32, pane: Bounds<Pixels>, at: f32) -> anyhow::Result<Edge> {
+    fn put(
+        &self,
+        scale: f32,
+        pane: Bounds<Pixels>,
+        at: f32,
+        on: Option<Edge>,
+    ) -> anyhow::Result<Edge> {
         let (root, frame) = self.frame()?;
         let origin = (self.connection)
             .translate_coordinates(self.main, root, 0, 0)?
@@ -81,7 +87,7 @@ impl Glue {
         ];
         let usable = usable(&self.monitors(root)?, self.work_top(root)?, rect);
         let edge = edge(usable.map_or(0.0, |usable| (top - usable) as f32 / scale));
-        let bottom = down(match edge {
+        let bottom = down(match on.unwrap_or(edge) {
             Edge::Top => pane.origin.y,
             Edge::Bottom => pane.bottom(),
         });
@@ -278,7 +284,7 @@ mod tests {
             workarea,
         };
         let pane = Bounds::new(point(px(10.), px(10.)), size(px(380.), px(280.)));
-        let roomy = glue.put(2.0, pane, 140.0).expect("she is placed");
+        let roomy = glue.put(2.0, pane, 140.0, None).expect("she is placed");
         let check = x11rb::connect(Some(&xvfb.display))
             .expect("the check connects")
             .0;
@@ -331,7 +337,9 @@ mod tests {
             .expect("the request")
             .check()
             .expect("a work area");
-        let cramped = glue.put(2.0, pane, 140.0).expect("she is placed again");
+        let cramped = glue
+            .put(2.0, pane, 140.0, None)
+            .expect("she is placed again");
         let low = check
             .get_geometry(pet)
             .expect("the request")

@@ -224,3 +224,21 @@ fn a_change_of_act_eases_her_from_her_last_pose() {
         "her brows ease down"
     );
 }
+
+#[test]
+fn a_dive_hops_her_up_then_takes_her_behind_the_edge_where_she_stays() {
+    let lift = |since: f32| {
+        let mut pose = at(Mood::Calm, 1.0);
+        let calm = pose.lift;
+        diving(&mut pose, since);
+        pose.lift - calm
+    };
+    assert!(lift(0.0).abs() < 1e-5, "it starts where she is");
+    assert!(lift(DIVE * PUSH / 2.0) > SPRING * 0.9, "a hop up first");
+    assert!(lift(DIVE * 0.6) < 0.0, "then down");
+    assert!((lift(DIVE) + DEPTH).abs() < 1e-3, "as deep as she is tall");
+    assert!(
+        (lift(DIVE * 3.0) + DEPTH).abs() < 1e-3,
+        "and there she stays"
+    );
+}

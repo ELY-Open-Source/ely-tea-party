@@ -64,8 +64,8 @@ impl Glue {
         Ok(Self { pet, main })
     }
 
-    /// Stands her on the main window's top edge while her box fits under the top of its screen's visible frame, else on its bottom edge, `at` in as far as its width allows, and gives the edge.
-    pub fn place(&self, _: &Window, at: f32) -> anyhow::Result<Edge> {
+    /// Stands her `at` in as far as the main window's width allows, on `on` or else the edge the room gives, and gives that edge: the top while her box fits under the top of its screen's visible frame, else the bottom.
+    pub fn place(&self, _: &Window, at: f32, on: Option<Edge>) -> anyhow::Result<Edge> {
         unsafe {
             let frame: Rect = msg_send![self.main, frame];
             let screen: *mut Object = msg_send![self.main, screen];
@@ -75,7 +75,7 @@ impl Glue {
             let edge = edge((visible.origin.y + visible.height - top) as f32);
             let at = Point {
                 x: frame.origin.x + f64::from(left(gpui::px(frame.width as f32), at)),
-                y: match edge {
+                y: match on.unwrap_or(edge) {
                     Edge::Top => top,
                     Edge::Bottom => frame.origin.y,
                 },

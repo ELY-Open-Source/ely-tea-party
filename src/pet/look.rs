@@ -45,6 +45,10 @@ const PETTED: f32 = 1.5;
 /// Seconds she takes to rise from behind the edge, from as deep as she is tall.
 const RISE: f32 = 0.6;
 const DEPTH: f32 = 280.0;
+/// Seconds her dive behind the edge she leaves takes, the first part of it a hop up, and the hop's height.
+pub const DIVE: f32 = 0.5;
+const PUSH: f32 = 0.3;
+const SPRING: f32 = 20.0;
 /// Seconds she takes to ease from one act into the next.
 pub const EASE: f32 = 0.3;
 
@@ -97,6 +101,17 @@ pub struct Motion {
     pub scale: f32,
     pub turn: f32,
     pub alpha: f32,
+}
+
+/// Her pose `since` seconds into a dive behind the edge she leaves: a hop up, then down as deep as she is tall, where she stays.
+pub fn diving(pose: &mut Pose, since: f32) {
+    let t = (since / DIVE).clamp(0.0, 1.0);
+    let hop = if t < PUSH {
+        (t / PUSH * PI).sin() * SPRING
+    } else {
+        0.0
+    };
+    pose.lift += hop - DEPTH * ((t - PUSH).max(0.0) / (1.0 - PUSH)).powi(2);
 }
 
 /// Her pose at one moment, in the icon's units and degrees: lift and bob go up, marks and hands move as the icon's y does, down.

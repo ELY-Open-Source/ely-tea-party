@@ -4,6 +4,7 @@ mod drag;
 mod look;
 #[cfg(target_os = "macos")]
 mod macos;
+mod moving;
 mod rig;
 #[cfg(test)]
 mod tests;
@@ -35,7 +36,7 @@ use self::windows as platform;
 #[cfg(target_os = "linux")]
 use self::x11 as platform;
 use self::{
-    look::{Act, EASE, Mood, Pose, blend, mood, pose},
+    look::{Act, EASE, Mood, Pose, blend, diving, mood, pose},
     rig::Rig,
 };
 use crate::{
@@ -78,6 +79,9 @@ pub struct Pet {
     /// How far in from the pane's left edge she stands, and a drag under way: the pointer's x where it began and where she stood then.
     at: f32,
     drag: Option<(f32, f32)>,
+    /// The edge she dives to move to, and when the dive began.
+    moving: Option<(Edge, Instant)>,
+    landing: bool,
     main: WindowHandle<Workspace>,
     /// What keeps her window on the main window's edge, where the platform does not.
     glue: Option<platform::Glue>,
@@ -177,10 +181,12 @@ fn reanchor(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) -> anyho
     let Some(pet) = *shown.borrow() else {
         return Ok(());
     };
-    if pet
-        .read(cx)
-        .is_ok_and(|pet| (pet.edge, pet.anchor) == (spot.0, Some(spot.1)))
-    {
+    let (edge, anchor) = pet.read(cx).map(|pet| (pet.edge, pet.anchor))?;
+    if (edge, anchor) == (spot.0, Some(spot.1)) {
+        return Ok(());
+    }
+    // She dives behind the edge she leaves before she opens on the other.
+    if edge != spot.0 && !pet.update(cx, |pet, _, _| pet.dived(spot.0, Instant::now()))? {
         return Ok(());
     }
     close(
@@ -269,6 +275,8 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 anchor: wayland.then_some(spot),
                 at: kept,
                 drag: None,
+                moving: None,
+                landing: false,
                 main,
                 glue: None,
                 _watch: vec![feel],
@@ -299,16 +307,16 @@ fn glue(
     main.update(cx, |_, main, cx| {
         pet.update(cx, |pet, window, cx| {
             let glue = platform::Glue::new(window, main)?;
-            pet.edge = glue.place(main, pet.at)?;
+            pet.edge = glue.place(main, pet.at, None)?;
             pet.glue = Some(glue);
             pet._watch
-                .push(cx.observe_window_bounds(main, |pet, main, _| pet.place(main)));
+                .push(cx.observe_window_bounds(main, |pet, main, cx| pet.keep(main, cx)));
             pet._watch
-                .push(cx.observe_window_activation(main, |pet, main, _| pet.place(main)));
+                .push(cx.observe_window_activation(main, |pet, main, cx| pet.keep(main, cx)));
             #[cfg(target_os = "linux")]
             pet._watch.push(
-                cx.observe_window_visibility(main, |pet, visibility, main, _| {
-                    pet.shown(visibility.is_visible(), main)
+                cx.observe_window_visibility(main, |pet, visibility, main, cx| {
+                    pet.shown(visibility.is_visible(), main, cx)
                 }),
             );
             anyhow::Ok(pet.edge)
@@ -390,27 +398,15 @@ impl Pet {
                 self.eased = None;
             }
         }
+        if let Some((_, at)) = self.moving {
+            diving(&mut pose, since(at) as f32);
+        }
         self.last = Some(pose.clone());
         pose
     }
 
-    fn place(&mut self, main: &Window) {
-        let Some(glue) = &self.glue else {
-            return;
-        };
-        match glue.place(main, self.at) {
-            Ok(edge) if edge != self.edge => {
-                let name = format!("{edge:?}").to_lowercase();
-                log::info!("pet: Ely moves to the pane's {name} edge");
-                self.edge = edge;
-            }
-            Ok(_) => {}
-            Err(error) => log::error!("{error:#}"),
-        }
-    }
-
     #[cfg(target_os = "linux")]
-    fn shown(&mut self, visible: bool, main: &Window) {
+    fn shown(&mut self, visible: bool, main: &Window, cx: &mut Context<Self>) {
         if let Some(glue) = &self.glue {
             match glue.shown(visible) {
                 Ok(()) => log::debug!("pet: Ely shows {visible} with the main window"),
@@ -418,7 +414,7 @@ impl Pet {
             }
         }
         if visible {
-            self.place(main);
+            self.keep(main, cx);
         }
     }
 }

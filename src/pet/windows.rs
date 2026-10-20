@@ -77,9 +77,9 @@ impl Glue {
         Ok(Self { pet, main })
     }
 
-    /// Stands her on the main window's top edge while her box fits under the top of its display's work area, else on its bottom edge, `at` in as far as its width allows, and gives the edge.
-    pub fn place(&self, main: &Window, at: f32) -> anyhow::Result<Edge> {
-        self.put(main.scale_factor(), pane(main), at)
+    /// Stands her `at` in as far as the main window's width allows, on `on` or else the edge the room gives, and gives that edge: the top while her box fits under the top of its display's work area, else the bottom.
+    pub fn place(&self, main: &Window, at: f32, on: Option<Edge>) -> anyhow::Result<Edge> {
+        self.put(main.scale_factor(), pane(main), at, on)
     }
 
     /// The pointer's x on the screen, in points at `scale`.
@@ -91,7 +91,13 @@ impl Glue {
     }
 
     /// Posts her bottom left corner on an edge of `pane` at `scale`, `at` points in, in the main window's points; her window sizes her at the DPI it has when the place lands, as gpui did not when it opened her off the display.
-    fn put(&self, scale: f32, pane: Bounds<Pixels>, at: f32) -> anyhow::Result<Edge> {
+    fn put(
+        &self,
+        scale: f32,
+        pane: Bounds<Pixels>,
+        at: f32,
+        on: Option<Edge>,
+    ) -> anyhow::Result<Edge> {
         let mut main = WINDOWINFO {
             cbSize: size_of::<WINDOWINFO>() as u32,
             ..Default::default()
@@ -107,7 +113,7 @@ impl Glue {
         anyhow::ensure!(read != 0, "pet: the main window's display does not read");
         let (_, top) = stand(main.rcClient, scale, pane, Edge::Top, at);
         let edge = edge((top - display.rcWork.top) as f32 / scale);
-        let corner = stand(main.rcClient, scale, pane, edge, at);
+        let corner = stand(main.rcClient, scale, pane, on.unwrap_or(edge), at);
         let posted = unsafe { PostMessageW(self.pet, PLACE, pack(corner), 0) };
         anyhow::ensure!(posted != 0, "pet: her place does not post");
         log::debug!("pet: Ely is to stand on {corner:?}, the pane's {edge:?} edge");
