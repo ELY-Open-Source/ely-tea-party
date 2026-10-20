@@ -66,7 +66,7 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
                 }
                 PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                 PtyEvent::Term(Event::Exit) => break,
-                PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
+                PtyEvent::Term(_) | PtyEvent::Mouse(_) | PtyEvent::Speed(_) => {}
             }
         }
         (folders, marks, statuses, asks, said, success)

@@ -29,6 +29,19 @@ impl Workspace {
             TerminalEvent::Title(title) => {
                 log::debug!("app: session {}'s program names it {title:?}", index + 1);
                 session.title.clone_from(title);
+                if let Some(agent) = session.agent.as_mut()
+                    && agent.kind == crate::agents::Kind::Gpt
+                {
+                    agent.codex_title(title);
+                }
+            }
+            TerminalEvent::Speed(speed) => {
+                if let Some(agent) = session.agent.as_mut()
+                    && agent.kind == crate::agents::Kind::Gpt
+                    && agent.reported_speed(*speed)
+                {
+                    log::info!("agents: session {} speed is {speed:?}", session.id);
+                }
             }
             TerminalEvent::Folder(folder) => {
                 session.folder.clone_from(folder);

@@ -8,6 +8,7 @@ pub mod hooks;
 #[cfg(unix)]
 pub mod install;
 pub mod quips;
+pub mod speed;
 pub mod timeline;
 
 use std::{
@@ -278,6 +279,9 @@ pub fn env(_: u64) -> anyhow::Result<Vec<(String, String)>> {
 pub struct Agent {
     pub kind: Kind,
     pub status: Status,
+    pub speed: speed::Speed,
+    pub speed_inferred: bool,
+    speed_pid: Option<u32>,
     /// When the status began.
     pub since: Instant,
     /// Its last sign of life: a hook, or output while unhooked.
@@ -302,6 +306,9 @@ impl Agent {
         Self {
             kind,
             status: Status::Idle,
+            speed: speed::Speed::Unknown,
+            speed_inferred: false,
+            speed_pid: None,
             since: now,
             active: now,
             hooked: false,

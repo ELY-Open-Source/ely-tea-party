@@ -39,12 +39,15 @@ pub struct Report {
     /// The agent's conversation, which resumes it.
     #[serde(default)]
     pub conversation: Option<String>,
+    #[serde(default)]
+    pub speed: Option<super::speed::Speed>,
 }
 
 /// What an event means for the agent it comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Change {
     To(Status),
+    Speed,
     Ended,
 }
 
@@ -56,6 +59,7 @@ impl Report {
     /// Claude Code's hook events, which Codex's notify and others borrow.
     pub fn change(&self) -> Option<Change> {
         Some(match self.event.as_str() {
+            "Speed" => Change::Speed,
             "SessionStart" | "Stop" | "StopFailure" | "agent-turn-complete" => {
                 Change::To(Status::Idle)
             }
@@ -184,6 +188,7 @@ fn send(args: &[String]) -> anyhow::Result<()> {
         tool: said.tool,
         detail: said.detail,
         conversation: said.conversation,
+        speed: super::speed::Speed::read(agent, &payload),
     };
     let mut stream = UnixStream::connect(socket)?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
@@ -203,6 +208,7 @@ mod tests {
             tool: None,
             detail: None,
             conversation: None,
+            speed: None,
         };
         report.change()
     }

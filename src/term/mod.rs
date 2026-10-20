@@ -23,6 +23,7 @@ mod rail;
 mod reports;
 mod scrollbar;
 pub mod shell;
+mod speed;
 mod status;
 mod tap;
 mod titles;

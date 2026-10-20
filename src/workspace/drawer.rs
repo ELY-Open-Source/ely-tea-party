@@ -167,7 +167,7 @@ impl Workspace {
                 log::debug!("app: a bell in session {id}'s hidden drawer");
                 session.bell = true;
             }
-            TerminalEvent::Bell | TerminalEvent::Shows(_) => {}
+            TerminalEvent::Bell | TerminalEvent::Shows(_) | TerminalEvent::Speed(_) => {}
             TerminalEvent::Exited(status) => {
                 log::info!("app: session {id}'s drawer ended, {status}");
                 self.close_drawer(index, window, cx);
@@ -214,9 +214,16 @@ impl Workspace {
         let fill = || StyleRefinement::default().size_full();
         let session = self.sessions.get(self.active);
         let main = div()
+            .relative()
             .flex_1()
             .min_h_0()
-            .children(session.map(|session| session.terminal.clone().cached(fill())));
+            .children(session.map(|session| session.terminal.clone().cached(fill())))
+            .children(
+                session
+                    .and_then(|session| session.agent.as_ref())
+                    .filter(|agent| agent.speed.running(agent.status))
+                    .map(|agent| super::speed::border(agent.kind, agent.speed, cx)),
+            );
         let drawer = session
             .and_then(|session| session.drawer.as_ref())
             .filter(|drawer| drawer.open);

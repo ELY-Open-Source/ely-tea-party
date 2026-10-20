@@ -198,13 +198,16 @@ fn item(
         Some(agent) => {
             let pose = agent.pose(now, session.id);
             let since = agents::ago(now.saturating_duration_since(agent.since));
+            let speed = agent
+                .speed_label()
+                .map_or(String::new(), |label| format!(" · {label}"));
             // A name the user gave stands over the agent's.
             let name = match session.name.as_str() {
                 "" => agent.kind.name(),
                 name => name,
             };
             ListItem::new(("session", pid), name.to_string())
-                .description(format!("{} · {since}", agent.kind.label(pose)))
+                .description(format!("{} · {since}{speed}", agent.kind.label(pose)))
                 .detail(match agent.bubble(now) {
                     Some((_, line)) => format!("「{line}」"),
                     None => agent.news(pose).map_or(folder, |news| one_line(&news)),

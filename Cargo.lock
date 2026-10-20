@@ -1778,6 +1778,7 @@ dependencies = [
  "sha2 0.10.9",
  "signal-hook",
  "sysinfo 0.39.6",
+ "toml_edit 0.22.27",
  "unicode-normalization",
  "wayland-backend",
  "wayland-client",

@@ -27,6 +27,7 @@ pub(crate) struct Tapped<P> {
     prompts: Prompts,
     kitty: Kitty,
     titles: Titles,
+    speed: super::speed::Scanner,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -41,6 +42,7 @@ impl<P> Tapped<P> {
             prompts: Prompts::default(),
             kitty: Kitty::default(),
             titles: Titles::default(),
+            speed: super::speed::Scanner::default(),
             events,
             pid,
             last: None,
@@ -64,6 +66,9 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         let (kitty, titles) = (&mut self.kitty, &mut self.titles);
         self.scanner.feed(read, &mut |found| {
             report(found, events, pid, last, kitty, titles)
+        });
+        self.speed.feed(read, |speed| {
+            let _ = events.unbounded_send(PtyEvent::Speed(speed));
         });
         #[cfg(windows)]
         let win32 = self.modes.win32;

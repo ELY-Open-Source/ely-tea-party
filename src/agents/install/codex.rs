@@ -44,8 +44,12 @@ pub fn install(home: &Path) -> anyhow::Result<Installed> {
         &path,
         &value,
     );
-    files::write(&config, old.as_deref(), &text)?;
-    Ok(Installed { path, added })
+    let text = super::title::install(&text)?;
+    let changed = files::write(&config, old.as_deref(), &text)?;
+    Ok(Installed {
+        path,
+        added: added + usize::from(changed),
+    })
 }
 
 /// `config` with Codex's hooks feature on; an owner's `false` stops the install.
@@ -93,7 +97,11 @@ fn features_on(config: &str) -> anyhow::Result<String> {
 fn trusted(config: &str, path: &Path, hooks: &Value) -> String {
     let begin = format!("# {MARK} codex trust begin");
     let end = format!("# {MARK} codex trust end");
-    let outside = files::with_block(config, (&begin, &end), "");
+    // Codex may move unrelated tables between our old comment markers.
+    let outside = config
+        .split_inclusive('\n')
+        .filter(|line| ![begin.as_str(), end.as_str()].contains(&line.trim()))
+        .collect::<String>();
     let mut body = String::new();
     for event in EVENTS {
         let command = command_for("codex", event);
@@ -120,7 +128,11 @@ fn trusted(config: &str, path: &Path, hooks: &Value) -> String {
             }
         }
     }
-    files::with_block(config, (&begin, &end), &body)
+    if body.is_empty() {
+        outside
+    } else {
+        format!("{}\n\n{}", outside.trim_end(), body)
+    }
 }
 
 /// Codex's hash of one handler: sha256 of its compact JSON, keys sorted.
@@ -187,5 +199,29 @@ mod tests {
         );
         let owned = "[hooks.state.\"/h/.codex/hooks.json:stop:1:0\"]\ntrusted_hash = \"x\"\n";
         assert!(!trusted(owned, path, &hooks).contains("ely-tea-party codex trust begin\n["));
+    }
+
+    #[test]
+    fn codex_reordered_preferences_inside_old_markers_survive_install() {
+        let config = concat!(
+            "service_tier = \"ultrafast\"\n",
+            "# ely-tea-party codex trust begin\n",
+            "[hooks.state.\"/h/.codex/hooks.json:stop:0:0\"]\n",
+            "trusted_hash = \"owner\"\n",
+            "[tui]\nterminal_title = []\n",
+            "[notice]\nhide_rate_limit_model_nudge = true\n",
+            "# ely-tea-party codex trust end\n",
+        );
+        let hooks = serde_json::json!({"hooks": {"Stop": [
+            {"hooks": [{"command": command_for("codex", "Stop")}]}
+        ]}});
+        let path = Path::new("/h/.codex/hooks.json");
+        let installed = super::super::title::install(&trusted(config, path, &hooks)).unwrap();
+        let before: toml_edit::DocumentMut = config.parse().unwrap();
+        let after: toml_edit::DocumentMut = installed.parse().unwrap();
+        for key in ["service_tier", "hooks", "tui", "notice"] {
+            assert_eq!(before[key].to_string(), after[key].to_string(), "{key}");
+        }
+        assert_eq!(trusted(&installed, path, &hooks), installed);
     }
 }

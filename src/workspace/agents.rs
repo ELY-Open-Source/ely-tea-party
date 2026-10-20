@@ -132,6 +132,36 @@ impl Workspace {
                     session.id
                 );
             }
+            if let Some(agent) = session.agent.as_mut()
+                && agent.kind == crate::agents::Kind::Gpt
+            {
+                if let Some(pid) = view.foreground() {
+                    agent.startup_speed(pid, &session.folder);
+                }
+                if agent.speed == crate::agents::speed::Speed::Unknown
+                    || had.is_none_or(|(kind, _)| kind != agent.kind)
+                {
+                    agent.codex_title(&session.title);
+                }
+                if !agent.hooked
+                    && let Some((_, record)) = view.records().iter().find(|(id, record)| {
+                        id.is_empty() && record.app.as_deref() == Some("codex")
+                    })
+                {
+                    use crate::{agents::Status, term::State};
+                    let status = match record.state {
+                        State::Working => Status::Working,
+                        State::Blocked => Status::NeedsInput,
+                        _ => Status::Idle,
+                    };
+                    if agent.set(status, now) {
+                        log::info!(
+                            "agents: session {} native Codex state is {status:?}",
+                            session.id
+                        );
+                    }
+                }
+            }
             if let Some(drawer) = session.drawer.as_mut()
                 && drawer.check(cx)
             {
@@ -166,7 +196,17 @@ impl Workspace {
         };
         let session = &mut self.sessions[index];
         let now = Instant::now();
+        if change == Change::Speed {
+            if let Some(agent) = session.agent.as_mut()
+                && agent.observe_speed(report.kind(), report.conversation.as_deref(), report.speed)
+            {
+                log::info!("agents: session {} speed is {:?}", session.id, agent.speed);
+                cx.notify();
+            }
+            return;
+        }
         let status = match change {
+            Change::Speed => unreachable!(),
             Change::Ended => {
                 log::info!("agents: session {}'s {} ended", session.id, report.agent);
                 session.agent = None;
@@ -195,7 +235,19 @@ impl Workspace {
         agent.hooked = true;
         agent.program = Some(report.agent.clone());
         if let Some(conversation) = &report.conversation {
+            if agent
+                .conversation
+                .as_ref()
+                .is_some_and(|id| id != conversation)
+            {
+                agent.reported_speed(crate::agents::speed::Speed::Unknown);
+            }
             agent.conversation = Some(conversation.clone());
+        }
+        if let Some(speed) = report.speed
+            && agent.reported_speed(speed)
+        {
+            log::info!("agents: session {} speed is {speed:?}", session.id);
         }
         let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
         agent.note(&report.event, tool, detail, now);

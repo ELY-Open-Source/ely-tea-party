@@ -154,7 +154,10 @@ fn edit_json(
 
 pub fn claude_file(home: &Path) -> anyhow::Result<Installed> {
     let config = folder("CLAUDE_CONFIG_DIR", home.join(".claude"));
-    edit_json(config.join("settings.json"), claude)
+    edit_json(config.join("settings.json"), |settings| {
+        let speed = super::statusline::install(settings)?;
+        Ok(claude(settings)? + speed)
+    })
 }
 
 pub fn gemini(home: &Path) -> anyhow::Result<Installed> {

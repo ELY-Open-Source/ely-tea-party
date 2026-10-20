@@ -27,6 +27,7 @@ pub enum PtyEvent {
     Ask(Ask),
     /// A title a program set, in the output's order: OSC 0 or 2, or the title stack's pop.
     Title(String),
+    Speed(crate::agents::speed::Speed),
     /// A full reset, `ESC c`.
     Reset,
     /// win32-input-mode set or reset.

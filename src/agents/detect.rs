@@ -1,5 +1,7 @@
 //! Which agent a session's foreground job runs, read from the job leader's command line.
 
+pub(crate) mod process;
+
 use std::path::Path;
 
 use super::Kind;
@@ -104,48 +106,8 @@ fn installed(script: &str) -> Option<Kind> {
     Kind::named(name)
 }
 
-/// Process `pid`'s arguments, as it was started.
-#[cfg(target_os = "macos")]
 fn command(pid: u32) -> Option<Vec<String>> {
-    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as libc::c_int];
-    let mut size: libc::size_t = 0;
-    let none = std::ptr::null_mut();
-    if unsafe { libc::sysctl(mib.as_mut_ptr(), 3, none, &mut size, none, 0) } != 0 {
-        return None;
-    }
-    let mut buffer = vec![0u8; size];
-    let data = buffer.as_mut_ptr().cast();
-    if unsafe { libc::sysctl(mib.as_mut_ptr(), 3, data, &mut size, none, 0) } != 0 {
-        return None;
-    }
-    buffer.truncate(size);
-    // argc, the executable's path, NUL padding, then argc NUL-ended arguments.
-    let argc = i32::from_ne_bytes(buffer.get(..4)?.try_into().ok()?) as usize;
-    let rest = &buffer[4..];
-    let start = rest.iter().position(|byte| *byte == 0)?;
-    let start = start + rest[start..].iter().position(|byte| *byte != 0)?;
-    let argv = rest[start..]
-        .split(|byte| *byte == 0)
-        .take(argc)
-        .map(|arg| String::from_utf8_lossy(arg).into_owned())
-        .collect();
-    Some(argv)
-}
-
-#[cfg(target_os = "linux")]
-fn command(pid: u32) -> Option<Vec<String>> {
-    let line = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-    let argv = line
-        .split(|byte| *byte == 0)
-        .filter(|arg| !arg.is_empty())
-        .map(|arg| String::from_utf8_lossy(arg).into_owned())
-        .collect();
-    Some(argv)
-}
-
-#[cfg(windows)]
-fn command(_: u32) -> Option<Vec<String>> {
-    None
+    process::read(pid).map(|process| process.argv)
 }
 
 #[cfg(test)]

@@ -5,6 +5,8 @@ mod files;
 mod groups;
 mod kimi;
 mod plugins;
+mod statusline;
+mod title;
 
 use std::path::{Path, PathBuf};
 

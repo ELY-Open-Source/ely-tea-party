@@ -44,6 +44,7 @@ pub const BLINK: Duration = Duration::from_millis(600);
 #[derive(Clone, Debug, PartialEq)]
 pub enum TerminalEvent {
     Title(String),
+    Speed(crate::agents::speed::Speed),
     Folder(PathBuf),
     Bell,
     /// The state its row shows changed, to this one.
@@ -273,6 +274,7 @@ impl TerminalView {
                     cx.emit(TerminalEvent::Folder(folder));
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
+                PtyEvent::Speed(speed) => cx.emit(TerminalEvent::Speed(speed)),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
                 #[cfg(windows)]
                 PtyEvent::Win32(on) => self.win32 = on,

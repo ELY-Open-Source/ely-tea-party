@@ -23,6 +23,7 @@ mod panel;
 mod party;
 mod rename;
 pub mod restore;
+mod speed;
 mod update;
 mod usage;
 mod widths;
