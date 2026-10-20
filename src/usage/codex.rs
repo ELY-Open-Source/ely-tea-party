@@ -1,53 +1,65 @@
-//! Codex writes its plan's limits into each turn's `token_count` event in its session logs, so they are read there, with no login.
+//! Codex's plan limits, from the usage endpoint Codex itself asks, with the ChatGPT login Codex keeps, which is never refreshed here, as that would sign Codex out; while the endpoint cannot be asked, from Codex's session logs, marked with their age.
+
+mod logs;
 
 use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
 
 use anyhow::Context as _;
+use base64::Engine as _;
 use serde::Deserialize;
 
 use super::{Limit, Usage, window};
 
-/// How much of a log's end is searched for its last limits; a log runs to tens of megabytes.
-const TAIL: u64 = 2 << 20;
-
-/// How many of the newest logs are tried, since a log just begun holds no turn yet.
-const LOGS: usize = 8;
+const ENDPOINT: &str = "https://chatgpt.com/backend-api/wham/usage";
 
 #[derive(Deserialize)]
-struct Line {
-    payload: Payload,
+struct Auth {
+    tokens: Option<Tokens>,
 }
 
 #[derive(Deserialize)]
-struct Payload {
-    rate_limits: Option<Limits>,
+struct Tokens {
+    access_token: String,
+    account_id: Option<String>,
+}
+
+/// The claim of the access token the check before asking reads.
+#[derive(Deserialize)]
+struct Claims {
+    exp: u64,
 }
 
 #[derive(Deserialize)]
-struct Limits {
-    primary: Option<Window>,
-    secondary: Option<Window>,
-    credits: Option<Credits>,
+struct Answer {
     plan_type: Option<String>,
+    rate_limit: Option<RateLimit>,
+    credits: Option<Credits>,
+}
+
+#[derive(Deserialize)]
+struct RateLimit {
+    primary_window: Option<Window>,
+    secondary_window: Option<Window>,
 }
 
 #[derive(Deserialize)]
 struct Window {
     used_percent: f32,
-    window_minutes: Option<u64>,
-    resets_at: Option<u64>,
+    limit_window_seconds: Option<u64>,
+    reset_at: Option<u64>,
 }
 
+/// Credits as the endpoint and the logs both give them; the endpoint adds how many messages they buy, a range.
 #[derive(Deserialize)]
 struct Credits {
     has_credits: bool,
     unlimited: bool,
     balance: Option<String>,
+    #[serde(default)]
+    approx_local_messages: Option<[u64; 2]>,
 }
 
 pub fn read() -> anyhow::Result<Usage> {
@@ -57,108 +69,106 @@ pub fn read() -> anyhow::Result<Usage> {
             .context("usage: no home folder")?
             .join(".codex"),
     };
-    let logs = newest(&home.join("sessions"))?;
-    for log in &logs {
-        if let Some(limits) = last_limits(log)? {
-            return Ok(usage(limits));
-        }
-    }
-    anyhow::bail!(
-        "usage: none of Codex's {} newest logs holds its limits yet",
-        logs.len()
-    )
+    let asked = match ask(&home) {
+        Ok(usage) => return Ok(usage),
+        Err(error) => error,
+    };
+    log::info!("{asked:#}; Codex's logs are read instead");
+    let (mut usage, at) =
+        logs::read(&home).map_err(|logged| anyhow::anyhow!("{asked:#}; {logged:#}"))?;
+    let when = at.map_or("最后一次".into(), |at| ago(at, SystemTime::now()));
+    usage.note = Some(format!("接口没读到，这是本机 Codex 日志{when}的记录"));
+    Ok(usage)
 }
 
-/// The newest logs under `sessions`, which Codex files by year, month and day.
-fn newest(sessions: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    let mut logs = Vec::new();
-    let mut days = Vec::new();
-    for year in folders(sessions)?.into_iter().rev() {
-        for month in folders(&year)?.into_iter().rev() {
-            days.extend(folders(&month)?.into_iter().rev());
-        }
-        if days.len() >= 2 {
-            break;
-        }
+/// The endpoint's answer, with the login in `home`'s `auth.json`.
+fn ask(home: &Path) -> anyhow::Result<Usage> {
+    let file = home.join("auth.json");
+    let text = std::fs::read(&file).context("usage: Codex is not logged in")?;
+    let auth: Auth = serde_json::from_slice(&text)
+        .with_context(|| format!("usage: {} does not parse", file.display()))?;
+    let tokens = auth
+        .tokens
+        .context("usage: Codex is logged in with an API key, which has no plan")?;
+    if expired(&tokens.access_token, SystemTime::now()) {
+        anyhow::bail!("usage: Codex's login has expired; it renews when Codex next runs");
     }
-    for day in days.into_iter().take(2) {
-        for entry in std::fs::read_dir(&day)? {
-            let path = entry?.path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "jsonl")
-            {
-                let changed = std::fs::metadata(&path)?.modified()?;
-                logs.push((changed, path));
-            }
-        }
+    let mut headers = format!(
+        "Authorization: Bearer {}\nUser-Agent: ely-tea-party\n",
+        tokens.access_token
+    );
+    if let Some(account) = &tokens.account_id {
+        headers.push_str(&format!("ChatGPT-Account-Id: {account}\n"));
     }
-    logs.sort_by_key(|(changed, _)| std::cmp::Reverse(*changed));
-    Ok(logs.into_iter().take(LOGS).map(|(_, path)| path).collect())
+    let answer: Answer = serde_json::from_slice(&crate::curl::get("usage", ENDPOINT, &headers)?)
+        .context("usage: Codex's answer does not parse")?;
+    Ok(usage(answer))
 }
 
-/// `folder`'s subfolders in name order.
-fn folders(folder: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    let entries = std::fs::read_dir(folder)
-        .with_context(|| format!("usage: cannot read {}", folder.display()))?;
-    let mut folders = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            folders.push(entry.path());
-        }
-    }
-    folders.sort();
-    Ok(folders)
+/// Whether the access token's expiry has passed at `now`; a token that does not read is left to the endpoint to judge.
+fn expired(token: &str, now: SystemTime) -> bool {
+    let claims = token.split('.').nth(1).and_then(|part| {
+        let part = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(part.trim_end_matches('='))
+            .ok()?;
+        serde_json::from_slice::<Claims>(&part).ok()
+    });
+    claims.is_some_and(|claims| SystemTime::UNIX_EPOCH + Duration::from_secs(claims.exp) <= now)
 }
 
-/// The limits `log`'s last turn reported, from its end.
-fn last_limits(log: &Path) -> anyhow::Result<Option<Limits>> {
-    let mut file =
-        File::open(log).with_context(|| format!("usage: cannot open {}", log.display()))?;
-    let length = file.metadata()?.len();
-    file.seek(SeekFrom::Start(length.saturating_sub(TAIL)))?;
-    let mut tail = Vec::new();
-    file.read_to_end(&mut tail)?;
-    let text = String::from_utf8_lossy(&tail);
-    Ok(text
-        .lines()
-        .rev()
-        .filter(|line| line.contains("\"rate_limits\""))
-        .find_map(|line| serde_json::from_str::<Line>(line).ok()?.payload.rate_limits))
-}
-
-fn usage(limits: Limits) -> Usage {
+fn usage(answer: Answer) -> Usage {
     let limit = |window_: Window| Limit {
-        label: window_.window_minutes.map_or("额度".into(), window),
+        label: window_
+            .limit_window_seconds
+            .map_or("额度".into(), |seconds| window(seconds / 60)),
         percent: window_.used_percent,
         resets: window_
-            .resets_at
+            .reset_at
             .map(|at| SystemTime::UNIX_EPOCH + Duration::from_secs(at)),
     };
-    let credits = limits.credits.and_then(|credits| match credits {
+    let windows = answer
+        .rate_limit
+        .map(|limits| [limits.primary_window, limits.secondary_window]);
+    Usage {
+        plan: answer.plan_type,
+        limits: windows.into_iter().flatten().flatten().map(limit).collect(),
+        credits: answer.credits.and_then(credits),
+        note: None,
+    }
+}
+
+/// Credits as the foot shows them: unlimited, or the balance and the messages it buys, if any.
+fn credits(credits: Credits) -> Option<String> {
+    match credits {
         Credits {
             unlimited: true, ..
         } => Some("不限".into()),
         Credits {
             has_credits: true,
             balance: Some(balance),
+            approx_local_messages,
             ..
-        } => Some(
-            balance
+        } => {
+            let balance = balance
                 .parse::<f64>()
-                .map_or(balance, |b| format!("{b:.1}")),
-        ),
+                .map_or(balance, |b| format!("{b:.1}"));
+            Some(match approx_local_messages {
+                Some([least, most]) => format!("{balance} · 约 {least}–{most} 条消息"),
+                None => balance,
+            })
+        }
         _ => None,
-    });
-    Usage {
-        plan: limits.plan_type,
-        limits: [limits.primary, limits.secondary]
-            .into_iter()
-            .flatten()
-            .map(limit)
-            .collect(),
-        credits,
+    }
+}
+
+/// How long before `now` `at` was: `2 天前`.
+fn ago(at: SystemTime, now: SystemTime) -> String {
+    let secs = now.duration_since(at).unwrap_or_default().as_secs();
+    match (secs / 86400, secs / 3600, secs / 60) {
+        (0, 0, 0) => "刚才".into(),
+        (0, 0, m) => format!(" {m} 分钟前"),
+        (0, h, _) => format!(" {h} 小时前"),
+        (d, _, _) => format!(" {d} 天前"),
     }
 }
 
@@ -167,31 +177,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_last_turn_s_limits_are_read_from_the_log_s_end() {
-        let folder =
-            std::env::temp_dir().join(format!("ely-tea-party-codex-{}", std::process::id()));
-        let day = folder.join("sessions/2026/10/18");
-        std::fs::create_dir_all(&day).expect("a temp folder");
-        let turn = |percent: f32| {
-            format!(
-                r#"{{"type":"event_msg","payload":{{"type":"token_count","rate_limits":{{"primary":{{"used_percent":{percent},"window_minutes":10080,"resets_at":1792875561}},"secondary":null,"credits":{{"has_credits":true,"unlimited":false,"balance":"5111.5139"}},"plan_type":"promax"}}}}}}"#
-            )
-        };
-        let log = [
-            turn(3.0),
-            r#"{"type":"other","payload":{}}"#.into(),
-            turn(4.0),
-        ]
-        .join("\n");
-        std::fs::write(day.join("rollout-a.jsonl"), log + "\n").expect("a log");
-        let logs = newest(&folder.join("sessions")).expect("logs");
-        let limits = last_limits(&logs[0]).expect("read").expect("limits");
-        std::fs::remove_dir_all(&folder).expect("the temp folder goes");
-        let usage = usage(limits);
+    fn the_endpoint_s_answer_reads_as_windows_credits_and_messages() {
+        let answer: Answer = serde_json::from_str(
+            r#"{"user_id":"user-x","plan_type":"promax","rate_limit":{"allowed":true,"limit_reached":false,
+                "primary_window":{"used_percent":4,"limit_window_seconds":604800,"reset_after_seconds":397878,"reset_at":1792875561},
+                "secondary_window":{"used_percent":12.5,"limit_window_seconds":18000,"reset_after_seconds":60,"reset_at":1792480000}},
+                "code_review_rate_limit":null,"additional_rate_limits":null,
+                "credits":{"has_credits":true,"unlimited":false,"overage_limit_reached":false,"balance":"5111.5139360000",
+                "approx_local_messages":[1278,6645],"approx_cloud_messages":[204,1278]}}"#,
+        )
+        .expect("parses");
+        let usage = usage(answer);
         assert_eq!(usage.plan.as_deref(), Some("promax"));
-        assert_eq!(usage.credits.as_deref(), Some("5111.5"));
-        assert_eq!(usage.limits.len(), 1);
-        assert_eq!(usage.limits[0].label, "本周");
-        assert_eq!(usage.limits[0].percent, 4.0, "the last turn's");
+        let labels: Vec<&str> = usage.limits.iter().map(|l| l.label.as_str()).collect();
+        assert_eq!(labels, ["本周", "5 小时"]);
+        assert_eq!(usage.limits[0].percent, 4.0);
+        let reset = usage.limits[0].resets.expect("a reset");
+        let secs = reset.duration_since(SystemTime::UNIX_EPOCH).expect("later");
+        assert_eq!(secs.as_secs(), 1_792_875_561);
+        assert_eq!(
+            usage.credits.as_deref(),
+            Some("5111.5 · 约 1278–6645 条消息")
+        );
+        assert_eq!(usage.note, None);
+        let bare: Answer =
+            serde_json::from_str(r#"{"plan_type":"free","rate_limit":null,"credits":null}"#)
+                .expect("parses");
+        assert!(super::usage(bare).limits.is_empty());
+    }
+
+    #[test]
+    fn a_token_past_its_expiry_is_not_sent() {
+        let token = |exp: u64| {
+            let claims = format!(r#"{{"exp":{exp},"scp":["openid"]}}"#);
+            let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims);
+            format!("header.{claims}.signature")
+        };
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000);
+        assert!(expired(&token(1_999), now));
+        assert!(!expired(&token(2_001), now));
+        assert!(!expired("not-a-jwt", now), "the endpoint judges it");
+    }
+
+    #[test]
+    fn a_reading_s_age_reads_as_people_say_it() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let before = |secs| ago(now - Duration::from_secs(secs), now);
+        assert_eq!(before(10), "刚才");
+        assert_eq!(before(5 * 60), " 5 分钟前");
+        assert_eq!(before(3 * 3600 + 5), " 3 小时前");
+        assert_eq!(before(2 * 86400 + 7), " 2 天前");
     }
 }

@@ -1,4 +1,4 @@
-//! How much of an agent's subscription is used: Claude Code's from its usage endpoint, Codex's from its own session logs.
+//! How much of an agent's subscription is used, from the usage endpoint each agent asks itself.
 
 use std::time::{Duration, SystemTime};
 
@@ -23,11 +23,11 @@ impl Plan {
         }
     }
 
-    /// How long a reading holds: the endpoint is asked rarely, the logs often.
+    /// How long a reading holds: Claude's endpoint is asked rarely, Codex's more often.
     pub fn fresh(self) -> Duration {
         match self {
             Plan::Claude => Duration::from_secs(300),
-            Plan::Codex => Duration::from_secs(30),
+            Plan::Codex => Duration::from_secs(120),
         }
     }
 
@@ -46,6 +46,8 @@ pub struct Usage {
     pub limits: Vec<Limit>,
     /// Credits left, on plans that have them.
     pub credits: Option<String>,
+    /// Where an older reading came from, while the endpoint cannot be asked.
+    pub note: Option<String>,
 }
 
 /// One window of use: how much of it is spent and when it starts again.

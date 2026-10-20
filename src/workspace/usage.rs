@@ -120,6 +120,7 @@ impl Workspace {
             )
             .children(meters)
             .children(credits)
+            .children(usage.note.as_ref().map(|note| Caption::new(note.clone())))
             .into_any_element(),
         )
     }

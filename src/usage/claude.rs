@@ -125,6 +125,7 @@ fn usage(answer: Answer, plan: Option<String>) -> Usage {
         plan,
         limits: answer.limits.into_iter().map(limit).collect(),
         credits: None,
+        note: None,
     }
 }
 
