@@ -293,8 +293,6 @@ pub struct Agent {
     pub turn: Turn,
     /// Her last word and when she said it.
     pub quip: Option<(quips::Moment, Instant)>,
-    /// What she did, oldest first.
-    pub log: std::collections::VecDeque<timeline::Entry>,
     /// The command her hooks name, as `codex` or `agy`.
     pub program: Option<String>,
     /// Her conversation's id, which resumes it.
@@ -315,7 +313,6 @@ impl Agent {
             activity: None,
             turn: Turn::default(),
             quip: None,
-            log: std::collections::VecDeque::new(),
             program: None,
             conversation: None,
         }
@@ -376,6 +373,27 @@ pub fn ago(elapsed: Duration) -> String {
         s if s < 86400 => format!("{}h", s / 3600),
         s => format!("{}d", s / 86400),
     }
+}
+
+/// When an agent last showed life, `active`, as its row shows it on the local clock.
+pub fn updated(active: Instant, now: Instant) -> String {
+    let quiet = chrono::TimeDelta::from_std(now.saturating_duration_since(active))
+        .expect("agents: an agent's quiet fits a TimeDelta");
+    let today = chrono::Local::now();
+    clock(today - quiet, today)
+}
+
+/// `at` against `today`: `14:32` the same day, else `10/19`.
+pub fn clock<Tz: chrono::TimeZone>(at: chrono::DateTime<Tz>, today: chrono::DateTime<Tz>) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let format = if at.date_naive() == today.date_naive() {
+        "%H:%M"
+    } else {
+        "%-m/%-d"
+    };
+    at.format(format).to_string()
 }
 
 #[cfg(test)]

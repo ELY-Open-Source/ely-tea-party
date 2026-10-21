@@ -85,6 +85,8 @@ pub struct Workspace {
     party_focus: FocusHandle,
     /// The shown agents' subscription use.
     meters: usage::Meters,
+    /// The right column's lit tab, gliding between tabs.
+    glide: panel::Glide,
     _settings: Subscription,
     _updates: Subscription,
     _acted: Subscription,
@@ -119,6 +121,7 @@ impl Workspace {
             saved: None,
             party_focus: cx.focus_handle(),
             meters: usage::Meters::default(),
+            glide: panel::Glide::default(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();
@@ -158,6 +161,7 @@ impl Workspace {
             bell: false,
             waiting: false,
             look: None,
+            log: Default::default(),
             drawer: None,
             pending: None,
             _events: events,

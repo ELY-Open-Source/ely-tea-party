@@ -8,6 +8,7 @@ use std::{
 use super::{
     Agent, Pose, Status,
     quips::{self, Moment},
+    timeline::Timeline,
 };
 
 /// A command running this long lets its character slack until it ends.
@@ -121,9 +122,15 @@ pub struct Turn {
 }
 
 impl Agent {
-    /// Takes in hook `event`'s tool and detail.
-    pub fn note(&mut self, event: &str, tool: Option<&str>, detail: Option<&str>, now: Instant) {
-        self.record(event, tool, detail, now);
+    /// Takes in hook `event`'s tool and detail, writing it into its session's `log`.
+    pub fn note(
+        &mut self,
+        event: &str,
+        (tool, detail): (Option<&str>, Option<&str>),
+        log: &mut Timeline,
+        now: Instant,
+    ) {
+        log.record(event, (tool, detail), self.turn.started, now);
         let detail = detail.map(str::to_string);
         match event {
             "UserPromptSubmit" => {
@@ -166,8 +173,8 @@ impl Agent {
                 // Agents that hook no PreToolUse, as Antigravity, name the tool afterwards.
                 _ => {
                     if let Some(tool) = tool {
-                        self.note("PreToolUse", Some(tool), detail.as_deref(), now);
-                        self.note(event, None, None, now);
+                        self.note("PreToolUse", (Some(tool), detail.as_deref()), log, now);
+                        self.note(event, (None, None), log, now);
                     }
                 }
             },

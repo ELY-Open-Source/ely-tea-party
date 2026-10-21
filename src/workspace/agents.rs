@@ -250,7 +250,7 @@ impl Workspace {
             log::info!("agents: session {} speed is {speed:?}", session.id);
         }
         let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
-        agent.note(&report.event, tool, detail, now);
+        agent.note(&report.event, (tool, detail), &mut session.log, now);
         if let Some(said) = report.detail.clone() {
             match report.event.as_str() {
                 "UserPromptSubmit" => session

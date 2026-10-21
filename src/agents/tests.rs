@@ -7,6 +7,14 @@ fn secs(n: u64) -> Duration {
 }
 
 #[test]
+fn a_row_shows_the_time_it_was_updated_today_else_the_date() {
+    use chrono::TimeZone;
+    let at = |d: u32, h: u32, m: u32| chrono::Utc.with_ymd_and_hms(2026, 10, d, h, m, 0).unwrap();
+    assert_eq!(clock(at(20, 9, 5), at(20, 23, 59)), "09:05");
+    assert_eq!(clock(at(19, 23, 59), at(20, 0, 1)), "10/19");
+}
+
+#[test]
 fn an_unhooked_agent_works_while_it_draws() {
     let start = Instant::now();
     let mut agent = Agent::new(Kind::Claude, start);

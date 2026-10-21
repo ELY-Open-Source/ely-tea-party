@@ -196,6 +196,19 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Scrolls to the prompt `back` prompts before the last, if the scrollback still holds it.
+    pub fn show_prompt(&mut self, back: usize, cx: &mut Context<Self>) {
+        let list = &self.turns.list;
+        let place = (list.len().checked_sub(back + 1)).map(|index| list[index].place);
+        match place {
+            Some(Place::At(line)) => self.scroll_to_turn(line, cx),
+            place => log::info!(
+                "terminal {}: the prompt {back} back is not in the scrollback: {place:?}",
+                self.pty.pid
+            ),
+        }
+    }
+
     /// Scrolls so prompt `line` shows a row below the view's top.
     pub(super) fn scroll_to_turn(&mut self, line: i32, cx: &mut Context<Self>) {
         let mut term = self.pty.term.lock();

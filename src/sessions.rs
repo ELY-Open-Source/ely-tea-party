@@ -55,6 +55,8 @@ pub struct Session {
     pub waiting: bool,
     /// The look its mark shows, and since when.
     pub look: Option<(Look, Instant)>,
+    /// What its hooked agents did, kept after they leave.
+    pub log: agents::timeline::Timeline,
     pub _events: Subscription,
 }
 
@@ -194,6 +196,7 @@ fn item(
         .drawer
         .as_ref()
         .is_some_and(|drawer| drawer.busy && !(active && drawer.open));
+    let updated = (session.agent.as_ref()).map(|agent| agents::updated(agent.active, now));
     let item = match &session.agent {
         Some(agent) => {
             let pose = agent.pose(now, session.id);
@@ -240,6 +243,7 @@ fn item(
                 .flex()
                 .items_center()
                 .gap_1()
+                .children(updated)
                 .children(
                     running
                         .then(|| Icon::new(IconName::Terminal).color(cx.theme().colors.fg_muted)),

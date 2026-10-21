@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::agents::Kind;
+use crate::agents::{Kind, timeline::Timeline};
 
 fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
@@ -16,7 +16,7 @@ fn hear(
     at: Instant,
 ) {
     agent.hooked = true;
-    agent.note(event, tool, detail, at);
+    agent.note(event, (tool, detail), &mut Timeline::default(), at);
     agent.set(status, at);
 }
 
