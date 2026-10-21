@@ -1,0 +1,49 @@
+name: Bug Report
+description: Something behaves, draws or builds wrong.
+title: "[BUG REPORT] "
+labels: [bug]
+body:
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: A screenshot or a short recording helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Commit or version"
+      placeholder: "f4f46be"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Terminal output or error messages.
+      render: shell
