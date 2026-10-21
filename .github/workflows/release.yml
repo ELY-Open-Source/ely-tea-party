@@ -1,6 +1,6 @@
 name: Release
 
-# The Linux tarball and Windows zip onto this version's draft; the owner's Mac adds the signed disk image.
+# This version's draft, with the Linux tarball, the Windows zip and the signed, notarized disk image.
 on:
   workflow_dispatch:
 
@@ -39,3 +39,30 @@ jobs:
           for file in target/release/ely-tea-party-*.tar.gz target/release/ely-tea-party-*.zip; do
             if [ -f "$file" ]; then scripts/release-asset.sh "$file"; fi
           done
+
+  macos:
+    needs: draft
+    # Upstream's signing Mac, which upstream lends: its keychain holds upstream's Developer ID, and the org's secrets notarize.
+    runs-on: [self-hosted, macos-signing]
+    steps:
+      - uses: actions/checkout@v7
+      # The runner's PATH lacks the host's rustup.
+      - run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - run: rustup toolchain install --no-self-update
+      - name: Build, sign and notarize the disk image
+        env:
+          SIGN_IDENTITY: "Developer ID Application: Yang Zhang (9PDD8M2SMS)"
+          NOTARY_KEY: ${{ runner.temp }}/notary.p8
+          NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          NOTARY_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          trap 'rm -f "$NOTARY_KEY"' EXIT
+          (umask 077 && printf '%s' "$NOTARY_KEY_P8" > "$NOTARY_KEY")
+          scripts/mac-app.sh
+      - name: Put the disk image on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cargo pkgid)
+          scripts/release-asset.sh "target/release/ely-tea-party-${version##*[#@]}.dmg"
