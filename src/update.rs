@@ -13,7 +13,7 @@ use crate::settings::SettingsStore;
 
 actions!(ely_tea_party, [CheckForUpdates]);
 
-const LATEST: &str = "https://api.github.com/repos/qiz029/ely-tea-party/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/ELY-Open-Source/ely-tea-party/releases/latest";
 
 /// How often the app asks on its own.
 const EVERY: Duration = Duration::from_secs(6 * 3600);
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn a_release_reads_its_version_and_disk_image() {
         let answer: Answer = serde_json::from_str(
-            r#"{"tag_name":"v0.3.4","html_url":"https://github.com/qiz029/ely-tea-party/releases/tag/v0.3.4","draft":false,"assets":[
+            r#"{"tag_name":"v0.3.4","html_url":"https://github.com/ELY-Open-Source/ely-tea-party/releases/tag/v0.3.4","draft":false,"assets":[
                 {"name":"ely-tea-party-0.3.4-linux-x86_64.tar.gz","browser_download_url":"https://example.com/linux"},
                 {"name":"ely-tea-party-0.3.4.dmg","browser_download_url":"https://example.com/dmg"}
             ]}"#,

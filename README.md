@@ -11,12 +11,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/qiz029/ely-tea-party/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/qiz029/ely-tea-party?style=flat-square&color=8b5cf6"></a>
-  <a href="https://github.com/qiz029/ely-tea-party/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/qiz029/ely-tea-party/ci.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="https://github.com/qiz029/ely-tea-party/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/qiz029/ely-tea-party/total?style=flat-square&color=ec4899"></a>
+  <a href="https://github.com/ELY-Open-Source/ely-tea-party/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ELY-Open-Source/ely-tea-party?style=flat-square&color=8b5cf6"></a>
+  <a href="https://github.com/ELY-Open-Source/ely-tea-party/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ELY-Open-Source/ely-tea-party/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/ELY-Open-Source/ely-tea-party/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/ELY-Open-Source/ely-tea-party/total?style=flat-square&color=ec4899"></a>
   <img alt="macOS, Windows, Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-3b82f6?style=flat-square">
   <img alt="Rust 1.95" src="https://img.shields.io/badge/Rust-1.95-f97316?style=flat-square&logo=rust">
-  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/qiz029/ely-tea-party?style=flat-square&color=22c55e"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/ELY-Open-Source/ely-tea-party?style=flat-square&color=22c55e"></a>
 </p>
 
 <p align="center">
@@ -57,7 +57,7 @@ Each girl has eight animations: working, researching, her special move, slacking
 
 ## Install
 
-Grab the latest build from [Releases](https://github.com/qiz029/ely-tea-party/releases/latest).
+Grab the latest build from [Releases](https://github.com/ELY-Open-Source/ely-tea-party/releases/latest).
 
 From 0.3.4 on, the app checks Releases itself, unless Settings › Terminal › Check for updates automatically is off: when a newer version is out, a button in the title bar says so. On macOS one press downloads it, checks its signature and puts it in place, and a second press restarts into it; on Windows and Linux the button opens the release's page.
 

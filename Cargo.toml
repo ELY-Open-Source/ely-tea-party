@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.95"
 license = "MIT"
 description = "A terminal for coding agents, on GPUI and Ely; a fork of Ely Tea Party."
-repository = "https://github.com/qiz029/ely-tea-party"
+repository = "https://github.com/ELY-Open-Source/ely-tea-party"
 publish = false
 
 [dependencies]
