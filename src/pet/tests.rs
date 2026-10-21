@@ -23,6 +23,7 @@ fn ely(mood: Mood, since: Instant) -> Pet {
         landing: false,
         main: WindowHandle::new(WindowId::from(1)),
         glue: None,
+        own: None,
         _watch: Vec::new(),
         _frames: gpui::Task::ready(()),
     }

@@ -11,7 +11,7 @@ const DIVE: Duration = Duration::from_millis((super::look::DIVE * 1000.0) as u64
 
 impl Pet {
     /// Keeps her window on the edge she stands on, and starts her dive once the room gives her the other, or calls it off once it gives hers back.
-    pub(super) fn place(&mut self, main: &Window) {
+    pub(super) fn place(&mut self, main: &Window, cx: &mut App) {
         let Some(glue) = &self.glue else {
             return;
         };
@@ -19,6 +19,7 @@ impl Pet {
             Ok(room) => room,
             Err(error) => return log::error!("{error:#}"),
         };
+        self.heard(cx);
         match self.moving {
             None if room != self.edge => self.dive(room, Instant::now()),
             Some(_) if room == self.edge => {
@@ -28,6 +29,21 @@ impl Pet {
             }
             _ => {}
         }
+    }
+
+    /// Has her window read its bounds and scale after this update: gpui drops what the platform reports of a move made inside one, so she kept the scale of a display she left.
+    pub(super) fn heard(&self, cx: &mut App) {
+        let Some(own) = self.own else {
+            return;
+        };
+        cx.defer(move |cx| {
+            if own
+                .update(cx, |_, window, cx| window.bounds_changed(cx))
+                .is_err()
+            {
+                log::debug!("pet: her window went before it read its move");
+            }
+        });
     }
 
     fn dive(&mut self, to: Edge, now: Instant) {
@@ -48,7 +64,7 @@ impl Pet {
 
     /// Places her, and lands her once a dive that starts is over.
     pub(super) fn keep(&mut self, main: &Window, cx: &mut Context<Self>) {
-        self.place(main);
+        self.place(main, cx);
         self.wait_to_land(cx);
     }
 
@@ -68,7 +84,9 @@ impl Pet {
                     Ok(Some(left)) if !left.is_zero() => cx.background_executor().timer(left).await,
                     Ok(Some(_)) => {
                         let landed = cx.update(|cx| {
-                            main.update(cx, |_, main, cx| pet.update(cx, |pet, _| pet.arrive(main)))
+                            main.update(cx, |_, main, cx| {
+                                pet.update(cx, |pet, cx| pet.arrive(main, cx))
+                            })
                         });
                         if let Err(error) = landed.and_then(|landed| landed) {
                             log::debug!("pet: she does not land, a window gone: {error:#}");
@@ -86,14 +104,14 @@ impl Pet {
     }
 
     /// Stands her on the edge she dove for, where she rises as she does when she comes.
-    fn arrive(&mut self, main: &Window) {
+    fn arrive(&mut self, main: &Window, cx: &mut App) {
         let Some((to, _)) = self.moving.take() else {
             return;
         };
         log::info!("pet: Ely moves to the pane's {} edge", name(to));
         self.edge = to;
         self.shown = Instant::now();
-        self.place(main);
+        self.place(main, cx);
     }
 }
 

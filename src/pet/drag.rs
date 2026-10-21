@@ -27,11 +27,11 @@ impl Pet {
             }
         };
         let main = self.main;
-        let slid = main.update(cx, |_, main, _| {
+        let slid = main.update(cx, |_, main, cx| {
             let room = (f32::from(pane(main).size.width) - WIDTH).max(0.0);
             // Whole points, so the kept place carries no float noise.
             self.at = (at + x - from).round().clamp(0.0, room.floor());
-            self.place(main);
+            self.place(main, cx);
         });
         if let Err(error) = slid {
             log::debug!("pet: the main window does not read: {error:#}");

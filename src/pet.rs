@@ -23,10 +23,10 @@ use std::{
 };
 
 use gpui::{
-    App, AppContext as _, Bounds, Context, Decorations, DispatchPhase, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, Styled, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions, canvas, div, point, popup, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, Decorations, DispatchPhase,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, Styled, Subscription, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas, div, point, popup, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -83,8 +83,9 @@ pub struct Pet {
     moving: Option<(Edge, Instant)>,
     landing: bool,
     main: WindowHandle<Workspace>,
-    /// What keeps her window on the main window's edge, where the platform does not.
+    /// What keeps her window on the main window's edge, where the platform does not, and her window it moves.
     glue: Option<platform::Glue>,
+    own: Option<AnyWindowHandle>,
     _watch: Vec<Subscription>,
     _frames: gpui::Task<()>,
 }
@@ -279,6 +280,7 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 landing: false,
                 main,
                 glue: None,
+                own: None,
                 _watch: vec![feel],
                 _frames: whale::frames(cx),
             }
@@ -309,6 +311,8 @@ fn glue(
             let glue = platform::Glue::new(window, main)?;
             pet.edge = glue.place(main, pet.at, None)?;
             pet.glue = Some(glue);
+            pet.own = Some(window.window_handle());
+            pet.heard(cx);
             pet._watch
                 .push(cx.observe_window_bounds(main, |pet, main, cx| pet.keep(main, cx)));
             pet._watch
