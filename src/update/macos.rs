@@ -14,9 +14,6 @@ use crate::app::APP_ID;
 /// The name the disk image gives the app.
 const APP: &str = "Ely Tea Party.app";
 
-/// The teams that sign releases: the author's, through 0.3.8, and upstream's, on its signing Mac, since.
-const TEAMS: [&str; 2] = ["FL45AV5T74", "9PDD8M2SMS"];
-
 /// The bundle this app runs from, when it is a release's, not a dev build's or cargo's.
 pub fn bundle() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
@@ -98,7 +95,7 @@ pub fn relaunch(bundle: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// That `new` is a whole app Gatekeeper accepts, this app's id at `version`, from `current`'s team or another that signs releases.
+/// That `new` is a whole app Gatekeeper accepts, this app's id at `version`, from `current`'s team.
 fn check(new: &Path, current: &Path, version: &str) -> anyhow::Result<()> {
     run(
         "codesign",
@@ -131,15 +128,10 @@ fn check(new: &Path, current: &Path, version: &str) -> anyhow::Result<()> {
     let ours = team(current)?;
     let theirs = team(new)?;
     anyhow::ensure!(
-        trusted(&ours, &theirs),
+        theirs == ours,
         "update: the new app is signed by team {theirs}, this one by {ours}"
     );
     Ok(())
-}
-
-/// An app `ours` signed takes an update `theirs` signed: the same team, or two that both sign releases.
-fn trusted(ours: &str, theirs: &str) -> bool {
-    theirs == ours || TEAMS.contains(&ours) && TEAMS.contains(&theirs)
 }
 
 /// Copies `new` beside `current`, then swaps the two, putting `current` back if the swap fails.
@@ -215,21 +207,4 @@ fn run<'a>(program: &str, args: impl IntoIterator<Item = &'a OsStr>) -> anyhow::
         String::from_utf8_lossy(&output.stderr).trim()
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::trusted;
-
-    #[test]
-    fn an_update_comes_from_this_apps_team_or_upstreams() {
-        assert!(
-            trusted("FL45AV5T74", "9PDD8M2SMS"),
-            "the author's to upstream's"
-        );
-        assert!(trusted("9PDD8M2SMS", "FL45AV5T74"));
-        assert!(trusted("ABCDE12345", "ABCDE12345"), "a team of its own");
-        assert!(!trusted("FL45AV5T74", "ABCDE12345"), "a stranger's");
-        assert!(!trusted("ABCDE12345", "9PDD8M2SMS"));
-    }
 }
