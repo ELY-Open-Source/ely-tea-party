@@ -57,7 +57,15 @@ pub struct Session {
     pub look: Option<(Look, Instant)>,
     /// What its hooked agents did, kept after they leave.
     pub log: agents::timeline::Timeline,
+    /// The trinket its character wears, from her own box: `agents::assets::trinket`.
+    pub trinket: usize,
     pub _events: Subscription,
+}
+
+/// The first trinket none of `taken` wears.
+pub fn free_trinket(taken: impl IntoIterator<Item = usize>) -> usize {
+    let taken: Vec<usize> = taken.into_iter().collect();
+    (0..).find(|index| !taken.contains(index)).unwrap_or(0)
 }
 
 impl Session {
@@ -67,6 +75,14 @@ impl Session {
             .into_iter()
             .find(|title| !title.is_empty())
             .unwrap_or(TITLE)
+    }
+
+    /// What a row calls `agent`: the name the user gave, else hers.
+    pub fn called(&self, agent: &Agent) -> String {
+        match self.name.as_str() {
+            "" => agent.kind.name().to_string(),
+            name => name.to_string(),
+        }
     }
 
     /// The look its mark takes from its terminal now.
@@ -165,15 +181,25 @@ pub fn avatar(
     agent: &Agent,
     pose: Pose,
     size: Rems,
-    (seed, now): (u64, Instant),
+    (session, now): (&Session, Instant),
     cx: &App,
 ) -> impl IntoElement {
-    let frame = agents::assets::frame(agent.kind, pose, seed, now);
+    let frame = agents::assets::frame(agent.kind, pose, session.id, now);
+    let trinket = agents::assets::trinket(agent.kind, session.trinket);
     div()
+        .relative()
         .size(size)
         .rounded(cx.theme().radius(Radius::Lg))
         .bg(agent.kind.color().opacity(0.14))
         .children(frame.map(|frame| img(frame).size_full().object_fit(ObjectFit::Contain)))
+        .children(trinket.map(|trinket| {
+            img(trinket)
+                .absolute()
+                .right_0()
+                .bottom_0()
+                .size(rems(size.0 * 0.4))
+                .object_fit(ObjectFit::Contain)
+        }))
 }
 
 /// Session `index`'s item: its title and folder, or its agent's character and doing; else the mark of its status and a bell while one rang unseen; a button that closes it.
@@ -204,12 +230,7 @@ fn item(
             let speed = agent
                 .speed_label()
                 .map_or(String::new(), |label| format!(" · {label}"));
-            // A name the user gave stands over the agent's.
-            let name = match session.name.as_str() {
-                "" => agent.kind.name(),
-                name => name,
-            };
-            ListItem::new(("session", pid), name.to_string())
+            ListItem::new(("session", pid), session.called(agent))
                 .description(format!("{} · {since}{speed}", agent.kind.label(pose)))
                 .detail(match agent.bubble(now) {
                     Some((_, line)) => format!("「{line}」"),
@@ -220,7 +241,7 @@ fn item(
                     agent,
                     pose,
                     rems(if active { 5. } else { 3.5 }),
-                    (session.id, now),
+                    (session, now),
                     cx,
                 ))
         }

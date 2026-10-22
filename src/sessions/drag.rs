@@ -60,7 +60,7 @@ pub fn row(
 ) -> impl IntoElement {
     let pid = session.terminal.read(cx).pid() as usize;
     let title = match &session.agent {
-        Some(agent) => agent.kind.name().to_string(),
+        Some(agent) => session.called(agent),
         None if session.title.is_empty() => TITLE.to_string(),
         None => one_line(&session.title),
     };

@@ -9,6 +9,9 @@ if [ -n "${DEV:-}" ]; then
   [ -z "$sign" ] || { echo "mac-app: a dev build is signed ad hoc, not by SIGN_IDENTITY" >&2; exit 1; }
   name="Ely Tea Party (dev)"
   id=$id.dev
+  export ELY_DEV=1
+else
+  unset ELY_DEV
 fi
 if [ -n "$sign" ]; then
   [ -s "${NOTARY_KEY:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER:-}" ] || {

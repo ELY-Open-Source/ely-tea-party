@@ -79,6 +79,10 @@ pub(crate) fn spawn(
     command.envs(env);
     command.env_remove("XDG_ACTIVATION_TOKEN");
     command.env_remove("DESKTOP_STARTUP_ID");
+    // A Claude marked as a child saves no transcript, so nothing could resume it.
+    for mark in crate::agents::CLAUDE_MARKS {
+        command.env_remove(mark);
+    }
     let folder = CString::new(cwd.as_os_str().as_bytes())?;
     let (master_fd, slave_fd) = (master.as_raw_fd(), slave.as_raw_fd());
     // SAFETY: the hook calls only async-signal-safe libc functions.

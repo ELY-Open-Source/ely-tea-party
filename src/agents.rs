@@ -274,6 +274,19 @@ pub fn env(_: u64) -> anyhow::Result<Vec<(String, String)>> {
     Ok(Vec::new())
 }
 
+/// What Claude Code marks its children with; none of it describes a fresh session.
+pub const CLAUDE_MARKS: [&str; 9] = [
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+];
+
 /// An agent running in a session.
 #[derive(Clone, Debug)]
 pub struct Agent {

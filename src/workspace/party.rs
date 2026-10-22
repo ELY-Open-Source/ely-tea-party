@@ -157,11 +157,11 @@ fn card(
                 lines.push(quiet(stats, colors.fg_subtle));
             }
             let picture =
-                sessions::avatar(agent, pose, rems(8.), (session.id, now), cx).into_any_element();
+                sessions::avatar(agent, pose, rems(8.), (session, now), cx).into_any_element();
             let bubble = agent.bubble(now);
             (
                 picture,
-                agent.kind.name().to_string(),
+                session.called(agent),
                 lines,
                 agent.status == Status::NeedsInput,
                 bubble,

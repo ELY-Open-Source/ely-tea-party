@@ -24,18 +24,29 @@ pub struct Saved {
     pub active: usize,
 }
 
-/// A session as it is saved: its folder, and the line that resumes its agent's conversation.
+/// A session as it is saved: its folder, the line that resumes its agent's conversation, and what sets it apart.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Place {
     pub folder: PathBuf,
     pub resume: Option<String>,
+    #[serde(default)]
+    pub name: String,
+    /// None in a file saved before trinkets: it takes a free one.
+    #[serde(default)]
+    pub trinket: Option<usize>,
 }
 
-/// The saved sessions' file, beside the settings.
+/// The saved sessions' file, beside the settings; a dev build keeps its own, so it never takes a release's sessions.
 fn path() -> anyhow::Result<PathBuf> {
     let folder = dirs::config_dir().context("restore: the platform names no config folder")?;
-    Ok(folder.join("ely-tea-party").join("sessions.json"))
+    let dev = cfg!(debug_assertions) || option_env!("ELY_DEV").is_some();
+    let name = if dev {
+        "sessions-dev.json"
+    } else {
+        "sessions.json"
+    };
+    Ok(folder.join("ely-tea-party").join(name))
 }
 
 /// The saved sessions, if any were; a file that does not parse is logged and passed by, so the app still starts.
@@ -107,6 +118,8 @@ impl Workspace {
                 let agent = session.agent.as_ref()?;
                 resume(agent.program.as_deref()?, agent.conversation.as_deref()?)
             }),
+            name: session.name.clone(),
+            trinket: Some(session.trinket),
         };
         Saved {
             sessions: self.sessions.iter().map(place).collect(),
@@ -148,7 +161,8 @@ impl Workspace {
     pub fn restore(&mut self, saved: Saved, window: &mut Window, cx: &mut Context<Self>) {
         let mut places = saved.sessions.into_iter();
         if let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut()) {
-            session.pending = first.resume;
+            session.pending = first.resume.clone();
+            dress(session, first);
         }
         for place in places {
             if !place.folder.is_dir() {
@@ -159,11 +173,12 @@ impl Workspace {
                 continue;
             }
             let id = agents::next_session();
-            match start(place.folder, Some(id), cx) {
+            match start(place.folder.clone(), Some(id), cx) {
                 Ok(((pty, events), launch)) => {
                     self.add((id, pty, events), launch, window, cx);
                     if let Some(session) = self.sessions.last_mut() {
-                        session.pending = place.resume;
+                        session.pending = place.resume.clone();
+                        dress(session, place);
                         // Out of view until shown, so it posts notifications.
                         session.terminal.update(cx, |view, _| view.set_front(false));
                     }
@@ -174,6 +189,14 @@ impl Workspace {
         let active = saved.active.min(self.sessions.len().saturating_sub(1));
         log::info!("restore: {} sessions back", self.sessions.len());
         self.select(active, window, cx);
+    }
+}
+
+/// Gives a restored session the name and trinket `place` kept.
+fn dress(session: &mut crate::sessions::Session, place: Place) {
+    session.name = place.name;
+    if let Some(trinket) = place.trinket {
+        session.trinket = trinket;
     }
 }
 
@@ -215,10 +238,20 @@ mod tests {
             sessions: vec![Place {
                 folder: "/tmp".into(),
                 resume: Some("claude --resume a".into()),
+                name: String::new(),
+                trinket: Some(2),
             }],
             active: 0,
         };
         let text = serde_json::to_string(&saved).expect("written");
         assert_eq!(serde_json::from_str::<Saved>(&text).expect("read"), saved);
+    }
+
+    #[test]
+    fn a_file_saved_before_names_and_trinkets_still_reads() {
+        let text = r#"{"sessions":[{"folder":"/tmp","resume":null}],"active":0}"#;
+        let saved = serde_json::from_str::<Saved>(text).expect("read");
+        assert_eq!(saved.sessions[0].trinket, None);
+        assert!(saved.sessions[0].name.is_empty());
     }
 }

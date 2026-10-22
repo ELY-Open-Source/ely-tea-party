@@ -149,6 +149,7 @@ impl Workspace {
         });
         let pid = terminal.read(cx).pid();
         log::info!("app: session {pid} opens in {}", launch.cwd.display());
+        let trinket = sessions::free_trinket(self.sessions.iter().map(|session| session.trinket));
         self.sessions.push(Session {
             id,
             agent: None,
@@ -162,6 +163,7 @@ impl Workspace {
             waiting: false,
             look: None,
             log: Default::default(),
+            trinket,
             drawer: None,
             pending: None,
             _events: events,

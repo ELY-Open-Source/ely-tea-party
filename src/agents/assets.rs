@@ -59,6 +59,23 @@ static MASCOT: &[(&str, &[u8])] = mascot!(
     "sleeping"
 );
 
+macro_rules! trinkets {
+    ($($kind:literal),*) => {
+        &[$((
+            $kind,
+            include_bytes!(concat!("../../assets/trinkets/", $kind, ".webp")),
+        )),*]
+    };
+}
+
+/// Each character's trinket box: a still WebP strip of `TRINKETS` square cells, by kind.
+static BOXES: &[(&str, &[u8])] = trinkets!(
+    "claude", "gpt", "deepseek", "grok", "kimi", "gemini", "pi", "opencode"
+);
+
+/// How many trinkets each character's box holds.
+pub const TRINKETS: usize = 12;
+
 /// One pose's loop: a still per frame, and when each frame ends.
 struct Strip {
     frames: Vec<Arc<RenderImage>>,
@@ -129,6 +146,46 @@ pub fn mascot(name: &str, now: Instant) -> Option<Arc<RenderImage>> {
     play(MASCOT, &format!("whale-{name}"), 0, now)
 }
 
+/// Trinket `index` from `kind`'s box, the box cut into its cells the first time.
+pub fn trinket(kind: Kind, index: usize) -> Option<Arc<RenderImage>> {
+    type Boxes = Mutex<HashMap<&'static str, Arc<Vec<Arc<RenderImage>>>>>;
+    static CUT: OnceLock<Boxes> = OnceLock::new();
+    let (name, bytes) = BOXES.iter().find(|(name, _)| *name == kind.stem())?;
+    let mut cut = CUT.get_or_init(Default::default).lock().ok()?;
+    let cells = match cut.get(name) {
+        Some(cells) => cells.clone(),
+        None => match cells(bytes) {
+            Ok(cells) => {
+                let cells = Arc::new(cells);
+                cut.insert(name, cells.clone());
+                cells
+            }
+            Err(error) => {
+                log::error!("agents: {name}'s trinkets do not decode: {error:#}");
+                return None;
+            }
+        },
+    };
+    cells.get(index % TRINKETS).cloned()
+}
+
+/// A box's strip cut into its square cells.
+fn cells(bytes: &[u8]) -> anyhow::Result<Vec<Arc<RenderImage>>> {
+    let strip = image::load_from_memory_with_format(bytes, image::ImageFormat::WebP)?.into_rgba8();
+    let side = strip.height();
+    anyhow::ensure!(
+        strip.width() == side * TRINKETS as u32,
+        "a strip of {TRINKETS} square cells, not {} by {side}",
+        strip.width()
+    );
+    Ok((0..TRINKETS as u32)
+        .map(|cell| {
+            let cell = image::imageops::crop_imm(&strip, cell * side, 0, side, side).to_image();
+            Arc::new(RenderImage::new([bgra(Frame::new(cell))]))
+        })
+        .collect())
+}
+
 /// The frame of `art`'s loop `name` for `now`, decoding it the first time.
 fn play(
     art: &'static [(&'static str, &'static [u8])],
@@ -183,6 +240,27 @@ mod tests {
             let moves = *name != "whale-calm";
             assert_eq!(strip.frames.len() > 1, moves, "{name} moves, but her still");
             assert_eq!(strip.frames[0].size(0).width.0, 224, "{name}");
+        }
+    }
+
+    #[test]
+    fn every_character_has_a_full_box_of_trinkets() {
+        assert_eq!(BOXES.len(), Kind::ALL.len());
+        for kind in Kind::ALL {
+            let (_, bytes) = BOXES
+                .iter()
+                .find(|(name, _)| *name == kind.stem())
+                .expect("built in");
+            let cells = cells(bytes).expect("decodes");
+            assert_eq!(cells.len(), TRINKETS);
+            for (index, cell) in cells.iter().enumerate() {
+                let drawn = cell
+                    .as_bytes(0)
+                    .expect("a frame")
+                    .chunks_exact(4)
+                    .any(|pixel| pixel[3] > 0);
+                assert!(drawn, "{}'s trinket {index} is empty", kind.stem());
+            }
         }
     }
 
