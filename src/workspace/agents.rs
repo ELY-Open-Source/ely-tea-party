@@ -154,7 +154,8 @@ impl Workspace {
                         State::Blocked => Status::NeedsInput,
                         _ => Status::Idle,
                     };
-                    if agent.set(status, now) {
+                    // Read each tick: only a change is a sign of life.
+                    if agent.status != status && agent.set(status, now) {
                         log::info!(
                             "agents: session {} native Codex state is {status:?}",
                             session.id

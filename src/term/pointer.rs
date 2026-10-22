@@ -11,7 +11,7 @@ use gpui::{
 
 use super::{
     keys,
-    links::link_at,
+    links::Link,
     mouse::{self, Button, Gesture, MouseMode, Report, Tracking},
     view::TerminalView,
 };
@@ -134,11 +134,18 @@ impl TerminalView {
                 self.pty.pid
             );
         } else if event.button == MouseButton::Left && opens {
-            let link = link_at(&self.pty.term.lock(), point);
-            if let Some(link) = link {
-                log::info!("terminal {}: opens {link}", self.pty.pid);
-                cx.open_url(&link);
-                return;
+            match self.link(point) {
+                Some(Link::Url(url)) => {
+                    log::info!("terminal {}: opens {url}", self.pty.pid);
+                    cx.open_url(&url);
+                    return;
+                }
+                Some(Link::File(path)) => {
+                    log::info!("terminal {}: opens {}", self.pty.pid, path.display());
+                    cx.open_with_system(&path);
+                    return;
+                }
+                None => {}
             }
         }
         if tracking != Tracking::Off {
@@ -192,7 +199,7 @@ impl TerminalView {
     fn hover(&mut self, modifiers: &Modifiers, cx: &mut Context<Self>) {
         let on_link = opens(modifiers) && {
             let (_, point, _) = self.cell_at(self.pointer.at);
-            link_at(&self.pty.term.lock(), point).is_some()
+            self.link(point).is_some()
         };
         if self.pointer.on_link != on_link {
             self.pointer.on_link = on_link;

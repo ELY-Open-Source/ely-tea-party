@@ -39,6 +39,8 @@ use crate::{settings::SettingsStore, themes};
 
 /// How long the cursor shows, then hides, while it blinks.
 pub const BLINK: Duration = Duration::from_millis(600);
+/// Output this soon after a resize or a focus report is the program's redraw, not work.
+const REPLY: Duration = Duration::from_millis(500);
 
 /// What a terminal tells its owner.
 #[derive(Clone, Debug, PartialEq)]
@@ -98,8 +100,12 @@ pub struct TerminalView {
     focused: bool,
     blinking: bool,
     shown: bool,
-    /// When the program last drew.
+    /// When the program last drew, its replies to `poked` aside.
     pub(super) drew: std::time::Instant,
+    /// When it last heard of a resize or a focus change.
+    poked: std::time::Instant,
+    /// The folder its shell last reported, which relative paths start from.
+    pub(super) folder: Option<PathBuf>,
     _events: Task<()>,
     _blink: Task<()>,
     _herdr: Task<()>,
@@ -160,6 +166,8 @@ impl TerminalView {
             blinking: false,
             shown: true,
             drew: std::time::Instant::now(),
+            poked: std::time::Instant::now(),
+            folder: None,
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
             _herdr: super::herdr::follow(cx),
@@ -234,6 +242,7 @@ impl TerminalView {
         }
         self.size = size;
         self.pty.resize(size, self.cell);
+        self.poked = std::time::Instant::now();
         log::debug!("terminal {}: {} by {}", self.pty.pid, size.0, size.1);
         self.search(false, cx);
         true
@@ -253,6 +262,7 @@ impl TerminalView {
                 if asked { ", reported" } else { "" }
             );
             if asked {
+                self.poked = std::time::Instant::now();
                 self.pty.write(if focused {
                     &b"\x1b[I"[..]
                 } else {
@@ -271,6 +281,7 @@ impl TerminalView {
             match event {
                 PtyEvent::Folder(folder) => {
                     self.reports += 1;
+                    self.folder = Some(folder.clone());
                     cx.emit(TerminalEvent::Folder(folder));
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
@@ -318,7 +329,10 @@ impl TerminalView {
         match event {
             Event::Wakeup => {
                 self.shown = true;
-                self.drew = std::time::Instant::now();
+                let now = std::time::Instant::now();
+                if now.duration_since(self.poked) > REPLY {
+                    self.drew = now;
+                }
             }
             // The tap reads the title in the output's order; alacritty's title events come after it.
             Event::MouseCursorDirty

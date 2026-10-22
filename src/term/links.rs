@@ -1,13 +1,42 @@
+use std::path::{Path, PathBuf};
+
 use alacritty_terminal::{
     index::{Boundary, Point},
     term::{Term, cell::Flags},
 };
 use ely_gpui_component::terminal::{Target, links};
 
-use super::prompts;
+use super::{prompts, view::TerminalView};
 
-/// The OSC 8 target at `point`, else a URL in its wrapped line; a prompt's own link is no target.
-pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
+/// What a press opens.
+pub enum Link {
+    Url(String),
+    File(PathBuf),
+}
+
+impl TerminalView {
+    /// The link at `point`; a path counts only where it names a file on disk.
+    pub(super) fn link(&self, point: Point) -> Option<Link> {
+        let target = link_at(&self.pty.term.lock(), point)?;
+        match target {
+            Target::Url(url) => Some(Link::Url(url.to_string())),
+            Target::Path { path, .. } => file(&path, self.folder.as_deref()).map(Link::File),
+        }
+    }
+}
+
+/// `path` on disk: `~/` from home, a relative one from `folder`.
+fn file(path: &str, folder: Option<&Path>) -> Option<PathBuf> {
+    let full = match path.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir()?.join(rest),
+        None if Path::new(path).is_absolute() => PathBuf::from(path),
+        None => folder?.join(path),
+    };
+    full.exists().then_some(full)
+}
+
+/// The OSC 8 target at `point`, else a URL or a path in its wrapped line; a prompt's own link is no target.
+pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<Target> {
     let grid = term.grid();
     if grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
         point.column -= 1;
@@ -16,7 +45,7 @@ pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
         .hyperlink()
         .filter(|link| link.uri() != prompts::LINK)
     {
-        return Some(link.uri().to_string());
+        return Some(Target::Url(link.uri().to_string().into()));
     }
     let end = term.line_search_right(point);
     let mut cell = term.line_search_left(point);
@@ -39,10 +68,7 @@ pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
     }
     links(&text)
         .into_iter()
-        .find_map(|(bytes, target)| match target {
-            Target::Url(url) if bytes.contains(&at) => Some(url.to_string()),
-            _ => None,
-        })
+        .find_map(|(bytes, target)| bytes.contains(&at).then_some(target))
 }
 
 #[cfg(test)]
@@ -60,7 +86,32 @@ mod tests {
         let mut term = Term::new(Config::default(), &TermSize::new(12, 4), VoidListener);
         let mut parser: Processor = Processor::new();
         parser.advance(&mut term, bytes.as_bytes());
-        link_at(&term, Point::new(Line(line), Column(column)))
+        link_at(&term, Point::new(Line(line), Column(column))).map(|target| match target {
+            Target::Url(url) => url.to_string(),
+            Target::Path { path, .. } => path.to_string(),
+        })
+    }
+
+    #[test]
+    fn a_path_names_its_file_without_the_line() {
+        assert_eq!(link("at src/a.rs:4:2", 0, 6).as_deref(), Some("src/a.rs"));
+        assert_eq!(link("at src/a.rs:4:2", 0, 1), None);
+    }
+
+    #[test]
+    fn a_path_opens_only_where_a_file_is() {
+        let folder = std::env::temp_dir().join(format!("ely-links-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("src")).unwrap();
+        std::fs::write(folder.join("src/a.rs"), "").unwrap();
+        assert_eq!(
+            file("src/a.rs", Some(&folder)),
+            Some(folder.join("src/a.rs"))
+        );
+        assert_eq!(file("src/b.rs", Some(&folder)), None, "no such file");
+        assert_eq!(file("src/a.rs", None), None, "no folder to start from");
+        let absolute = folder.join("src/a.rs");
+        assert_eq!(file(absolute.to_str().unwrap(), None), Some(absolute));
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
