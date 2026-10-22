@@ -15,6 +15,12 @@ fn main() {
         env_logger::Env::default().default_filter_or("ely_tea_party=info"),
     )
     .init();
+    // Sessions name this executable their agents' `ELY_HOOK`: a hook that opened a window would restore those agents, whose hooks would open more.
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    if all.first().map(String::as_str) == Some("hook") {
+        ely_tea_party::agents::hooks::run(&all[1..]);
+        return;
+    }
     let mut args = std::env::args().skip(1).peekable();
     let keys: Vec<String> = if args.peek().map(String::as_str) == Some("--keys") {
         args.next();
