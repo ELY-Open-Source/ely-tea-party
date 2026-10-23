@@ -100,9 +100,9 @@ impl TerminalView {
             Action::Press
         };
         let id = held(&event.keystroke, facts);
-        let pressed = self.held.get(&id) == Some(&true);
-        let went = self.send(&event.keystroke, action, facts, pressed, cx);
-        self.held.insert(id, went == Some(true));
+        let prior = self.held.get(&id).copied();
+        let went = self.send(&event.keystroke, action, facts, prior, cx);
+        self.held.insert(id, went.unwrap_or(Went::Bytes));
         if went.is_some() {
             cx.stop_propagation();
         }
@@ -111,11 +111,11 @@ impl TerminalView {
     /// A release goes out only for a press this terminal saw: none for one a binding took.
     pub(super) fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         let facts = self.facts(&event.keystroke);
-        let Some(record) = self.held.remove(&held(&event.keystroke, facts)) else {
+        let Some(went) = self.held.remove(&held(&event.keystroke, facts)) else {
             return;
         };
         if self
-            .send(&event.keystroke, Action::Release, facts, record, cx)
+            .send(&event.keystroke, Action::Release, facts, Some(went), cx)
             .is_some()
         {
             cx.stop_propagation();
@@ -130,19 +130,28 @@ impl TerminalView {
             key_char: None,
         };
         let facts = Facts::default();
-        let record = self.send(&keystroke, Action::Press, facts, false, cx) == Some(true);
-        self.send(&keystroke, Action::Release, facts, record, cx);
+        let went = self.send(&keystroke, Action::Press, facts, None, cx);
+        self.send(
+            &keystroke,
+            Action::Release,
+            facts,
+            Some(went.unwrap_or(Went::Bytes)),
+            cx,
+        );
     }
 
-    /// Sends what `keystroke` means to the program: none when it is text the input method types, else whether it went as Windows' record; `pressed` says that of a held key's press.
+    /// Sends what `keystroke` means to the program: none when it is text the input method types, else how it went; `prior` is how a held key's press went.
     fn send(
         &mut self,
         keystroke: &Keystroke,
         action: Action,
         facts: Facts,
-        pressed: bool,
+        // Linux sends every key one way.
+        #[cfg_attr(not(any(windows, target_os = "macos")), expect(unused_variables))] prior: Option<
+            Went,
+        >,
         cx: &mut Context<Self>,
-    ) -> Option<bool> {
+    ) -> Option<Went> {
         let modifiers = keystroke.modifiers;
         let alt = modifiers.alt && Self::alt_is_meta(facts, cx);
         let text = match &keystroke.key_char {
@@ -160,6 +169,18 @@ impl TerminalView {
             action,
             unshifted: facts.unshifted,
         };
+        #[cfg(target_os = "macos")]
+        {
+            let natural = keys::natural(&key, modifiers.alt)
+                .filter(|_| crate::settings::SettingsStore::get(cx).natural_text_editing);
+            if edits(action, prior, natural.is_some()) {
+                if let Some(bytes) = natural.filter(|_| action != Action::Release) {
+                    log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
+                    self.input(bytes.to_vec(), cx);
+                }
+                return Some(Went::Editing);
+            }
+        }
         let mode = *self.pty.term.lock().mode();
         let kitty = Kitty {
             disambiguate: mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),
@@ -169,12 +190,19 @@ impl TerminalView {
             text: mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
         };
         #[cfg(windows)]
-        if self.win32 && records(kitty, action, keys::types(&key), pressed) {
+        if self.win32
+            && records(
+                kitty,
+                action,
+                keys::types(&key),
+                prior == Some(Went::Record),
+            )
+        {
             match super::win32::record(keystroke, action) {
                 Some(bytes) => {
                     log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
                     self.input(bytes, cx);
-                    return Some(true);
+                    return Some(Went::Record);
                 }
                 None => log::debug!(
                     "terminal {}: no virtual key for {:?}, so it goes as bytes",
@@ -183,12 +211,10 @@ impl TerminalView {
                 ),
             }
         }
-        #[cfg(not(windows))]
-        debug_assert!(!pressed, "only Windows sends records");
         let bytes = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty)?;
         log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
         self.input(bytes, cx);
-        Some(false)
+        Some(Went::Bytes)
     }
 
     /// AppKit's facts of the key; logged and none when unreadable.
@@ -258,11 +284,32 @@ struct Facts {
     code: Option<u16>,
 }
 
+/// How a press went to the program, which its repeats and release follow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Went {
+    Bytes,
+    /// Windows' own record, win32-input-mode.
+    #[cfg(windows)]
+    Record,
+    /// Readline's bytes, natural text editing on macOS.
+    #[cfg(target_os = "macos")]
+    Editing,
+}
+
 /// A key while it is down: its code where the platform gives one, else gpui's name, which Shift may change.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Held {
     Code(u16),
     Name(String),
+}
+
+/// Whether a key goes as natural editing: a press by its keys, and a repeat or release as its press went, whatever modifiers changed since.
+#[cfg(target_os = "macos")]
+fn edits(action: Action, prior: Option<Went>, natural: bool) -> bool {
+    match (action, prior) {
+        (Action::Press, _) | (Action::Repeat, None) => natural,
+        (_, prior) => prior == Some(Went::Editing),
+    }
 }
 
 /// Whether a key goes as Windows' record, as in Windows Terminal: kitty's flags go first, text stays text, and a repeat or release goes as its press did.
@@ -396,6 +443,27 @@ mod tests {
         assert!(
             !records(kitty, Action::Press, false, false),
             "kitty's flags go first"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_editing_press_takes_its_repeats_and_release_with_it() {
+        let editing = Some(Went::Editing);
+        assert!(edits(Action::Press, None, true));
+        assert!(
+            !edits(Action::Press, editing, false),
+            "a press goes by its own keys"
+        );
+        // Option came up while Left repeats and lets go: still the editing key's.
+        assert!(edits(Action::Repeat, editing, false));
+        assert!(edits(Action::Release, editing, false));
+        // Option went down while Left was held: Left's own release still goes.
+        assert!(!edits(Action::Repeat, Some(Went::Bytes), true));
+        assert!(!edits(Action::Release, Some(Went::Bytes), true));
+        assert!(
+            edits(Action::Repeat, None, true),
+            "a repeat of an unseen press"
         );
     }
 }

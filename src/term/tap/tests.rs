@@ -146,27 +146,57 @@ fn mouse_modes_read_through_controls_as_the_parser_does() {
     assert_eq!(modes.mode.tracking, Tracking::Normal, "32 values hold");
 }
 
+/// The folder `body` names as Unix reads it.
+fn unix(body: &[u8]) -> Option<PathBuf> {
+    folder_on(body, false)
+}
+
 #[test]
-fn a_local_uri_gives_its_decoded_folder() {
+fn a_local_uri_gives_its_decoded_unix() {
     assert_eq!(
-        folder(b"file:///tmp/ely%20dir"),
+        unix(b"file:///tmp/ely%20dir"),
         Some(PathBuf::from("/tmp/ely dir"))
     );
-    assert_eq!(folder(b"file://localhost/x"), Some(PathBuf::from("/x")));
+    assert_eq!(unix(b"file://localhost/x"), Some(PathBuf::from("/x")));
     let host = gethostname::gethostname().into_string().expect("host");
     let named = format!("file://{host}/y");
-    assert_eq!(folder(named.as_bytes()), Some(PathBuf::from("/y")));
+    assert_eq!(unix(named.as_bytes()), Some(PathBuf::from("/y")));
     assert_eq!(
-        folder("file:///%E4%B8%AD".as_bytes()),
+        unix("file:///%E4%B8%AD".as_bytes()),
         Some(PathBuf::from("/中"))
     );
 }
 
 #[test]
 fn other_hosts_and_bad_uris_give_none() {
-    assert_eq!(folder(b"file://elsewhere.invalid/tmp"), None);
-    assert_eq!(folder(b"http://x/y"), None);
-    assert_eq!(folder(b"file:///%FF"), None);
+    assert_eq!(unix(b"file://elsewhere.invalid/tmp"), None);
+    assert_eq!(unix(b"http://x/y"), None);
+    assert_eq!(unix(b"file:///%FF"), None);
+}
+
+#[test]
+fn windows_reads_a_drive_or_a_share_wsl_s_among_them() {
+    let windows = |body: &str| folder_on(body.as_bytes(), true);
+    let wsl = r"\\wsl.localhost\Ubuntu\home\a b";
+    let share = windows("file:////wsl.localhost/Ubuntu/home/a%20b");
+    assert_eq!(share, Some(PathBuf::from(wsl)));
+    let old = r"\\wsl$\Debian\x";
+    assert_eq!(
+        windows("file:////wsl%24/Debian/x"),
+        Some(PathBuf::from(old))
+    );
+    let drive = windows("file:///C%3A/Users/me");
+    assert_eq!(drive, Some(PathBuf::from("C:/Users/me")));
+    assert_eq!(
+        windows("file://wsl.localhost/Ubuntu/x"),
+        None,
+        "another host"
+    );
+    assert_eq!(
+        windows("file:///home/me"),
+        None,
+        "a Linux path names no Windows folder"
+    );
 }
 
 /// vte's own reading of `bytes`, under the same mode rules.

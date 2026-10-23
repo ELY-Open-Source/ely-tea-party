@@ -15,6 +15,9 @@ use crate::{
 /// One notification a session every 3 seconds at most.
 const GAP: Duration = Duration::from_secs(3);
 
+/// The least a command runs before its end posts, as Ghostty's `notify-on-command-finish-after`.
+const RAN_FOR: Duration = Duration::from_secs(5);
+
 /// The notifications a session keeps for presses and answers; past them the oldest goes.
 const POSTED: usize = 64;
 
@@ -157,8 +160,17 @@ impl TerminalView {
         }
         self.ended = status;
         // Only a command C started posts its end, so a prompt bash 3.2 draws again posts nothing.
-        if std::mem::take(&mut self.ran) {
-            self.post(finished(status), None, cx);
+        if let Some(start) = std::mem::take(&mut self.ran) {
+            let now = Instant::now();
+            if ran_long(start, now) {
+                self.post(finished(status), None, cx);
+            } else {
+                log::debug!(
+                    "terminal {}: a command under {RAN_FOR:?} ran, so it posts no {}",
+                    self.pty.pid,
+                    finished(status)
+                );
+            }
         } else {
             log::debug!(
                 "terminal {}: an end without its start posts nothing",
@@ -297,6 +309,11 @@ fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Whether a command that ran from `start` to `now` ran long enough to post its end.
+fn ran_long(start: Instant, now: Instant) -> bool {
+    now.duration_since(start) >= RAN_FOR
 }
 
 /// What a command's end says: it finished, or the status it failed with.

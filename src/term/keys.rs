@@ -53,6 +53,24 @@ pub fn encode(key: &Key, app_cursor: bool, kitty: Kitty) -> Option<Vec<u8>> {
     }
 }
 
+/// Readline's bytes for macOS's editing keys; `option` is Option held, whatever Option as Alt says. The caller drops a release.
+pub fn natural(key: &Key, option: bool) -> Option<&'static [u8]> {
+    if key.ctrl || key.shift {
+        return None;
+    }
+    Some(match (key.name, option, key.platform) {
+        ("left", true, false) => b"\x1bb",
+        ("right", true, false) => b"\x1bf",
+        ("backspace", true, false) => b"\x1b\x7f",
+        ("delete", true, false) => b"\x1bd",
+        ("left", false, true) => b"\x01",
+        ("right", false, true) => b"\x05",
+        ("backspace", false, true) => b"\x15",
+        ("delete", false, true) => b"\x0b",
+        _ => return None,
+    })
+}
+
 /// Pasted text for the program; bracketed text loses ESC and Ctrl-C, as in alacritty.
 pub fn paste(text: &str, bracketed: bool) -> Vec<u8> {
     if bracketed {

@@ -20,21 +20,28 @@ if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404 )); then
   _ely_ps0='${_ely_note[_ely_ran=1]-}\e]133;C\a'
 fi
 _ely_prompt() {
-  builtin local ret=$? LC_ALL=C char url= i title
+  builtin local ret=$? LC_ALL=C char url= i title dir="$PWD"
   if [ -n "$_ely_ran" ]; then
     builtin printf '\e]133;D;%s\a' "$ret"
     _ely_ran=
   fi
   [ -n "$_ely_ps0" ] || _ely_d=([1]=$'\e]133;D;'"$ret"$'\a')
-  for (( i = 0; i < ${#PWD}; i++ )); do
-    char=${PWD:i:1}
+  if [ -n "${ELY_WSL-}" ]; then
+    # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
+    dir=$(wslpath -w "$PWD" 2>/dev/null) || dir=
+    dir=${dir//\\//}
+    case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
+  fi
+  for (( i = 0; i < ${#dir}; i++ )); do
+    char=${dir:i:1}
     case $char in
       [[:cntrl:]]|%) builtin printf -v char '%%%02X' "'$char" ;;
     esac
     url+=$char
   done
   title=${PWD##*/}
-  builtin printf '\e]7;file://%s\a\e]2;%s\a' "$url" "${title//[[:cntrl:]]/}"
+  [ -n "$dir" ] && builtin printf '\e]7;file://%s\a' "$url"
+  builtin printf '\e]2;%s\a' "${title//[[:cntrl:]]/}"
   builtin return $ret
 }
 # Last, after anything that sets PS1 or PS0.

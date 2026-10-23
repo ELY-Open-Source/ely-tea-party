@@ -164,6 +164,7 @@ impl Workspace {
             session.pending = first.resume.clone();
             dress(session, first);
         }
+        let shell = crate::settings::SettingsStore::get(cx).shell.clone();
         for place in places {
             if !place.folder.is_dir() {
                 log::info!(
@@ -173,7 +174,7 @@ impl Workspace {
                 continue;
             }
             let id = agents::next_session();
-            match start(place.folder.clone(), Some(id), cx) {
+            match start(&shell, place.folder.clone(), Some(id), cx) {
                 Ok(((pty, events), launch)) => {
                     self.add((id, pty, events), launch, window, cx);
                     if let Some(session) = self.sessions.last_mut() {

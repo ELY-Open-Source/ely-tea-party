@@ -393,6 +393,46 @@ fn super_is_kittys_eighth_bit() {
 }
 
 #[test]
+fn natural_text_editing_sends_readlines_bytes() {
+    let bytes = |spec: &'static str| {
+        let pressed = key(spec, "");
+        natural(&pressed, pressed.alt)
+            .map(|bytes| String::from_utf8(bytes.to_vec()).expect("utf-8"))
+    };
+    let cases = [
+        ("alt+left", "\x1bb"),
+        ("alt+right", "\x1bf"),
+        ("alt+backspace", "\x1b\x7f"),
+        ("alt+delete", "\x1bd"),
+        ("cmd+left", "\x01"),
+        ("cmd+right", "\x05"),
+        ("cmd+backspace", "\x15"),
+        ("cmd+delete", "\x0b"),
+    ];
+    for (spec, want) in cases {
+        assert_eq!(bytes(spec).as_deref(), Some(want), "{spec}");
+    }
+    for spec in [
+        "alt+shift+left",
+        "ctrl+alt+left",
+        "cmd+alt+left",
+        "alt+up",
+        "cmd+c",
+    ] {
+        assert_eq!(bytes(spec), None, "{spec}");
+    }
+    let released = Key {
+        action: Action::Release,
+        ..key("alt+left", "")
+    };
+    assert_eq!(
+        natural(&released, true),
+        Some(b"\x1bb".as_slice()),
+        "a release is the caller's to drop"
+    );
+}
+
+#[test]
 fn pastes_end_lines_with_cr_or_go_bracketed_without_escapes() {
     assert_eq!(paste("a\r\nb\nc", false), b"a\rb\rc");
     assert_eq!(

@@ -13,6 +13,8 @@ use ely_gpui_component::{
 
 mod diff;
 pub mod panel;
+#[cfg(any(windows, test))]
+mod wsl;
 
 pub use diff::diff;
 
@@ -32,12 +34,10 @@ pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Runs git in `folder`: English messages, literal paths, no lock the user's own git could meet; `input` feeds stdin.
 fn git<A: AsRef<OsStr>>(folder: &Path, args: &[A], input: &[u8]) -> anyhow::Result<Output> {
     let named = || format!("git: `git {}` in {}", line(args), folder.display());
-    let mut command = Command::new("git");
+    let mut command = command(folder);
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
     let mut child = command
-        .arg("-C")
-        .arg(folder)
         .args(["--no-optional-locks", "--literal-pathspecs"])
         .args(args)
         .env("LC_ALL", "C")
@@ -61,6 +61,24 @@ fn git<A: AsRef<OsStr>>(folder: &Path, args: &[A], input: &[u8]) -> anyhow::Resu
         wrote.with_context(|| format!("{} took no input", named()))?;
     }
     Ok(output)
+}
+
+/// git in `folder`: inside its WSL distribution where it lies in one, since Windows' git refuses that share as another's.
+fn command(folder: &Path) -> Command {
+    #[cfg(windows)]
+    if let Some((share, inside)) = wsl::split(folder) {
+        let shared =
+            std::env::var("WSLENV").map_or("LC_ALL".into(), |list| format!("{list}:LC_ALL"));
+        let mut command = Command::new("wsl.exe");
+        command
+            .args(["-d", wsl::distro(share), "--exec", "git", "-C", &inside])
+            .env("WSLENV", shared)
+            .env("WSL_UTF8", "1");
+        return command;
+    }
+    let mut command = Command::new("git");
+    command.arg("-C").arg(folder);
+    command
 }
 
 /// What git said about a failure: its errors, else its output, else its exit status.
@@ -224,6 +242,9 @@ pub fn changes(folder: &Path) -> anyhow::Result<Option<Vec<(PathBuf, GitStatus)>
     };
     let status = ["status", "--porcelain=v2", "-z", "--", "."];
     let (_, records) = parse(&run(folder, &status, &[])?)?;
+    // WSL's git names files as Linux does; Files reads them through the share.
+    #[cfg(windows)]
+    let shared = wsl::split(folder).is_some();
     records
         .into_iter()
         .map(|record| {
@@ -236,7 +257,13 @@ pub fn changes(folder: &Path) -> anyhow::Result<Option<Vec<(PathBuf, GitStatus)>
             let mut path = folder.to_path_buf();
             for part in rest.split(|&byte| byte == b'/') {
                 if !part.is_empty() {
-                    path.push(path_of(part)?);
+                    let part = path_of(part)?;
+                    #[cfg(windows)]
+                    let part = match shared {
+                        true => PathBuf::from(wsl::to_windows(&part.display().to_string())),
+                        false => part,
+                    };
+                    path.push(part);
                 }
             }
             Ok((path, status))
@@ -283,6 +310,12 @@ pub fn repo(folder: &Path) -> anyhow::Result<Option<Repo>> {
         format!("git: rev-parse in {} printed {printed:?}", folder.display())
     })?;
     let top = path_of(top)?;
+    // WSL's git names the top inside its distribution.
+    #[cfg(windows)]
+    let top = match wsl::split(folder) {
+        Some((share, _)) => wsl::join(share, &top),
+        None => top,
+    };
     let status = ["status", "--porcelain=v2", "--branch", "-z"];
     let (head, records) = parse(&run(&top, &status, &[])?)?;
     let mut repo = Repo {

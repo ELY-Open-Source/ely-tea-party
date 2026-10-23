@@ -1,6 +1,8 @@
 mod boxes;
 mod click;
 mod drop;
+#[cfg(windows)]
+mod env;
 mod find;
 mod fonts;
 pub mod frame;

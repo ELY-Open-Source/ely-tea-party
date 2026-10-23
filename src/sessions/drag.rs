@@ -3,6 +3,7 @@
 use std::{path::Path, time::Instant};
 
 use ely_gpui_component::{
+    menus::ContextMenu,
     primitives::Tooltip,
     theme::{ActiveTheme, Radius},
 };
@@ -11,7 +12,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window, div, transparent_black,
 };
 
-use super::{Session, TITLE, item, one_line, shown};
+use super::{Session, TITLE, item, menu, one_line, shown};
 use crate::workspace::Workspace;
 
 /// The session shown once session `from` moved to `to`, `active` having been shown.
@@ -49,7 +50,7 @@ impl Render for Ghost {
     }
 }
 
-/// Session `index`'s row, which drags to another session's place.
+/// Session `index`'s row, which drags to another session's place; a right press opens its menu.
 pub fn row(
     workspace: &Entity<Workspace>,
     index: usize,
@@ -71,6 +72,7 @@ pub fn row(
     };
     let workspace = workspace.clone();
     let item = item(&workspace, index, session, active, when.0, when.1, cx);
+    let menu = menu::row(&workspace, session.terminal.entity_id());
     div()
         .id(("session-row", pid))
         .rounded(cx.theme().radius(Radius::Lg))
@@ -90,5 +92,9 @@ pub fn row(
         .on_drop(move |moving: &Moving, _, cx| {
             workspace.update(cx, |this, cx| this.move_session(moving.from, index, cx))
         })
-        .child(item)
+        .child(
+            ContextMenu::new(("session-menu", pid), menu)
+                .w_full()
+                .child(item),
+        )
 }

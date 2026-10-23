@@ -11,8 +11,8 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ControlSize, IconSize, Radius},
 };
 use gpui::{
-    AnyElement, App, Entity, ObjectFit, Rems, SharedString, StyledImage, Subscription, div, img,
-    prelude::*, rems,
+    AnyElement, App, Entity, MouseButton, ObjectFit, Rems, SharedString, StyledImage, Subscription,
+    div, img, prelude::*, rems,
 };
 
 use crate::{
@@ -22,6 +22,7 @@ use crate::{
 };
 
 mod drag;
+mod menu;
 pub mod orb;
 
 pub use drag::{Moving, after_move, row};
@@ -43,6 +44,8 @@ pub struct Session {
     pub editing: Option<(Entity<TextInput>, Subscription)>,
     /// The folder it reports, else the one it started in.
     pub folder: PathBuf,
+    /// The program it runs, as its path; empty for the login shell.
+    pub shell: String,
     /// Its shell has integration, or it reported a folder anyway.
     pub reports: bool,
     /// A bell rang while it was hidden.
@@ -313,6 +316,8 @@ fn editor(
 ) -> impl IntoElement {
     let (workspace, id) = (workspace.clone(), session.terminal.entity_id());
     div()
+        // A press selecting text stays the field's: the row would lift it for a drag.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_key_down(move |event, window, cx| {
             if event.keystroke.key == "escape" {
                 cx.stop_propagation();

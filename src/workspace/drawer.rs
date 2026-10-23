@@ -77,7 +77,7 @@ impl Workspace {
             }
             None => {
                 let folder = session.folder.clone();
-                match super::start(folder.clone(), None, cx) {
+                match super::start(&SettingsStore::get(cx).shell, folder.clone(), None, cx) {
                     Ok(((pty, events), launch)) => {
                         let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
                         let events = cx.subscribe_in(

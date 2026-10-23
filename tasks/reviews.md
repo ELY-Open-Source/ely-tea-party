@@ -330,3 +330,34 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T64
 
 - Round 1, 526e00a with v0.1.7 published on GitHub at f360143: PASS. GitHub's main and the tag name f360143, which CI run 39348049724 tested on macOS, Windows and Linux; the release is published, no prerelease, and `releases/latest` answers it; the three files downloaded anonymously match the notes' SHA-256; the disk image is stapled, notarized, arm64, 0.1.7 and macOS 11, beside Applications; the zip's executable a GUI program with its seven icon images and PerMonitorV2 manifest, byte for byte 0.1.6's, and no C runtime DLL; the tarball's three files and modes, glibc 2.35; each binary holds GitHub's `releases/latest`, no Gitea host, and the code of T59, T60, T62, T63 and T66, the Windows one T65's too; the notes match the work.
+
+## T67
+
+- Round 1, e887f31: FAIL. PR #5's own expansion ran eight rounds and grew a name that named itself without bound; an App Execution Alias ahead of PowerShell 7 hid it; `TERM`, `COLORTERM` and the integration's variables went in beside a `term` the registry held, and alacritty kept one at random; a registry `LANG` gave way to the default; a failed registry read started the session on a mixed environment; Unicode names went unmatched. Fixed in 4ffd79f: `term::env` reads as Windows Terminal's `til::env::regenerate`, each key's plain values first, then those to expand, each once; names compare through `CompareStringOrdinal`; `Env::set` replaces a name under any case; a registry error fails the start, naming its key; the shell search goes past an alias down `PATH`.
+- Round 2, 4ffd79f: FAIL. F1 to F6 held; but a `PATH` only this process held was lost where the registry named none, and a folder whose name held a `;` was split again. Fixed in 15c47dd: `settle` keeps each path variable this process held; each folder reaches the search through `join_paths`.
+- Round 3, 15c47dd: PASS. 24 probes held, F7 and F8 among them; check.sh, the Windows clippy, and the env, shell and win32 tests on the owner's Windows 11 PC passed.
+
+## T68
+
+- Round 1, 112598b: FAIL. fish 4, which reads `?` as no glob, passed every drive folder by; a network share went as another host's folder; names WSL shows Windows through U+F000 escapes reached git as they were; zsh under `nounset` lost its folder outside WSL. Fixed in 84ea235: fish matches a drive by regex; every share goes with an empty host, and `tap` lost its WSL host rule; `git::wsl` maps the escapes both ways, Files' marks too; zsh reads `${ELY_WSL-}`.
+- Round 2, 84ea235: PASS. Round 1's 90-case matrix, its launcher and git harnesses, 130 escape cases and 11 parser cases held; check.sh, the Windows clippy and the Linux tests passed; the owner's PC followed `/tmp/ely t68/re:po` and read its git through `wsl.exe`.
+- Round 3, 305b650: PASS. CI then failed on Windows: the reused runner's checkout kept the PowerShell script's carriage returns from before `.gitattributes`, which PowerShell reads, so the guard reads only the scripts WSL runs; 15 guard cases and a stale-checkout replay held.
+
+## T69
+
+- Round 1, 60ea60e: FAIL. A key's release took the natural editing path by the modifiers left at release, so Option-Left let go after Option sent kitty's Left release, and Left pressed plain lost its own once Option went down. Fixed in 4f54998: each held key remembers how its press went, bytes, a Windows record or natural editing, and its repeats and release follow it.
+- Round 2, 4f54998: PASS. The finding's three chords and its reverse held under kitty's flags 31; Windows' record rule matched the old one in 576 combinations; check.sh and the Linux and Windows lints passed.
+
+## T70
+
+- Round 1, 5560e2a: FAIL. Duplicate and Close held across shells, moves and closes under an open menu; but a drag selecting text in the rename field lifted the row too and moved the session. Fixed in a455df9: the field's wrapper keeps a left press from the row and its drag.
+- Round 2, a455df9: PASS. The gesture selected `GHIJK` with the rows in place; presses, double presses, Enter, Escape, blur, a right press in the field and the rows' own drags held; check.sh passed.
+
+## T71
+
+- Round 1, a9637ad: PASS. omp's bursts of A, B, C and D;0, which posted three ends on the parent, posted none; a 5.2-second command posted, a 2.1-second one and an end without its C did not; `ended`, the row's error mark, OSC 7501 and OSC 9 kept their paths; bash 3.2 and zsh held; check.sh passed.
+
+## T72
+
+- Round 1, 26cd2aa with v0.1.8 published on GitHub at d5f97df: FAIL, on one point: the macOS and Windows executables keep dependencies' source paths under the build hosts' home folders, panic locations rustc keeps. That criterion was the round's prompt's, not the project's; every release since v0.1.0 carries them, v0.1.7 1249 in its executable; the owner was told, a decision apart.
+- Round 2, 26cd2aa: PASS. The release is published and latest at d5f97df, which CI run 39730393420 tested; the three files match the notes' SHA-256 downloaded anonymously; the disk image stapled and notarized, the zip's executable a GUI program with its icons and no C runtime DLL, the tarball's modes and glibc 2.35; each binary holds T67 to T71's work for its platform and LF scripts; the notes match the work in English and Chinese and credit the four PR authors. Then the issues and PRs got their thanks and closed, #2 without a word.

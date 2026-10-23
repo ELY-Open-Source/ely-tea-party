@@ -23,6 +23,7 @@ mod panel;
 mod party;
 mod rename;
 pub mod restore;
+mod session;
 mod speed;
 mod update;
 mod usage;
@@ -48,7 +49,7 @@ use crate::{
     git::panel::{Acted, GitPanel},
     menus,
     sessions::{self, Session, orb},
-    settings::{Settings, SettingsStore, StartIn, window::OpenSettings},
+    settings::{Settings, SettingsStore, window::OpenSettings},
     term::{
         Events, Launch, Pty, TerminalView, config,
         shell::{ShellIntegration, launch},
@@ -147,6 +148,8 @@ impl Workspace {
         let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
             this.session_event(entity, event, window, cx)
         });
+        let shell =
+            (launch.program.as_ref()).map_or_else(String::new, |(program, _)| program.clone());
         let pid = terminal.read(cx).pid();
         log::info!("app: session {pid} opens in {}", launch.cwd.display());
         let trinket = sessions::free_trinket(self.sessions.iter().map(|session| session.trinket));
@@ -158,6 +161,7 @@ impl Workspace {
             name: String::new(),
             editing: None,
             folder: launch.cwd,
+            shell,
             reports: launch.reports,
             bell: false,
             waiting: false,
@@ -193,30 +197,6 @@ impl Workspace {
                 }
             })
         });
-    }
-
-    /// A session of the shell the settings name, in home or the shown session's folder.
-    fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(home) = dirs::home_dir() else {
-            log::error!("app: no home folder, so no new session");
-            return;
-        };
-        let settings = SettingsStore::get(cx);
-        let folder = match settings.start_in {
-            StartIn::Home => home,
-            StartIn::Session => self
-                .sessions
-                .get(self.active)
-                .map_or(home, |session| session.folder.clone()),
-        };
-        let id = characters::next_session();
-        match start(folder, Some(id), cx) {
-            Ok(((pty, events), launch)) => {
-                self.add((id, pty, events), launch, window, cx);
-                self.select(self.sessions.len() - 1, window, cx);
-            }
-            Err(error) => log::error!("app: no new session: {error:#}"),
-        }
     }
 
     /// Shows session `index`, clears its bell and its waiting mark, and gives its terminal the keys.
@@ -313,10 +293,15 @@ impl Workspace {
     }
 }
 
-/// Starts the Shell setting in `folder`; a session's `agent` hooks reach the app under its id, a drawer's none.
-fn start(folder: PathBuf, agent: Option<u64>, cx: &App) -> anyhow::Result<((Pty, Events), Launch)> {
+/// Starts `shell`, the Shell setting's way of naming one, in `folder`; a session's `agent` hooks reach the app under its id, a drawer's none.
+fn start(
+    shell: &str,
+    folder: PathBuf,
+    agent: Option<u64>,
+    cx: &App,
+) -> anyhow::Result<((Pty, Events), Launch)> {
     let settings = SettingsStore::get(cx);
-    let mut launch = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0)?;
+    let mut launch = launch(shell, folder, &cx.global::<ShellIntegration>().0)?;
     if let Some(id) = agent {
         launch.env.extend(characters::env(id)?);
     }

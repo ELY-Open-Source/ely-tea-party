@@ -10,18 +10,24 @@ if [[ -o interactive ]]; then
   _ely_ran=
   _ely_first=1
   _ely_precmd() {
-    builtin local ret=$? LC_ALL=C char url=
+    builtin local ret=$? LC_ALL=C char url= dir=$PWD
     if [[ -n $_ely_ran ]]; then
       builtin printf '\e]133;D;%s\a' $ret
       _ely_ran=
     fi
-    for char in ${(s::)PWD}; do
+    if [[ -n ${ELY_WSL-} ]]; then
+      # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
+      dir=${"$(wslpath -w $PWD 2>/dev/null)"//\\//}
+      case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
+    fi
+    for char in ${(s::)dir}; do
       case $char in
         [[:cntrl:]]|%) builtin printf -v char '%%%02X' "'$char" ;;
       esac
       url+=$char
     done
-    builtin printf '\e]7;file://%s\a\e]2;%s\a' "$url" "${${${PWD:t}:-/}//[[:cntrl:]]/}"
+    [[ -n $dir ]] && builtin printf '\e]7;file://%s\a' "$url"
+    builtin printf '\e]2;%s\a' "${${${PWD:t}:-/}//[[:cntrl:]]/}"
     # Themes set PS1 in later hooks: the marks go on after them, at the first prompt through sched.
     precmd_functions=(${precmd_functions:#_ely_mark} _ely_mark)
     if (( _ely_first )); then

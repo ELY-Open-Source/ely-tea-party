@@ -7,7 +7,17 @@ end
 set -e ELY_FISH_XDG_DATA_DIRS
 if status is-interactive
     function _ely_prompt --on-event fish_prompt
-        printf '\e]7;file://%s\a' (string escape --style=url -- $PWD)
+        set -l dir $PWD
+        if set -q ELY_WSL
+            # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
+            set dir (wslpath -w $PWD 2>/dev/null | string replace -a '\\' / | string collect)
+            if string match -qr '^[A-Za-z]:' -- $dir
+                set dir /$dir
+            else if not string match -qr '^//' -- $dir
+                set dir
+            end
+        end
+        test -n "$dir"; and printf '\e]7;file://%s\a' (string escape --style=url -- $dir)
     end
     # fish 4.3 marks its own prompts and commands; 4.0 all but the prompt's end; older ones none.
     set -l v (string split ' ' -- (string replace -r '^(\d+)\.(\d+).*' '$1 $2' -- $version))

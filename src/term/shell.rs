@@ -10,7 +10,7 @@ use gpui::{App, Global};
 use super::{drop::Quote, pty::Launch};
 
 /// Each script, by its path under the integration folder.
-const SCRIPTS: [(&str, &str); 4] = [
+const SCRIPTS: [(&str, &str); 5] = [
     (
         "zsh/.zshenv",
         include_str!("../../assets/shell-integration/zsh/.zshenv"),
@@ -26,6 +26,10 @@ const SCRIPTS: [(&str, &str); 4] = [
     (
         "pwsh/ely-tea-party.ps1",
         include_str!("../../assets/shell-integration/pwsh/ely-tea-party.ps1"),
+    ),
+    (
+        "wsl/ely-tea-party.sh",
+        include_str!("../../assets/shell-integration/wsl/ely-tea-party.sh"),
     ),
 ];
 
@@ -137,8 +141,26 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
                 ],
             ));
         }
+        // WSL starts the distribution's login shell through the launcher, which loads its integration.
+        #[cfg(windows)]
+        "wsl" => {
+            let launcher = r#"exec /bin/sh "$ELY_WSL/wsl/ely-tea-party.sh""#;
+            let args = ["-e", "/bin/sh", "-c", launcher].map(String::from);
+            launch.program = Some((path.clone(), args.to_vec()));
+            let shared = super::env::fresh()?.get("WSLENV").map(str::to_string);
+            let shared = shared.map_or("ELY_WSL/p".into(), |list| format!("{list}:ELY_WSL/p"));
+            launch
+                .env
+                .push(("ELY_WSL".into(), dir.display().to_string()));
+            launch.env.push(("WSLENV".into(), shared));
+        }
         _ => {
             launch.reports = false;
+            // Windows has no login shell of its own, so the shell that was chosen runs as it is.
+            #[cfg(windows)]
+            {
+                launch.program = Some((path.clone(), Vec::new()));
+            }
             log::info!("shell integration: none for {path}; its folder goes unreported")
         }
     }
@@ -151,10 +173,96 @@ fn default_shell() -> anyhow::Result<String> {
     Ok(super::unix::login_shell_path()?)
 }
 
+/// `pwsh`, as Windows Terminal takes it, else the Windows PowerShell the system ships, else `cmd`.
 #[cfg(windows)]
 fn default_shell() -> anyhow::Result<String> {
-    Ok("powershell.exe".into())
+    // The registry's PATH, so a shell in a folder added since this process opened is found.
+    first_shell(&super::env::path()?)
+}
+
+/// The first of `pwsh`, `powershell` and `cmd` that `folders` hold outside `WindowsApps`.
+#[cfg(windows)]
+fn first_shell(folders: &str) -> anyhow::Result<String> {
+    for name in ["pwsh", "powershell", "cmd"] {
+        for folder in env::split_paths(folders) {
+            // One folder as a PATH of its own, so a `;` inside its name stays.
+            let Ok(one) = env::join_paths([&folder]) else {
+                continue;
+            };
+            match crate::settings::program_path_in(name, &one) {
+                // An App Execution Alias is a stub that starts only while its package is installed.
+                Ok(found) if alias(&found) => {
+                    log::info!("shell integration: {found} is an alias, so passed by")
+                }
+                Ok(found) => return Ok(found),
+                Err(_) => {}
+            }
+        }
+        log::info!("shell integration: no {name} on PATH");
+    }
+    anyhow::bail!("shell integration: neither pwsh, powershell nor cmd lies on PATH")
+}
+
+/// Whether `path` lies in the folder Windows puts its App Execution Aliases in.
+#[cfg(windows)]
+fn alias(path: &str) -> bool {
+    Path::new(path)
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name.eq_ignore_ascii_case("WindowsApps"))
 }
 
 #[cfg(all(test, unix))]
 mod tests;
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::{SCRIPTS, alias, first_shell};
+
+    #[test]
+    fn the_scripts_wsl_runs_end_lines_as_unix_shells_read_them() {
+        // PowerShell reads a carriage return; WSL's shells do not.
+        for (name, text) in SCRIPTS
+            .iter()
+            .filter(|(name, _)| !name.starts_with("pwsh/"))
+        {
+            assert!(!text.contains('\r'), "{name} holds a carriage return");
+        }
+    }
+
+    #[test]
+    fn an_alias_hides_no_pwsh_later_on_path() {
+        let root =
+            std::env::temp_dir().join(format!("ely-tea-party-shells-{}", std::process::id()));
+        let folders = ["WindowsApps", "Tools;PS7", "System32"].map(|name| root.join(name));
+        for (folder, file) in folders
+            .iter()
+            .zip(["pwsh.exe", "pwsh.exe", "powershell.exe"])
+        {
+            std::fs::create_dir_all(folder).expect("a folder");
+            std::fs::write(folder.join(file), "").expect("a program");
+        }
+        let path = std::env::join_paths(&folders).expect("a PATH");
+        let found = first_shell(path.to_str().expect("text"));
+        std::fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!(
+            found.expect("a shell"),
+            folders[1].join("pwsh.exe").display().to_string()
+        );
+    }
+
+    #[test]
+    fn an_app_execution_alias_is_recognised_by_its_folder() {
+        assert!(alias(
+            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe"
+        ));
+        assert!(alias(
+            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WINDOWSAPPS\\pwsh.exe"
+        ));
+        assert!(!alias("C:\\Program Files\\PowerShell\\7\\pwsh.exe"));
+        assert!(!alias(
+            "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        ));
+        assert!(!alias("pwsh.exe"));
+    }
+}

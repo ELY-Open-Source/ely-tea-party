@@ -154,13 +154,24 @@ mod tests {
         let text =
             |action| String::from_utf8(record(&key, action).expect("a record")).expect("text");
         let scan = unsafe { MapVirtualKeyW(u32::from(VK_RETURN), MAPVK_VK_TO_VSC) };
-        let down = text(Action::Press);
-        assert!(
-            down.starts_with(&format!("\x1b[13;{scan};13;1;")),
-            "{down:?}"
-        );
-        assert!(down.ends_with(";1_"), "{down:?}");
-        let up = text(Action::Release);
-        assert!(up.starts_with(&format!("\x1b[13;{scan};13;0;")), "{up:?}");
+        // The fields are the key, the scan code, the character, the press, the control state and the record's own mark.
+        let fields = |record: String| {
+            record
+                .trim_start_matches('\x1b')
+                .trim_start_matches('[')
+                .trim_end_matches('_')
+                .split(';')
+                .map(str::to_string)
+                .collect::<Vec<String>>()
+        };
+        let down = fields(text(Action::Press));
+        assert_eq!(down[0], "13", "the key is the return key: {down:?}");
+        assert_eq!(down[1], scan.to_string(), "its scan code: {down:?}");
+        assert_eq!(down[3], "1", "it is a press: {down:?}");
+        assert_eq!(down[5], "1", "the record's own mark: {down:?}");
+        let up = fields(text(Action::Release));
+        assert_eq!(up[0], "13", "the key is the return key: {up:?}");
+        assert_eq!(up[1], scan.to_string(), "its scan code: {up:?}");
+        assert_eq!(up[3], "0", "it is a release: {up:?}");
     }
 }

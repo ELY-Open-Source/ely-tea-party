@@ -48,7 +48,7 @@ const PLACES: [&str; 8] = [
 ];
 
 impl SettingsWindow {
-    /// Shell, start in, scrollback, Option as Alt on macOS, copy on select, Ely and updates, then the shortcuts.
+    /// Shell, start in, scrollback, Option as Alt and natural text editing on macOS, copy on select, Ely and updates, then the shortcuts.
     pub(super) fn terminal(&self, cx: &Context<Self>) -> Div {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
@@ -97,7 +97,19 @@ impl SettingsWindow {
                 settings.option_as_alt,
                 |settings, option| settings.option_as_alt = option,
             );
-            section = section.row(SettingsRow::new("Option as Alt").control(option));
+            let natural = switch(
+                &this,
+                "natural_text_editing",
+                settings.natural_text_editing,
+                |settings, on| settings.natural_text_editing = on,
+            );
+            section = section
+                .row(SettingsRow::new("Option as Alt").control(option))
+                .row(
+                    SettingsRow::new("Natural text editing")
+                        .description("Option and Command edit by word and line")
+                        .control(natural),
+                );
         }
         let copy = switch(
             &this,
