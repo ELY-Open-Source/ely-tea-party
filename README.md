@@ -184,6 +184,7 @@ scripts/release-asset.sh target/release/ely-tea-party-VERSION.dmg
 
 - [ELYTerminal](https://github.com/ELY-Open-Source/ELYTerminal) by Zachary Zhang, the terminal this forks, and its [Ely components](https://github.com/ELY-Open-Source/Ely-GPUI-Components) on [GPUI](https://www.gpui.rs).
 - The characters come from cmux-todd-ui, which draws the same girls for cmux; `scripts/agents.py` and `scripts/mascot.py` turn its art into the animations built into the app.
+- The icon is the whale girl too, from cmux-todd-ui's `art/icon`; `scripts/icon.py` puts it on macOS's own icon shape. Keep the app open on a Mac and every so often she bites the terminal in your Dock.
 
 ## License
 

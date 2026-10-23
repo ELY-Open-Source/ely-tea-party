@@ -2,6 +2,8 @@ pub mod agents;
 pub mod app;
 pub mod blur;
 pub mod curl;
+#[cfg(target_os = "macos")]
+pub mod dock;
 pub mod files;
 pub mod git;
 pub mod menus;
