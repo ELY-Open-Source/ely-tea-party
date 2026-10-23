@@ -327,6 +327,14 @@ mod tests {
                 .stdout(std::process::Stdio::null())
                 .spawn()
                 .unwrap();
+            // Linux wakes the spawner before exec sets the child's arguments and environment.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while crate::agents::detect::process::read(child.id())
+                .is_none_or(|process| process.codex_home.is_none())
+            {
+                assert!(std::time::Instant::now() < deadline, "the child never ran");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
             let mut agent = crate::agents::Agent::new(Kind::Gpt, std::time::Instant::now());
             agent.startup_speed(child.id(), cwd);
             let initial = (agent.speed, agent.speed_inferred);
