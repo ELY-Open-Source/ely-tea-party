@@ -6,6 +6,7 @@ mod look;
 mod macos;
 mod moving;
 mod rig;
+mod stroll;
 #[cfg(test)]
 mod tests;
 mod whale;
@@ -81,6 +82,10 @@ pub struct Pet {
     drag: Option<(f32, f32)>,
     /// The edge she dives to move to, and when the dive began.
     moving: Option<(Edge, Instant)>,
+    /// The whale girl's stroll under way, the antics turn of her last one, and when it last stepped.
+    stroll: Option<stroll::Stroll>,
+    strolled: Option<u64>,
+    stepped: Instant,
     landing: bool,
     main: WindowHandle<Workspace>,
     /// What keeps her window on the main window's edge, where the platform does not, and her window it moves.
@@ -277,6 +282,9 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 at: kept,
                 drag: None,
                 moving: None,
+                stroll: None,
+                strolled: None,
+                stepped: Instant::now(),
                 landing: false,
                 main,
                 glue: None,
@@ -430,8 +438,10 @@ impl Render for Pet {
         // gpui gives a hidden window no frames, so she rests while unseen.
         window.request_animation_frame();
         // The whale girl draws over the canvas, which then paints no Ely but still holds her drag.
-        let whale = (SettingsStore::get(cx).mascot == Mascot::Whale)
-            .then(|| whale::whale(&pose, self.quiet(now, cx), now));
+        let whale = (SettingsStore::get(cx).mascot == Mascot::Whale).then(|| {
+            let walk = self.stroll.map(|stroll| stroll.drawn(self.edge));
+            whale::whale(&pose, self.quiet(now, cx), walk, now)
+        });
         let ely = whale.is_none();
         let rig = self.rig.clone();
         let this = cx.entity();

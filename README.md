@@ -47,7 +47,7 @@ Each girl has eight animations: working, researching, her special move, slacking
 ## Highlights
 
 - 🫖 **Characters that know what their agent does.** With zero setup a character appears for any agent in a session's foreground. One command installs hooks for every agent you have, and then her row says exactly what it's doing: `改 src/pet/whale.rs`, `跑 cargo test`, `递卷轴等你`. At the moments that matter she says a line of her own.
-- 🐋 **The whale girl peeks over your window.** She follows your sessions: busy at her laptop while an agent works, a hand up while one waits for you, a water spout when it finishes. Leave the app alone and she sneaks a snack, slacks off with chips, and after five minutes falls asleep.
+- 🐋 **The whale girl peeks over your window.** She follows your sessions: busy at her laptop while an agent works, a hand up while one waits for you, a water spout when it finishes. Leave the app alone and she sneaks a snack, strolls over to read your terminal without understanding a word of it, slacks off with chips, and after five minutes falls asleep.
 - 📊 **Your plan's usage, right there.** The right column's foot shows how much of the shown agent's subscription is left: Claude Code's 5-hour and weekly windows, Codex's windows and credits, and when each resets.
 - 🍰 **The tea party.** <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> shows every session as a card at one table, so you see who needs you at a glance.
 - 🗄️ **A drawer under every session.** <kbd>Cmd</kbd>+<kbd>J</kbd> opens your own shell under the agent's, in the same folder, for the odd command.
@@ -100,7 +100,7 @@ Tested with Codex 0.163: its title reports `Fast on`, but `Fast off` also covers
   <img src="docs/mascot.png" width="560" alt="The whale girl standing, snacking, slacking off with chips, and asleep among her empty bowls">
 </p>
 
-At rest she just stands there. After a minute with nothing happening she sneaks a snack and slacks off by turns, and after five she falls asleep. Typing in a terminal, a click in the window or any change in your sessions wakes her; click her for her special move, or drag her along the edge to move her. Settings › Terminal › **Mascot** hides her, and **Who peeks** brings back upstream's Ely in her place.
+At rest she just stands there. After a minute with nothing happening she sneaks a snack, takes a stroll and slacks off by turns, and after five she falls asleep. On her stroll she walks along the edge to a spot over the terminal, peers at it, down from the top edge or up from the bottom one, can't make head or tail of it, and walks back; anything that wakes her sends her hurrying home. Typing in a terminal, a click in the window or any change in your sessions wakes her; click her for her special move, or drag her along the edge to move her. Settings › Terminal › **Mascot** hides her, and **Who peeks** brings back upstream's Ely in her place.
 
 ## Keys
 

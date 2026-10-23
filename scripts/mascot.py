@@ -8,17 +8,29 @@ Retina display needs twice that. This runs cmux-todd-ui's own keying, crop and
 fade on its 960 px clips at 224 px, writing only into a temporary folder there.
 Her calm still is her reference sheet keyed the same way, cut at the knees,
 which her window's edge hides, so her head is the size it is in her clips.
+Her walk faces right; a mirror of it, walking-left, takes her the other way.
 """
 
 import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 SIDE = 224
 QUALITY = 80
-POSES = ["idle", "working", "working-special", "working-slack", "thinking", "needs_input", "sleeping"]
+POSES = [
+    "idle",
+    "working",
+    "working-special",
+    "working-slack",
+    "thinking",
+    "needs_input",
+    "sleeping",
+    "walking",
+    "puzzled-down",
+    "puzzled-up",
+]
 OUT = Path(__file__).resolve().parent.parent / "assets" / "mascot"
 # How much of her standing height, from the top, the calm still keeps.
 KEEP = 0.72
@@ -39,6 +51,20 @@ def calm(ui: Path) -> Image.Image:
     return canvas
 
 
+def save(frames: list, target: Path) -> None:
+    frames[0].save(
+        target,
+        save_all=True,
+        append_images=frames[1:],
+        duration=round(1000 / 12),
+        loop=0,
+        quality=QUALITY,
+        alpha_quality=90,
+        method=6,
+    )
+    print(f"{target.name}: {len(frames)} frames, {target.stat().st_size // 1024} KB")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -53,18 +79,9 @@ def main() -> None:
         video.OUT = Path(tmp)
         for pose in POSES:
             frames = video.build(f"deepseek-{pose}", size=SIDE)
-            target = OUT / f"whale-{pose}.webp"
-            frames[0].save(
-                target,
-                save_all=True,
-                append_images=frames[1:],
-                duration=round(1000 / 12),
-                loop=0,
-                quality=QUALITY,
-                alpha_quality=90,
-                method=6,
-            )
-            print(f"{target.name}: {len(frames)} frames, {target.stat().st_size // 1024} KB")
+            save(frames, OUT / f"whale-{pose}.webp")
+            if pose == "walking":
+                save([ImageOps.mirror(frame) for frame in frames], OUT / "whale-walking-left.webp")
 
 
 if __name__ == "__main__":

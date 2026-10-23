@@ -56,7 +56,11 @@ static MASCOT: &[(&str, &[u8])] = mascot!(
     "working-slack",
     "thinking",
     "needs_input",
-    "sleeping"
+    "sleeping",
+    "walking",
+    "walking-left",
+    "puzzled-down",
+    "puzzled-up"
 );
 
 macro_rules! trinkets {

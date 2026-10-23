@@ -1,4 +1,4 @@
-//! The whale girl in Ely's place: the sessions column's 鲸鱼娘. Ely's act picks her animation while the sessions are busy; at rest she stands still, and the longer nobody touches the app, the more she gets up to.
+//! The whale girl in Ely's place: the sessions column's 鲸鱼娘. Ely's act picks her animation while the sessions are busy; at rest she stands still, and the longer nobody touches the app, the more she gets up to, a stroll among it.
 
 use std::time::{Duration, Instant};
 
@@ -22,9 +22,9 @@ const SIDE: f32 = 112.0;
 /// How far her feet stand below her window's bottom, so she peeks over the main window's edge.
 const SUNK: f32 = 30.0;
 /// Seconds of quiet before she gets up to something, and before she falls asleep.
-const BORED: f64 = 60.0;
-const ASLEEP: f64 = 300.0;
-/// Seconds each turn of her antics lasts: a snack, a rest, slacking off, a rest.
+pub(super) const BORED: f64 = 60.0;
+pub(super) const ASLEEP: f64 = 300.0;
+/// Seconds each turn of her antics lasts: a snack, a rest, a stroll, a rest, slacking off, a rest.
 const TURN: f64 = 20.0;
 /// Seconds a sleeper's z takes to rise and fade, and how many rise at once.
 const RISE: f64 = 2.4;
@@ -33,12 +33,13 @@ const ZS: usize = 3;
 /// How often she moves to her art's next frame: 12 a second.
 const FRAME: Duration = Duration::from_millis(83);
 
-/// Draws her at each of her art's frames, whether or not the app is active, unless the system asks for less motion: gpui gives an inactive app's windows no animation frames, which froze her.
+/// Takes her stroll on and draws her at each of her art's frames, whether or not the app is active, unless the system asks for less motion: gpui gives an inactive app's windows no animation frames, which froze her.
 pub fn frames(cx: &mut Context<Pet>) -> Task<()> {
     cx.spawn(async move |pet, cx| {
         loop {
             cx.background_executor().timer(FRAME).await;
-            let drawn = pet.update(cx, |_, cx| {
+            let drawn = pet.update(cx, |pet, cx| {
+                pet.stroll(Instant::now(), cx);
                 if SettingsStore::get(cx).mascot == Mascot::Whale && !cx.reduce_motion() {
                     cx.notify();
                 }
@@ -65,7 +66,20 @@ pub fn touched(cx: &App) -> Option<Instant> {
     cx.try_global::<Touched>().map(|touched| touched.0)
 }
 
-/// The loop that plays `act` after `quiet` seconds with nothing new: busy sessions pick it; at rest she stands, then snacks and slacks by turns, then sleeps.
+/// Which turn of her antics `quiet` seconds of rest fall in, from 0.
+fn turn(quiet: f64) -> u64 {
+    ((quiet - BORED) / TURN) as u64
+}
+
+/// The turn her stroll begins in after `quiet` seconds of rest, while it lasts.
+pub fn stroll_turn(quiet: f64) -> Option<u64> {
+    (BORED..ASLEEP)
+        .contains(&quiet)
+        .then(|| turn(quiet))
+        .filter(|turn| turn % 6 == 2)
+}
+
+/// The loop that plays `act` after `quiet` seconds with nothing new: busy sessions pick it; at rest she stands, then snacks, strolls and slacks by turns, then sleeps.
 fn drawn(act: Act, quiet: f64) -> &'static str {
     match act {
         Act::Cheer | Act::Wink => "working-special",
@@ -74,9 +88,9 @@ fn drawn(act: Act, quiet: f64) -> &'static str {
         Act::Fret => "thinking",
         Act::Calm | Act::Doze if quiet >= ASLEEP => "sleeping",
         Act::Calm | Act::Doze if quiet < BORED => "calm",
-        Act::Calm | Act::Doze => match ((quiet - BORED) / TURN) as u64 % 4 {
+        Act::Calm | Act::Doze => match turn(quiet) % 6 {
             0 => "idle",
-            2 => "working-slack",
+            4 => "working-slack",
             _ => "calm",
         },
     }
@@ -87,9 +101,14 @@ fn zs(quiet: f64) -> [f32; ZS] {
     std::array::from_fn(|k| ((quiet / RISE + k as f64 / ZS as f64) % 1.0) as f32)
 }
 
-/// Her, in `pose` at `now`, after `quiet` seconds with nothing new, filling her window.
-pub fn whale(pose: &Pose, quiet: f64, now: Instant) -> impl IntoElement + use<> {
-    let name = drawn(pose.act, quiet);
+/// Her, in `pose` at `now`, after `quiet` seconds with nothing new, or on her stroll's `walk`, filling her window.
+pub fn whale(
+    pose: &Pose,
+    quiet: f64,
+    walk: Option<&'static str>,
+    now: Instant,
+) -> impl IntoElement + use<> {
+    let name = walk.unwrap_or_else(|| drawn(pose.act, quiet));
     let frame = crate::agents::assets::mascot(name, now);
     // Standing still, she breathes as Ely does.
     let breath = if name == "calm" { pose.bob } else { 0.0 };
@@ -137,13 +156,18 @@ mod tests {
     }
 
     #[test]
-    fn at_rest_she_stands_then_snacks_and_slacks_by_turns_then_sleeps() {
+    fn at_rest_she_stands_then_snacks_strolls_and_slacks_by_turns_then_sleeps() {
+        let at = |turn: f64| BORED + turn * TURN + 5.0;
         assert_eq!(drawn(Act::Calm, 5.0), "calm");
-        assert_eq!(drawn(Act::Calm, BORED + 5.0), "idle");
-        assert_eq!(drawn(Act::Calm, BORED + TURN + 5.0), "calm");
-        assert_eq!(drawn(Act::Calm, BORED + 2.0 * TURN + 5.0), "working-slack");
-        assert_eq!(drawn(Act::Calm, BORED + 3.0 * TURN + 5.0), "calm");
-        assert_eq!(drawn(Act::Calm, BORED + 4.0 * TURN + 5.0), "idle");
+        assert_eq!(drawn(Act::Calm, at(0.0)), "idle");
+        assert_eq!(drawn(Act::Calm, at(1.0)), "calm");
+        assert_eq!(stroll_turn(at(2.0)), Some(2), "her stroll's turn");
+        assert_eq!(drawn(Act::Calm, at(3.0)), "calm");
+        assert_eq!(drawn(Act::Calm, at(4.0)), "working-slack");
+        assert_eq!(drawn(Act::Calm, at(6.0)), "idle");
+        assert_eq!(stroll_turn(at(8.0)), Some(8));
+        assert_eq!(stroll_turn(at(3.0)), None);
+        assert_eq!(stroll_turn(5.0), None, "too soon");
         assert_eq!(drawn(Act::Calm, ASLEEP + 1.0), "sleeping");
         assert_eq!(
             drawn(Act::Doze, 30.0),
