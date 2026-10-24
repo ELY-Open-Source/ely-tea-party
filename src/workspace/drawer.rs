@@ -4,15 +4,14 @@ use std::path::PathBuf;
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
-    layout::resize_edge,
     primitives::IconName,
     theme::{ActiveTheme, ControlSize},
     typography::Caption,
 };
 use gpui::{
-    AppContext, Axis, Context, Div, DragMoveEvent, EmptyView, Entity, Focusable,
-    InteractiveElement, MouseButton, ParentElement, Pixels, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Window, div, prelude::FluentBuilder, px,
+    AppContext, Context, Div, DragMoveEvent, EmptyView, Entity, Focusable, InteractiveElement,
+    MouseButton, ParentElement, Pixels, StatefulInteractiveElement, StyleRefinement, Styled,
+    Subscription, Window, div, prelude::FluentBuilder, px,
 };
 
 use super::Workspace;
@@ -251,10 +250,41 @@ impl Workspace {
             .justify_between()
             .px_3()
             .h(cx.theme().control_height(ControlSize::Sm))
+            .bg(cx.theme().colors.surface)
             .child(Caption::new(name))
             .child(close);
         let half = cx.theme().handle_hit().to_pixels(window.rem_size()) / 2.;
-        let handle = resize_edge("drawer-divider", Axis::Vertical, cx)
+        let theme = cx.theme();
+        let color = if self.drawer_dragged.is_some() {
+            theme.colors.focus
+        } else {
+            super::divider::color(cx)
+        };
+        let handle = div()
+            .id("drawer-divider")
+            .group("drawer-divider")
+            .flex()
+            .items_center()
+            .justify_center()
+            .w_full()
+            .h(theme.handle_hit())
+            .cursor(gpui::CursorStyle::ResizeUpDown)
+            .child(
+                div()
+                    .absolute()
+                    .w_full()
+                    .h(theme.hairline() * 2.)
+                    .bg(color)
+                    .group_hover("drawer-divider", |style| style.bg(theme.colors.focus)),
+            )
+            .child(
+                div()
+                    .w(theme.grip().width)
+                    .h(theme.grip().height)
+                    .rounded_full()
+                    .bg(color)
+                    .group_hover("drawer-divider", |style| style.bg(theme.colors.focus)),
+            )
             .absolute()
             .top(-half)
             .occlude()
@@ -292,16 +322,14 @@ impl Workspace {
                     .flex()
                     .flex_col()
                     .h(self.drawer_height(cx))
-                    .border_t_1()
-                    .border_color(cx.theme().colors.border)
-                    .child(handle)
                     .child(header)
                     .child(
                         div()
                             .flex_1()
                             .min_h_0()
                             .child(drawer.terminal.clone().cached(fill())),
-                    ),
+                    )
+                    .child(handle),
             )
             .when(self.drawer_dragged.is_some(), |body| body.child(cover()))
     }

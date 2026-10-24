@@ -6,14 +6,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ely_gpui_component::{
-    data_display::Tone,
-    lists::{GitStatus, Tree, TreeNode},
-    primitives::IconName,
-};
-use gpui::{AppContext, Context, IntoElement, Render, SharedString, Styled, Task, Window};
+use ely_gpui_component::lists::GitStatus;
+use gpui::{AppContext, Context, SharedString, Task};
 
-use crate::{git, sessions};
+use crate::git;
+
+mod actions;
+mod icons;
+mod ops;
+mod tree;
 
 /// A folder's entry: its name, and whether it is a folder, links followed.
 #[derive(Debug, PartialEq)]
@@ -80,21 +81,6 @@ fn marks(
     (marks, dirty)
 }
 
-/// Git's mark on a node: its letter and tint; a dot on a folder that holds changes.
-fn badge(node: TreeNode, mark: Option<GitStatus>, dirty: bool) -> TreeNode {
-    let (note, tone) = match mark {
-        Some(GitStatus::Modified) => ("M", Tone::Warning),
-        Some(GitStatus::Added) => ("A", Tone::Success),
-        Some(GitStatus::Deleted) => ("D", Tone::Danger),
-        Some(GitStatus::Untracked) => ("U", Tone::Success),
-        Some(GitStatus::Renamed) => ("R", Tone::Info),
-        Some(GitStatus::Conflicted) => ("!", Tone::Danger),
-        None if dirty => ("•", Tone::Warning),
-        None => return node,
-    };
-    node.note(note).tone(tone)
-}
-
 /// `path`'s tree key, one to a path: a path not in UTF-8 adds its bytes after a NUL, which no path holds.
 fn key(path: &Path) -> SharedString {
     match path.to_str() {
@@ -120,12 +106,20 @@ pub struct Files {
     dirty: HashSet<PathBuf>,
     reading: Task<()>,
     checking: Task<()>,
+    tree: tree::State,
+    creating: Option<actions::Creation>,
+    busy: bool,
+    error: Option<String>,
 }
 
 impl Files {
     pub fn new(root: PathBuf) -> Self {
         Self {
             wanted: HashSet::from([root.clone()]),
+            tree: tree::State::new(root.clone()),
+            creating: None,
+            busy: false,
+            error: None,
             root,
             generation: 0,
             listings: HashMap::new(),
@@ -216,77 +210,6 @@ impl Files {
         if self.wanted.insert(folder) {
             self.read(cx);
         }
-    }
-
-    /// The path a tree key stands for: the root, or an entry read.
-    fn path(&self, of: &str) -> Option<PathBuf> {
-        let entries = self.listings.iter().flat_map(|(folder, listing)| {
-            listing
-                .iter()
-                .flatten()
-                .map(|entry| folder.join(&entry.name))
-        });
-        std::iter::once(self.root.clone())
-            .chain(entries)
-            .find(|path| key(path).as_ref() == of)
-    }
-
-    /// Folder `path`'s node, its entries once read; `untracked` when an untracked folder holds it.
-    fn folder(&self, path: &Path, label: String, untracked: bool) -> TreeNode {
-        let own = |path: &Path| self.marks.get(mark_key(path).as_ref()).copied();
-        let mark = own(path).or(untracked.then_some(GitStatus::Untracked));
-        let inside = mark == Some(GitStatus::Untracked);
-        let node = TreeNode::new(key(path), label).icon(IconName::Folder);
-        let node = match self.listings.get(path) {
-            None => node.pending(),
-            Some(Err(_)) => return node.children([]).note("unreadable").tone(Tone::Danger),
-            Some(Ok(entries)) => node.children(entries.iter().map(|entry| {
-                let path = path.join(&entry.name);
-                let label = sessions::one_line(&entry.name.to_string_lossy());
-                if entry.folder {
-                    return self.folder(&path, label, inside);
-                }
-                let file = TreeNode::new(key(&path), label).icon(IconName::File);
-                badge(
-                    file,
-                    own(&path).or(inside.then_some(GitStatus::Untracked)),
-                    false,
-                )
-            })),
-        };
-        badge(node, mark, self.dirty.contains(mark_key(path).as_ref()))
-    }
-}
-
-impl Render for Files {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let home = dirs::home_dir();
-        let label = match self.root.file_name() {
-            Some(name) if home.as_deref() != Some(self.root.as_path()) => {
-                sessions::one_line(&name.to_string_lossy())
-            }
-            _ => sessions::shown(&self.root, home.as_deref()),
-        };
-        let (load, open) = (cx.entity(), cx.entity());
-        Tree::new(
-            ("files", self.generation),
-            [self.folder(&self.root, label, false)],
-        )
-        .open([key(&self.root)])
-        .on_load(move |key, _, cx| {
-            load.update(cx, |files, cx| match files.path(key) {
-                Some(folder) => files.load(folder, cx),
-                None => log::warn!("files: {key} to read is gone"),
-            })
-        })
-        .on_activate(move |key, _, cx| match open.read(cx).path(key) {
-            Some(path) => {
-                log::info!("files: opening {}", path.display());
-                cx.open_with_system(&path)
-            }
-            None => log::warn!("files: {key} to open is gone"),
-        })
-        .size_full()
     }
 }
 

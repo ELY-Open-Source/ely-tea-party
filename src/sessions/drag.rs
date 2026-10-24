@@ -4,12 +4,12 @@ use std::{path::Path, time::Instant};
 
 use ely_gpui_component::{
     menus::ContextMenu,
-    primitives::Tooltip,
-    theme::{ActiveTheme, Radius},
+    primitives::{FocusRing, Icon, IconName, Tooltip},
+    theme::{ActiveTheme, ControlSize, IconSize, Radius},
 };
 use gpui::{
-    App, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, transparent_black,
+    App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Render, Role, SharedString, StatefulInteractiveElement, Styled, Window, div, transparent_black,
 };
 
 use super::{Session, TITLE, item, menu, one_line, shown};
@@ -71,10 +71,13 @@ pub fn row(
         title: title.into(),
     };
     let workspace = workspace.clone();
+    let close = workspace.clone();
+    let id = session.terminal.entity_id();
     let item = item(&workspace, index, session, active, when.0, when.1, cx);
     let menu = menu::row(&workspace, session.terminal.entity_id());
     div()
         .id(("session-row", pid))
+        .relative()
         .rounded(cx.theme().radius(Radius::Lg))
         .border_1()
         .border_color(transparent_black())
@@ -96,5 +99,45 @@ pub fn row(
             ContextMenu::new(("session-menu", pid), menu)
                 .w_full()
                 .child(item),
+        )
+        .child(
+            div()
+                .id(("close-session", pid))
+                .absolute()
+                .top_1()
+                .right_1()
+                .size(cx.theme().control_height(ControlSize::Sm))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(cx.theme().radius(Radius::Md))
+                .role(Role::Button)
+                .aria_label("Close session")
+                .tab_index(0)
+                .cursor_pointer()
+                .hover(|style| style.bg(cx.theme().colors.danger.opacity(0.12)))
+                .focus_ring(cx)
+                .tooltip(Tooltip::text("Close session"))
+                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                })
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    close.update(cx, |this, cx| {
+                        if let Some(index) = this
+                            .sessions()
+                            .iter()
+                            .position(|s| s.terminal.entity_id() == id)
+                        {
+                            this.close(index, window, cx);
+                        }
+                    });
+                })
+                .child(
+                    Icon::new(IconName::X)
+                        .size(IconSize::Xs)
+                        .color(cx.theme().colors.danger),
+                ),
         )
 }
