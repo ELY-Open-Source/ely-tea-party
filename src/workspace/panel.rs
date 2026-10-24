@@ -66,5 +66,6 @@ impl Workspace {
                 )
             }))
             .children(self.usage(cx))
+            .child(super::divider::sidebar(Side::Panel, cx))
     }
 }

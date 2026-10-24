@@ -4,7 +4,6 @@ use std::{
 };
 
 use ely_gpui_component::{
-    buttons::{ButtonVariant, IconButton},
     forms::{Input, TextInput},
     lists::ListItem,
     primitives::{Icon, IconName, Tooltip},
@@ -218,14 +217,13 @@ fn item(
     let terminal = session.terminal.read(cx);
     let pid = terminal.pid() as usize;
     let folder = brief(&session.folder, home);
-    let (select, close) = (workspace.clone(), workspace.clone());
+    let select = workspace.clone();
     let editing = session.editing.is_some();
     // A job left running in a drawer out of sight.
     let running = session
         .drawer
         .as_ref()
         .is_some_and(|drawer| drawer.busy && !(active && drawer.open));
-    let updated = (session.agent.as_ref()).map(|agent| agents::updated(agent.active, now));
     let item = match &session.agent {
         Some(agent) => {
             let pose = agent.pose(now, session.id);
@@ -233,12 +231,13 @@ fn item(
             let speed = agent
                 .speed_label()
                 .map_or(String::new(), |label| format!(" · {label}"));
-            ListItem::new(("session", pid), session.called(agent))
-                .description(format!("{} · {since}{speed}", agent.kind.label(pose)))
-                .detail(match agent.bubble(now) {
-                    Some((_, line)) => format!("「{line}」"),
-                    None => agent.news(pose).map_or(folder, |news| one_line(&news)),
-                })
+            ListItem::new(("session", pid), folder)
+                .description(format!(
+                    "{} · {} · {since}{speed}",
+                    one_line(&session.called(agent)),
+                    agent.kind.label(pose)
+                ))
+                .detail(format!("更新于 {}", agents::updated(agent.active, now)))
                 // The shown session's character stands out.
                 .leading(avatar(
                     agent,
@@ -248,7 +247,7 @@ fn item(
                     cx,
                 ))
         }
-        None => ListItem::new(("session", pid), session.named().to_string()).description(folder),
+        None => ListItem::new(("session", pid), folder).description(one_line(session.named())),
     };
     let item = item
         .selected(active)
@@ -264,23 +263,13 @@ fn item(
         })
         .trailing(
             div()
+                .w(cx.theme().control_height(ControlSize::Sm))
                 .flex()
                 .items_center()
-                .gap_1()
-                .children(updated)
+                .justify_center()
                 .children(
                     running
                         .then(|| Icon::new(IconName::Terminal).color(cx.theme().colors.fg_muted)),
-                )
-                .child(
-                    IconButton::new(("close-session", pid), IconName::X)
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
-                        .tooltip("Close session")
-                        .on_click(move |_, window, cx| {
-                            cx.stop_propagation();
-                            close.update(cx, |this, cx| this.close(index, window, cx))
-                        }),
                 ),
         );
     let item = match &session.editing {

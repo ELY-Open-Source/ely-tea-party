@@ -3,7 +3,7 @@ use std::env;
 use super::*;
 
 /// A fresh folder under the temp dir.
-fn folder(name: &str) -> PathBuf {
+pub(super) fn folder(name: &str) -> PathBuf {
     let folder = env::temp_dir().join(format!("ely-tea-party-{name}-{}", std::process::id()));
     if folder.exists() {
         fs::remove_dir_all(&folder).expect("a stale test folder goes");
@@ -103,35 +103,40 @@ fn the_tree_wears_marks_and_an_untracked_folder_marks_what_it_holds() {
     ];
     (files.marks, files.dirty) = marks(&root, changes);
 
-    let node = |path: &Path, icon| {
-        let label = path
-            .file_name()
-            .expect("a name")
-            .to_string_lossy()
-            .to_string();
-        TreeNode::new(key(path), label).icon(icon)
-    };
-    let untracked = |node: TreeNode| node.note("U").tone(Tone::Success);
-    let dotted = |node: TreeNode| node.note("•").tone(Tone::Warning);
-    let expected = dotted(
-        node(&root, IconName::Folder).children([
-            untracked(node(&notes, IconName::Folder).children([
-                untracked(node(&notes.join("deep"), IconName::Folder).pending()),
-                untracked(node(&notes.join("todo.txt"), IconName::File)),
-            ])),
-            dotted(
-                node(&src, IconName::Folder).children([node(&src.join("main.rs"), IconName::File)
-                    .note("M")
-                    .tone(Tone::Warning)]),
-            ),
-            node(&locked, IconName::Folder)
-                .children([])
-                .note("unreadable")
-                .tone(Tone::Danger),
-            node(&root.join("a.txt"), IconName::File),
-        ]),
+    files.tree.open.extend([notes.clone(), src.clone()]);
+    let rows = files.rows();
+    let observed: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.path.strip_prefix(&root).unwrap().to_path_buf(),
+                row.mark,
+                row.dirty,
+                row.note,
+            )
+        })
+        .collect();
+    let expected = vec![
+        ("", None, true, None),
+        ("notes", Some(GitStatus::Untracked), false, None),
+        ("notes/deep", Some(GitStatus::Untracked), false, None),
+        ("notes/todo.txt", Some(GitStatus::Untracked), false, None),
+        ("src", None, true, None),
+        ("src/main.rs", Some(GitStatus::Modified), false, None),
+        ("locked", None, false, Some("unreadable")),
+        ("a.txt", None, false, None),
+    ]
+    .into_iter()
+    .map(|(path, mark, dirty, note)| (PathBuf::from(path), mark, dirty, note))
+    .collect::<Vec<_>>();
+    assert_eq!(observed, expected);
+    files.tree.open.remove(&notes);
+    assert!(
+        !files
+            .rows()
+            .iter()
+            .any(|row| row.path == notes.join("todo.txt"))
     );
-    assert_eq!(files.folder(&root, "r".into(), false), expected);
 }
 
 #[test]
@@ -150,15 +155,11 @@ fn names_with_newlines_label_on_one_line_and_keep_their_paths() {
         },
     ];
     files.listings.insert(root.clone(), Ok(entries));
-    let expected = TreeNode::new(key(&root), "r")
-        .icon(IconName::Folder)
-        .children([
-            TreeNode::new(key(&folder), "line␊break")
-                .icon(IconName::Folder)
-                .pending(),
-            TreeNode::new(key(&file), "report␊2026.txt").icon(IconName::File),
-        ]);
-    assert_eq!(files.folder(&root, "r".into(), false), expected);
+    let rows = files.rows();
+    assert_eq!(rows[1].path, folder);
+    assert_eq!(rows[1].label, "line␊break");
+    assert_eq!(rows[2].path, file);
+    assert_eq!(rows[2].label, "report␊2026.txt");
 }
 
 #[cfg(unix)]
@@ -176,18 +177,11 @@ fn names_that_show_alike_keep_their_own_keys_and_paths() {
     let entries = vec![entry(OsStr::new("bad\u{FFFD}.txt")), entry(raw)];
     files.listings.insert(root.clone(), Ok(entries));
     assert_ne!(key(&text), key(&bytes), "two paths, two keys");
-    let expected = TreeNode::new(key(&root), "r")
-        .icon(IconName::Folder)
-        .children([
-            TreeNode::new(key(&text), "bad\u{FFFD}.txt").icon(IconName::File),
-            TreeNode::new(key(&bytes), "bad\u{FFFD}.txt").icon(IconName::File),
-        ]);
-    assert_eq!(files.folder(&root, "r".into(), false), expected);
-    for path in [&root, &text, &bytes] {
-        let found = files.path(&key(path));
-        assert_eq!(found.as_ref(), Some(path), "{}", path.display());
-    }
-    assert_eq!(files.path("/r/gone"), None);
+    let rows = files.rows();
+    assert_eq!(rows[1].label, rows[2].label);
+    assert_eq!(rows[1].path, text);
+    assert_eq!(rows[2].path, bytes);
+    assert_ne!(key(&rows[1].path), key(&rows[2].path));
 }
 
 /// Runs git in `root` as a fixed author, unsigned.
@@ -230,19 +224,15 @@ fn decomposed_names_on_disk_wear_the_composed_marks_git_writes() {
     files.listings.insert(root.clone(), list(&root));
     let changes = git::changes(&root).expect("status").expect("a work tree");
     (files.marks, files.dirty) = marks(&root, changes);
-    let node = |name: &str, icon| TreeNode::new(key(&root.join(name)), name).icon(icon);
-    let dotted = |node: TreeNode| node.note("•").tone(Tone::Warning);
-    let expected = dotted(
-        TreeNode::new(key(&root), "r")
-            .icon(IconName::Folder)
-            .children([
-                node(".git", IconName::Folder).pending(),
-                dotted(node(dossier, IconName::Folder).pending()),
-                node(untracked, IconName::File)
-                    .note("U")
-                    .tone(Tone::Success),
-                node(tracked, IconName::File).note("M").tone(Tone::Warning),
-            ]),
-    );
-    assert_eq!(files.folder(&root, "r".into(), false), expected);
+    let rows = files.rows();
+    for (name, mark, dirty) in [
+        (".git", None, false),
+        (dossier, None, true),
+        (untracked, Some(GitStatus::Untracked), false),
+        (tracked, Some(GitStatus::Modified), false),
+    ] {
+        let row = rows.iter().find(|row| row.path == root.join(name)).unwrap();
+        assert_eq!(row.mark, mark, "{name}");
+        assert_eq!(row.dirty, dirty, "{name}");
+    }
 }

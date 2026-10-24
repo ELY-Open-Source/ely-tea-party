@@ -14,6 +14,7 @@ use gpui::{
 };
 
 mod agents;
+mod divider;
 mod drawer;
 mod events;
 mod header;
@@ -393,7 +394,8 @@ impl Render for Workspace {
                                 }
                             }))
                             .child(list),
-                    ),
+                    )
+                    .child(divider::sidebar(Side::Sessions, cx)),
             );
         } else {
             terminal = terminal.leading(left);
