@@ -1,4 +1,6 @@
 use super::*;
+use crate::term::{Kind, Records};
+use crate::{i18n, settings::Language};
 
 #[test]
 fn folders_under_home_read_from_a_tilde() {
@@ -153,6 +155,7 @@ fn hover_lists_each_record_with_its_app_then_a_failed_command() {
             Some(40),
             [Some("deploy"), None, Some("Deploying")],
         ),
+        None,
     );
     records.report(
         "eu".into(),
@@ -162,12 +165,15 @@ fn hover_lists_each_record_with_its_app_then_a_failed_command() {
             None,
             [None, Some("EU West"), Some("Approve?")],
         ),
+        None,
     );
     records.report(
         "eu/db".into(),
         record(State::Done, None, None, [Some("db"), None, None]),
+        None,
     );
-    let lines: Vec<String> = hover(&records, Some(2))
+    let english = i18n::catalogs(Language::English);
+    let lines: Vec<String> = hover(&records, Some(2), &english)
         .iter()
         .map(ToString::to_string)
         .collect();
@@ -180,10 +186,19 @@ fn hover_lists_each_record_with_its_app_then_a_failed_command() {
             "Last command exited with 2"
         ]
     );
+    let chinese = i18n::catalogs(Language::SimplifiedChinese);
+    let lines = hover(&records, Some(2), &chinese);
+    assert_eq!(lines[0].as_ref(), "工作中，40%：deploy · Deploying");
+    assert_eq!(lines[1].as_ref(), "等待授权：deploy · EU West · Approve?");
+    assert_eq!(lines[3].as_ref(), "上一条命令以 2 退出");
     for at in 0..LISTED {
-        records.report(format!("r{at}"), record(State::Idle, None, None, [None; 3]));
+        records.report(
+            format!("r{at}"),
+            record(State::Idle, None, None, [None; 3]),
+            None,
+        );
     }
-    let lines = hover(&records, None);
+    let lines = hover(&records, None, &english);
     assert_eq!(lines.len(), LISTED + 1);
     assert_eq!(lines[LISTED].to_string(), "3 more");
 }

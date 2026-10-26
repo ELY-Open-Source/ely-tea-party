@@ -6,6 +6,7 @@ use std::{
 };
 
 use ely_gpui_component::{
+    i18n::text,
     motion::{self, ease_out_cubic, lerp},
     theme::{ActiveTheme, ControlSize, Mix, Palette, Radius, TextSize},
 };
@@ -18,9 +19,9 @@ use super::super::header::show_tab;
 use crate::settings::PanelTab;
 
 const TABS: [(PanelTab, &str, &str); 3] = [
-    (PanelTab::Git, "git", "Git"),
-    (PanelTab::Files, "files", "Files"),
-    (PanelTab::Activity, "activity", "Activity"),
+    (PanelTab::Git, "git", "et.panel.git"),
+    (PanelTab::Files, "files", "et.panel.files"),
+    (PanelTab::Activity, "activity", "et.panel.activity"),
 ];
 
 /// The tab last shown, the one a glide leaves, how many glides there were, and the tabs' places as last laid out.
@@ -83,7 +84,7 @@ pub fn tabs((shown, turn): (PanelTab, usize), glide: &Glide, cx: &App) -> Div {
             // A press here is the tab's, not the title bar's drag.
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .on_click(move |_, _, cx| show_tab(&value.into(), cx))
-            .child(label)
+            .child(text(cx, label, &[]))
     };
     let index = |tab: PanelTab| TABS.iter().position(|(each, ..)| *each == tab);
     let lit = laid.then(|| {

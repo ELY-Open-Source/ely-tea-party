@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ely Tea Party
+Comment=A terminal on GPUI and Ely
+Exec=ely-tea-party
+Icon=net.toddzheng.ely-tea-party
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=net.toddzheng.ely-tea-party
