@@ -21,8 +21,7 @@ impl Global for SettingsStore {}
 impl SettingsStore {
     /// Loads `settings.json` from the platform config folder into the app.
     pub fn init(cx: &mut App) -> anyhow::Result<()> {
-        let folder = dirs::config_dir().context("settings: the platform names no config folder")?;
-        let path = folder.join("ely-tea-party").join("settings.json");
+        let path = folder()?.join("settings.json");
         let settings = load(&path)?;
         fonts(&settings, cx)
             .with_context(|| format!("settings: {} holds a bad value", path.display()))?;
@@ -52,6 +51,22 @@ impl SettingsStore {
         cx.global_mut::<Self>().settings = next;
         Ok(())
     }
+}
+
+pub fn folder() -> anyhow::Result<PathBuf> {
+    if cfg!(debug_assertions)
+        && let Some(folder) = std::env::var_os("ELY_TEST_CONFIG_DIR")
+    {
+        let folder = PathBuf::from(folder);
+        anyhow::ensure!(
+            folder.is_absolute(),
+            "settings: ELY_TEST_CONFIG_DIR must be absolute"
+        );
+        return Ok(folder);
+    }
+    Ok(dirs::config_dir()
+        .context("settings: the platform names no config folder")?
+        .join("ely-tea-party"))
 }
 
 /// Checks the terminal can load its family and each fallback; the error names the field.
@@ -110,31 +125,37 @@ pub fn save(path: &Path, settings: &Settings) -> anyhow::Result<()> {
     text.push('\n');
     let count = SAVES.fetch_add(1, Ordering::Relaxed);
     let temp = path.with_extension(format!("json.{}-{count}.tmp", std::process::id()));
-    let written = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temp)
-        .and_then(|mut file| {
-            file.write_all(text.as_bytes())?;
-            file.sync_all()
+    let written = write_new(&temp, &text).and_then(|()| {
+        fs::rename(&temp, path).with_context(|| {
+            format!(
+                "settings: cannot rename {} over {}",
+                temp.display(),
+                path.display()
+            )
         })
-        .and_then(|()| fs::rename(&temp, path));
+    });
     if let Err(error) = written {
         if temp.exists()
             && let Err(left) = fs::remove_file(&temp)
         {
             log::error!("settings: {} stays behind: {left}", temp.display());
         }
-        return Err(error).with_context(|| {
-            format!(
-                "settings: cannot write {} through {}",
-                path.display(),
-                temp.display()
-            )
-        });
+        return Err(error);
     }
     log::info!("settings: saved {}", path.display());
     Ok(())
+}
+
+/// Creates new `temp` and writes `text` to the disk.
+fn write_new(temp: &Path, text: &str) -> anyhow::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp)
+        .with_context(|| format!("settings: cannot create {}", temp.display()))?;
+    file.write_all(text.as_bytes())
+        .and_then(|()| file.sync_all())
+        .with_context(|| format!("settings: cannot write {}", temp.display()))
 }
 
 /// Saves made by this process, so each temp file has its own name.
@@ -166,6 +187,7 @@ mod tests {
         let path = folder.join("settings.json");
         let settings = Settings {
             font_size: 15.5,
+            font_zoom: 2.0,
             cursor_style: CursorStyle::Bar,
             dark_theme: Some("catppuccin-latte".into()),
             ..Settings::default()
@@ -205,6 +227,18 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_rename_names_its_step_and_leaves_no_temp() {
+        let folder = folder("rename");
+        let path = folder.join("settings.json");
+        fs::create_dir_all(path.join("inside")).expect("a folder where the file goes");
+        let error = save(&path, &Settings::default()).expect_err("the folder is in the way");
+        assert!(format!("{error:#}").contains("cannot rename"), "{error:#}");
+        let left: Vec<_> = fs::read_dir(&folder).expect("folder").collect();
+        assert_eq!(left.len(), 1, "only the folder in the way remains");
+        fs::remove_dir_all(folder).expect("cleanup");
+    }
+
+    #[test]
     fn a_missing_field_takes_its_default() {
         let folder = folder("partial");
         let path = folder.join("settings.json");
@@ -212,6 +246,7 @@ mod tests {
         fs::write(&path, r#"{ "font_size": 16.0 }"#).expect("write");
         let settings = load(&path).expect("loads");
         assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_zoom, 0.0);
         assert_eq!(settings.theme, Settings::default().theme);
         fs::remove_dir_all(folder).expect("cleanup");
     }

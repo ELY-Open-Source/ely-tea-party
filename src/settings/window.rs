@@ -1,9 +1,10 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, path::PathBuf};
 
 use ely_gpui_component::{
     buttons::SegmentedControl,
     feedback::InlineMessage,
     forms::{InputEvent, Switch, TextInput},
+    i18n::{I18n, text},
     lists::{ListItem, SelectableList},
     primitives::{FocusScope, Icon, IconName, Severity},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
@@ -20,6 +21,7 @@ use super::{Settings, SettingsStore};
 use crate::{app::APP_ID, menus, term::BLINK, update::Updates};
 
 mod appearance;
+mod butler;
 mod terminal;
 
 actions!(ely_tea_party, [OpenSettings, CloseSettings]);
@@ -27,10 +29,11 @@ actions!(ely_tea_party, [OpenSettings, CloseSettings]);
 /// The key context of the settings window's content.
 const CONTEXT: &str = "Settings";
 
-/// Each category's key, name and icon.
-const SECTIONS: [(&str, &str, IconName); 2] = [
-    ("appearance", "Appearance", IconName::Palette),
-    ("terminal", "Terminal", IconName::Terminal),
+/// Each category's key, its name's key and its icon.
+const SECTIONS: [(&str, &str, IconName); 3] = [
+    ("appearance", "et.settings.appearance", IconName::Palette),
+    ("terminal", "et.settings.terminal", IconName::Terminal),
+    ("butler", "et.butler.title", IconName::Bot),
 ];
 
 /// Cmd-, opens the settings, Cmd-W closes them; off macOS Ctrl-, and Ctrl-Shift-W, as Ghostty's.
@@ -65,7 +68,7 @@ fn open_window(cx: &mut App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
-            title: Some("Settings".into()),
+            title: Some(text(cx, "et.settings.title", &[])),
             appears_transparent: true,
             traffic_light_position: Some(cx.theme().traffic_light_origin()),
         }),
@@ -87,42 +90,66 @@ pub struct SettingsWindow {
     focus: FocusHandle,
     section: SharedString,
     shell: Entity<TextInput>,
+    /// Start in's own folder, typed or browsed.
+    folder: Entity<TextInput>,
     /// The shortcut list's search.
     search: Entity<TextInput>,
-    /// Why the typed shell is not saved.
+    /// Why the typed shell and folder are not saved.
     refused: Option<SharedString>,
+    refused_folder: Option<SharedString>,
     /// Why the last change did not save.
     failed: Option<SharedString>,
     /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
     drafts: usize,
     font: Entity<TextInput>,
+    butler_fields: Option<butler::Fields>,
     /// A picker's input for each fallback family, and one for the family being added.
     fallbacks: Vec<Entity<TextInput>>,
     /// The empty picker that adds a fallback shows.
     adding: bool,
     /// Whether the cursor preview shows, as it blinks.
     lit: bool,
-    _typed: Subscription,
+    _typed: [Subscription; 2],
     _settings: Subscription,
     _updates: Subscription,
+    _language: Subscription,
     _blink: Task<()>,
 }
 
 impl SettingsWindow {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let shell = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).placeholder("Login shell");
+            let placeholder = text(cx, "et.settings.login_shell", &[]);
+            let mut input = TextInput::new(window, cx).placeholder(placeholder);
             input.set_text(SettingsStore::get(cx).shell.clone(), cx);
             input
         });
-        let font = cx.new(|cx| TextInput::new(window, cx));
-        let search = cx.new(|cx| TextInput::new(window, cx).placeholder("Search shortcuts"));
-        let typed = cx.subscribe(&shell, |this, input, event: &InputEvent, cx| {
-            if let InputEvent::Changed = event {
-                let shell = input.read(cx).text().to_string();
-                this.save_shell(shell, cx);
-            }
+        let folder = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx);
+            input.set_text(SettingsStore::get(cx).start_folder.clone(), cx);
+            input
         });
+        let font = cx.new(|cx| TextInput::new(window, cx));
+        let search = cx.new(|cx| {
+            let placeholder = text(cx, "et.settings.search_shortcuts", &[]);
+            TextInput::new(window, cx).placeholder(placeholder)
+        });
+        let typed = [
+            cx.subscribe(&shell, |this, input, event: &InputEvent, cx| {
+                if let InputEvent::Changed = event {
+                    let shell = input.read(cx).text().to_string();
+                    let put = |settings: &mut Settings, shell| settings.shell = shell;
+                    this.refused = this.save_typed("shell", shell, put, cx);
+                }
+            }),
+            cx.subscribe(&folder, |this, input, event: &InputEvent, cx| {
+                if let InputEvent::Changed = event {
+                    let folder = input.read(cx).text().to_string();
+                    let put = |settings: &mut Settings, folder| settings.start_folder = folder;
+                    this.refused_folder = this.save_typed("start_folder", folder, put, cx);
+                }
+            }),
+        ];
         // Focus inside, so the window's keys find its context.
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
@@ -130,19 +157,35 @@ impl SettingsWindow {
             focus,
             section: SECTIONS[0].0.into(),
             shell,
+            folder,
             search,
             refused: None,
+            refused_folder: None,
             failed: None,
             drafts: 0,
             font,
+            butler_fields: None,
             fallbacks: Vec::new(),
             adding: false,
             lit: true,
             _typed: typed,
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
             _updates: cx.observe_global::<Updates>(|_, cx| cx.notify()),
+            _language: cx.observe_global_in::<I18n>(window, Self::speak),
             _blink: Self::blink(cx),
         }
+    }
+
+    /// Rewords its title and fields in the chosen language.
+    fn speak(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.set_window_title(&text(cx, "et.settings.title", &[]));
+        let (shell, search) = (self.shell.clone(), self.search.clone());
+        shell.update(cx, |input, cx| {
+            input.set_placeholder(text(cx, "et.settings.login_shell", &[]), cx)
+        });
+        search.update(cx, |input, cx| {
+            input.set_placeholder(text(cx, "et.settings.search_shortcuts", &[]), cx)
+        });
     }
 
     /// Blinks the cursor preview as a terminal blinks its cursor, while it shows.
@@ -163,20 +206,46 @@ impl SettingsWindow {
         })
     }
 
-    /// Saves `shell` when it names a program; else says why and keeps the saved one.
-    fn save_shell(&mut self, shell: String, cx: &mut Context<Self>) {
-        self.refused = match SettingsStore::update(cx, |settings| settings.shell = shell.clone()) {
+    /// Saves Browse's pick as typed; refuses one not in UTF-8.
+    pub(super) fn chosen(&mut self, field: &'static str, path: PathBuf, cx: &mut Context<Self>) {
+        let (input, refused) = match field {
+            "shell" => (self.shell.clone(), &mut self.refused),
+            "start_folder" => (self.folder.clone(), &mut self.refused_folder),
+            other => unreachable!("settings: no path field {other}"),
+        };
+        let Some(text) = path.to_str() else {
+            let why = format!(
+                "{field} is {}, not in UTF-8, which the settings cannot hold",
+                path.display()
+            );
+            log::error!("settings: {why}");
+            *refused = Some(why.into());
+            return cx.notify();
+        };
+        input.update(cx, |input, cx| input.set_text(text, cx));
+    }
+
+    /// Saves a field through `put`, or returns the store's reason.
+    fn save_typed(
+        &mut self,
+        field: &str,
+        value: String,
+        put: fn(&mut Settings, String),
+        cx: &mut Context<Self>,
+    ) -> Option<SharedString> {
+        let saved = SettingsStore::update(cx, |settings| put(settings, value.clone()));
+        cx.notify();
+        match saved {
             Ok(()) => {
-                log::info!("settings: new sessions run {shell:?}");
+                log::info!("settings: {field} is {value:?}");
                 self.failed = None;
                 None
             }
             Err(error) => {
-                log::debug!("settings: the shell stays: {error:#}");
+                log::debug!("settings: {field} stays: {error:#}");
                 Some(format!("{error:#}").into())
             }
-        };
-        cx.notify();
+        }
     }
 }
 
@@ -186,7 +255,8 @@ fn sections(open: &SharedString, cx: &Context<SettingsWindow>) -> SelectableList
     let list = SECTIONS.iter().fold(
         SelectableList::new("settings-section-list").selected([open.clone()]),
         |list, (key, name, icon)| {
-            let item = ListItem::new(SharedString::from(format!("settings-section-{key}")), *name)
+            let name = text(cx, name, &[]);
+            let item = ListItem::new(SharedString::from(format!("settings-section-{key}")), name)
                 .leading(Icon::new(*icon).size(IconSize::Sm).color(muted));
             list.row(*key, item)
         },
@@ -225,13 +295,14 @@ fn switch(
     })
 }
 
-/// Segments for `choices`, each a value, its key and its name, that save the chosen value through `put`.
+/// Segments for `choices` that save the chosen value through `put`.
 fn choice<T: Copy + PartialEq + Debug + 'static>(
     this: &Entity<SettingsWindow>,
     field: &'static str,
     choices: &'static [(T, &'static str, &'static str)],
     now: T,
     put: fn(&mut Settings, T),
+    cx: &App,
 ) -> SegmentedControl {
     let (_, key, _) = choices
         .iter()
@@ -242,7 +313,7 @@ fn choice<T: Copy + PartialEq + Debug + 'static>(
         .iter()
         .fold(
             SegmentedControl::new(field, *key),
-            |control, (_, key, name)| control.segment(*key, *name, None),
+            |control, (_, key, name)| control.segment(*key, text(cx, name, &[]), None),
         )
         .size(ControlSize::Sm)
         .on_change(move |key, _, cx| {
@@ -296,6 +367,7 @@ impl Render for SettingsWindow {
                 self.appearance(window, cx).into_any_element()
             }
             "terminal" => self.terminal(cx).into_any_element(),
+            "butler" => self.butler_page(window, cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };
         let page = div()
@@ -325,10 +397,14 @@ impl Render for SettingsWindow {
             .column(
                 ShellColumn::new("settings-sections")
                     .width(cx.theme().label_width() * 1.25)
-                    .title("Settings")
+                    .title(text(cx, "et.settings.title", &[]))
                     .child(list),
             )
-            .column(ShellColumn::new("settings-page").title(*name).child(body));
+            .column(
+                ShellColumn::new("settings-page")
+                    .title(text(cx, name, &[]))
+                    .child(body),
+            );
         // The context sits above the focus root, so its keys work wherever focus is.
         div()
             .size_full()
@@ -342,6 +418,7 @@ impl Render for SettingsWindow {
                 log::info!("settings: the window comes forward");
                 window.activate_window();
             })
+            .child(crate::butler::outside_click_listener())
             .child(
                 ResizeBorder::new()
                     .child(FocusScope::new(&self.focus).root().size_full().child(shell)),

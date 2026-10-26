@@ -91,6 +91,16 @@ fn main() {
                             aim = main;
                             capture::front(number(aim, cx)).expect("the window on screen");
                         }
+                        "to:pet" => {
+                            let windows = cx.update(|cx| cx.windows());
+                            aim = windows
+                                .into_iter()
+                                .find(|window| {
+                                    window.downcast::<ely_tea_party::pet::Pet>().is_some()
+                                })
+                                .expect("a pet window");
+                            capture::front(number(aim, cx)).expect("the pet on screen");
+                        }
                         "to:settings" => {
                             let windows = cx.update(|cx| cx.windows());
                             let settings = windows
@@ -129,6 +139,37 @@ fn main() {
                                     .await;
                             }
                             log::info!("shot: dropped {paths:?} at {}", &spec[5..]);
+                        }
+                        spec if spec.starts_with("click@")
+                            && aim.downcast::<ely_tea_party::pet::Pet>().is_some() =>
+                        {
+                            let coords: Vec<f32> = spec[6..]
+                                .split(',')
+                                .map(|v| v.parse().expect("a coordinate"))
+                                .collect();
+                            let position = gpui::point(gpui::px(coords[0]), gpui::px(coords[1]));
+                            aim.update(cx, |_, window, cx| {
+                                window.dispatch_event(
+                                    gpui::PlatformInput::MouseDown(gpui::MouseDownEvent {
+                                        button: gpui::MouseButton::Left,
+                                        position,
+                                        modifiers: Default::default(),
+                                        click_count: 1,
+                                        first_mouse: false,
+                                    }),
+                                    cx,
+                                );
+                                window.dispatch_event(
+                                    gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
+                                        button: gpui::MouseButton::Left,
+                                        position,
+                                        modifiers: Default::default(),
+                                        click_count: 1,
+                                    }),
+                                    cx,
+                                );
+                            })
+                            .expect("the pet lives");
                         }
                         spec => typing::post(spec, number(aim, cx)).expect("a key event"),
                     }

@@ -19,12 +19,15 @@ pub mod mouse;
 mod notify;
 mod paint;
 mod pointer;
+#[cfg(windows)]
+mod procs;
 mod prompts;
 mod pty;
 mod rail;
 mod reports;
 mod scrollbar;
 pub mod shell;
+pub mod snapshot;
 mod speed;
 mod status;
 mod tap;
@@ -33,6 +36,7 @@ mod turns;
 #[cfg(unix)]
 mod unix;
 mod view;
+mod wheel;
 #[cfg(windows)]
 mod win32;
 pub mod zoom;
@@ -42,3 +46,5 @@ pub use fonts::{ICONS, MONO, load_font};
 pub use pty::{Events, Launch, Listener, Pty, PtyEvent, config, fit, spawn};
 pub use status::{Kind, Record, Records, State};
 pub use view::{BLINK, TerminalEvent, TerminalView};
+#[cfg(windows)]
+pub use wheel::keep as keep_wheel;

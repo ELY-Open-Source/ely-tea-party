@@ -1,6 +1,7 @@
 //! The right column: Git, Files, or the shown session's Activity, one at a time.
 
 use ely_gpui_component::{
+    i18n::text,
     motion::{self, ease_out_cubic},
     shell::ShellColumn,
     typography::Caption,
@@ -36,7 +37,11 @@ impl Workspace {
         };
         let session = self.sessions.get(self.active);
         let quiet = tab != PanelTab::Activity && session.is_some_and(|session| !session.reports);
-        let caption = || Caption::new("This shell reports no folder.").px_3().pt_2();
+        let caption = || {
+            Caption::new(text(cx, "et.panel.no_folder", &[]))
+                .px_3()
+                .pt_2()
+        };
         // Hidden, not dropped, so each keeps its state.
         let body = |on: bool| {
             div()

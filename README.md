@@ -189,3 +189,9 @@ scripts/release-asset.sh target/release/ely-tea-party-VERSION.dmg
 ## License
 
 MIT, in [`LICENSE`](LICENSE), as upstream ELYTerminal; the fork keeps its copyright notice. Box drawing and key encoding follow Ghostty's code, MIT, in `LICENSE-GHOSTTY`. The theme files come from iTerm2-Color-Schemes, MIT, with its license in `assets/themes`. JetBrains Mono and its Nerd Font build are under the SIL Open Font License, in `assets/fonts`.
+
+### Upstream synchronization
+
+The fork includes ELYTerminal through `cf0211b` (2026-10-25), including v0.1.9. Settings now offer English or Simplified Chinese, a custom start folder, and switches for session dragging and context menus. The fork retains its characters, drawers, session restoration, Files actions and automatic installer. Some fork-specific labels remain in their original language.
+
+Linux packaging supports tar.gz, DEB, RPM and AppImage; see [packaging instructions](packaging/linux/README.md). Package generation and platform validation are separate from publishing a release.

@@ -3,17 +3,19 @@
 use std::{path::Path, time::Instant};
 
 use ely_gpui_component::{
+    i18n::text,
     menus::ContextMenu,
     primitives::{FocusRing, Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize, Radius},
 };
 use gpui::{
     App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Render, Role, SharedString, StatefulInteractiveElement, Styled, Window, div, transparent_black,
+    Render, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder, transparent_black,
 };
 
 use super::{Session, TITLE, item, menu, one_line, shown};
-use crate::workspace::Workspace;
+use crate::{settings::SettingsStore, workspace::Workspace};
 
 /// The session shown once session `from` moved to `to`, `active` having been shown.
 pub fn after_move(active: usize, from: usize, to: usize) -> usize {
@@ -74,7 +76,16 @@ pub fn row(
     let close = workspace.clone();
     let id = session.terminal.entity_id();
     let item = item(&workspace, index, session, active, when.0, when.1, cx);
-    let menu = menu::row(&workspace, session.terminal.entity_id());
+    let menu = menu::row(&workspace, session.terminal.entity_id(), cx);
+    let settings = SettingsStore::get(cx);
+    let item = if settings.session_menu {
+        ContextMenu::new(("session-menu", pid), menu)
+            .w_full()
+            .child(item)
+            .into_any_element()
+    } else {
+        item.into_any_element()
+    };
     div()
         .id(("session-row", pid))
         .relative()
@@ -82,24 +93,22 @@ pub fn row(
         .border_1()
         .border_color(transparent_black())
         .tooltip(Tooltip::text(full))
-        .on_drag(moving, |moving, _, _, cx| {
-            cx.new(|_| Ghost(moving.title.clone()))
+        .when(settings.drag_sessions, |row| {
+            row.on_drag(moving, |moving, _, _, cx| {
+                cx.new(|_| Ghost(moving.title.clone()))
+            })
+            .drag_over::<Moving>(move |style, moving, _, cx| {
+                if moving.from == index {
+                    style
+                } else {
+                    style.border_color(cx.theme().colors.focus)
+                }
+            })
+            .on_drop(move |moving: &Moving, _, cx| {
+                workspace.update(cx, |this, cx| this.move_session(moving.from, index, cx))
+            })
         })
-        .drag_over::<Moving>(move |style, moving, _, cx| {
-            if moving.from == index {
-                style
-            } else {
-                style.border_color(cx.theme().colors.focus)
-            }
-        })
-        .on_drop(move |moving: &Moving, _, cx| {
-            workspace.update(cx, |this, cx| this.move_session(moving.from, index, cx))
-        })
-        .child(
-            ContextMenu::new(("session-menu", pid), menu)
-                .w_full()
-                .child(item),
-        )
+        .child(item)
         .child(
             div()
                 .id(("close-session", pid))
@@ -112,12 +121,12 @@ pub fn row(
                 .justify_center()
                 .rounded(cx.theme().radius(Radius::Md))
                 .role(Role::Button)
-                .aria_label("Close session")
+                .aria_label(text(cx, "et.session.close", &[]))
                 .tab_index(0)
                 .cursor_pointer()
                 .hover(|style| style.bg(cx.theme().colors.danger.opacity(0.12)))
                 .focus_ring(cx)
-                .tooltip(Tooltip::text("Close session"))
+                .tooltip(Tooltip::text(text(cx, "et.session.close", &[])))
                 .on_mouse_down(MouseButton::Left, |_, window, cx| {
                     window.prevent_default();
                     cx.stop_propagation();

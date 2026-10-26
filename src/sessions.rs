@@ -5,23 +5,32 @@ use std::{
 
 use ely_gpui_component::{
     forms::{Input, TextInput},
+    i18n::I18n,
     lists::ListItem,
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize, Radius},
 };
 use gpui::{
-    AnyElement, App, Entity, MouseButton, ObjectFit, Rems, SharedString, StyledImage, Subscription,
-    div, img, prelude::*, rems,
+    AnyElement, App, Entity, MouseButton, ObjectFit, Rems, StyledImage, Subscription, div, img,
+    prelude::*, rems,
 };
 
 use crate::{
     agents::{self, Agent, Pose, Status},
-    term::{Kind, Record, Records, State, TerminalView},
+    term::{Record, State, TerminalView},
     workspace::{Drawer, TITLE, Workspace},
 };
 
 mod drag;
+mod link;
 mod menu;
+pub use link::LinkId;
+mod status;
+
+#[cfg(test)]
+use status::LISTED;
+use status::hover;
+pub use status::line;
 pub mod orb;
 
 pub use drag::{Moving, after_move, row};
@@ -32,6 +41,7 @@ use orb::Look;
 pub struct Session {
     /// Its hooks report under this.
     pub id: u64,
+    pub link_id: LinkId,
     /// The coding agent it runs, if any.
     pub agent: Option<Agent>,
     pub terminal: Entity<TerminalView>,
@@ -114,8 +124,7 @@ impl Session {
     }
 }
 
-/// The most records hover lists, and the most characters it shows of each part.
-const LISTED: usize = 10;
+/// The most characters shown of each part.
 const SHORT: usize = 120;
 
 /// `folder` as a row shows it: the home folder as `~`, on one line.
@@ -349,7 +358,8 @@ fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
     let tip = Tooltip::rich(move |window, cx| {
         let lines = watched.upgrade().map_or_else(Vec::new, |terminal| {
             let view = terminal.read(cx);
-            hover(view.records(), view.ended().filter(|&code| code != 0))
+            let failed = view.ended().filter(|&code| code != 0);
+            hover(view.records(), failed, cx.global::<I18n>())
         });
         let room = window.viewport_size().height - rems(3.).to_pixels(window.rem_size());
         div()
@@ -373,54 +383,6 @@ fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
             .child(orb::lattice(look, color, now, since))
             .into_any_element(),
     )
-}
-
-/// What hover shows: a line for each record, ten at most, then a failed command's status.
-pub fn hover(records: &Records, failed: Option<i32>) -> Vec<SharedString> {
-    let mut lines: Vec<SharedString> = records
-        .iter()
-        .take(LISTED)
-        .map(|(id, record)| line(records, id, record).into())
-        .collect();
-    let more = records.iter().count().saturating_sub(LISTED);
-    if more > 0 {
-        lines.push(format!("{more} more").into());
-    }
-    if let Some(code) = failed {
-        lines.push(format!("Last command exited with {code}").into());
-    }
-    lines
-}
-
-/// A record as hover and notifications say it: its state, then its app, title and message.
-pub fn line(records: &Records, id: &str, record: &Record) -> String {
-    let parts = [
-        records.app(id),
-        record.title.as_deref(),
-        record.msg.as_deref(),
-    ];
-    let said: Vec<String> = parts.into_iter().flatten().map(plain).collect();
-    let state = label(record);
-    if said.is_empty() {
-        state
-    } else {
-        format!("{state}: {}", said.join(" · "))
-    }
-}
-
-/// A record's state, as hover names it.
-fn label(record: &Record) -> String {
-    match (record.state, record.kind, record.progress) {
-        (State::Idle, ..) => "Idle".into(),
-        (State::Working, _, Some(value)) => format!("Working, {value}%"),
-        (State::Working, ..) => "Working".into(),
-        (State::Blocked, Some(Kind::Permission), _) => "Waiting for permission".into(),
-        (State::Blocked, Some(Kind::Question), _) => "Waiting for an answer".into(),
-        (State::Blocked, Some(Kind::Auth), _) => "Waiting for a login".into(),
-        (State::Blocked, None, _) => "Waiting".into(),
-        (State::Done, ..) => "Done".into(),
-        (State::Error, ..) => "Error".into(),
-    }
 }
 
 /// A program's text as hover shows it: on one line, 120 characters at most, without what could disguise it.

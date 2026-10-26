@@ -28,6 +28,8 @@ pub struct Saved {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Place {
+    #[serde(default)]
+    pub link_id: crate::sessions::LinkId,
     pub folder: PathBuf,
     pub resume: Option<String>,
     #[serde(default)]
@@ -39,14 +41,14 @@ pub struct Place {
 
 /// The saved sessions' file, beside the settings; a dev build keeps its own, so it never takes a release's sessions.
 fn path() -> anyhow::Result<PathBuf> {
-    let folder = dirs::config_dir().context("restore: the platform names no config folder")?;
+    let folder = crate::settings::folder()?;
     let dev = cfg!(debug_assertions) || option_env!("ELY_DEV").is_some();
     let name = if dev {
         "sessions-dev.json"
     } else {
         "sessions.json"
     };
-    Ok(folder.join("ely-tea-party").join(name))
+    Ok(folder.join(name))
 }
 
 /// The saved sessions, if any were; a file that does not parse is logged and passed by, so the app still starts.
@@ -112,6 +114,7 @@ pub fn resume(agent: &str, conversation: &str) -> Option<String> {
 impl Workspace {
     fn snapshot(&self) -> Saved {
         let place = |session: &crate::sessions::Session| Place {
+            link_id: session.link_id,
             folder: session.folder.clone(),
             // A resume not yet typed stays saved.
             resume: session.pending.clone().or_else(|| {
@@ -158,7 +161,11 @@ impl Workspace {
     }
 
     /// Brings `saved` back: the first session runs already in its folder; the rest start, and each agent resumes.
-    pub fn restore(&mut self, saved: Saved, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn restore(&mut self, mut saved: Saved, window: &mut Window, cx: &mut Context<Self>) {
+        let mut links = std::collections::HashSet::new();
+        for place in &mut saved.sessions {
+            place.link_id.ensure_unique(&mut links);
+        }
         let mut places = saved.sessions.into_iter();
         if let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut()) {
             session.pending = first.resume.clone();
@@ -195,6 +202,7 @@ impl Workspace {
 
 /// Gives a restored session the name and trinket `place` kept.
 fn dress(session: &mut crate::sessions::Session, place: Place) {
+    session.link_id = place.link_id;
     session.name = place.name;
     if let Some(trinket) = place.trinket {
         session.trinket = trinket;
@@ -237,6 +245,7 @@ mod tests {
     fn a_saved_file_reads_back() {
         let saved = Saved {
             sessions: vec![Place {
+                link_id: Default::default(),
                 folder: "/tmp".into(),
                 resume: Some("claude --resume a".into()),
                 name: String::new(),

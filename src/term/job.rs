@@ -13,7 +13,7 @@ impl TerminalView {
     /// The process group the program's keys go to.
     #[cfg(unix)]
     pub fn foreground(&self) -> Option<u32> {
-        let group = self.pty.foreground().ok()?;
+        let group = self.pty.foreground().ok()??;
         u32::try_from(group).ok()
     }
 

@@ -10,7 +10,7 @@ use gpui::{
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
-    agents, blur, menus,
+    agents, blur, i18n, menus,
     settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
     themes, update,
@@ -23,7 +23,7 @@ const SETTLE: Duration = Duration::from_millis(500);
 /// The id the macOS bundle and Linux desktop entry share.
 pub const APP_ID: &str = "net.toddzheng.ely-tea-party";
 
-/// Fonts, settings, integration scripts and the chosen font, each checked before a window opens.
+/// Fonts, settings, language and scripts, checked before any window.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
     cx.text_system()
         .add_fonts(vec![
@@ -45,6 +45,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         );
     }
     SettingsStore::init(cx)?;
+    i18n::init(cx);
     ShellIntegration::init(cx)?;
     #[cfg(unix)]
     {
@@ -122,7 +123,11 @@ pub fn open(
         .flatten()
         .filter(|saved| !saved.sessions.is_empty());
     if let Some(folder) = saved.as_ref().and_then(workspace::restore::first_folder) {
-        launch.cwd = folder.to_path_buf();
+        launch = crate::term::shell::launch(
+            &SettingsStore::get(cx).shell,
+            folder.to_path_buf(),
+            &cx.global::<ShellIntegration>().0,
+        )?;
     }
     let kept = opening_size(cx);
     // macOS grows a window by a point on a side whose edge falls on a half point.
@@ -147,6 +152,9 @@ pub fn open(
     let id = agents::next_session();
     launch.env.extend(agents::env(id)?);
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
+    // Windows' wheel settings, read where gpui reads its own.
+    #[cfg(windows)]
+    crate::term::keep_wheel()?;
     let window = cx.open_window(options, |window, cx| {
         window.set_app_id(APP_ID);
         window
