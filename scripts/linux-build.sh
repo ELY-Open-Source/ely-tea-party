@@ -11,9 +11,10 @@ docker build --network "${LINUX_DOCKER_NETWORK:-default}" \
     --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy \
     --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY \
     -t ely-tea-party-release packaging/linux
-mkdir -p target/release target/linux-cargo target/linux-build
+mkdir -p target/release target/linux-cargo target/linux-build target/linux-npm
 linux_run \
     -e CARGO_HOME=/src/target/linux-cargo -e CARGO_TARGET_DIR=/src/target/linux-build \
+    -e npm_config_cache=/src/target/linux-npm \
     -e CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
     ely-tea-party-release sh -eu -c '
         npm --prefix butler ci --ignore-scripts --no-audit --no-fund

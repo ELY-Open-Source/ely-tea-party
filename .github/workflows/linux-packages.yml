@@ -32,6 +32,7 @@ jobs:
             target/linux-cargo
             target/linux-build
             target/linux-tools
+            target/linux-npm
           key: linux-x86_64-rust-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'packaging/linux/Dockerfile', 'scripts/linux-appimage.sh') }}
           restore-keys: linux-x86_64-rust-
       - name: Build the shared binary and four packages
