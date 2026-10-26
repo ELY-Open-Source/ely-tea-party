@@ -119,7 +119,6 @@ pub struct TerminalView {
     _herdr: Task<()>,
     _focus: [Subscription; 3],
     _settings: Subscription,
-    _zoom: Subscription,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -188,7 +187,6 @@ impl TerminalView {
                 view.search(false, cx);
                 cx.notify();
             }),
-            _zoom: cx.observe_global::<zoom::Enlarged>(|_, cx| cx.notify()),
         }
     }
 

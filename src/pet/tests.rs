@@ -19,6 +19,8 @@ fn ely(mood: Mood, since: Instant) -> Pet {
         anchor: None,
         at: 140.0,
         drag: None,
+        dragged: false,
+        pressed_y: px(0.),
         moving: None,
         stroll: None,
         strolled: None,

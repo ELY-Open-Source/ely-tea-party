@@ -15,6 +15,7 @@ use gpui::{
 };
 
 mod agents;
+mod butler;
 mod divider;
 mod drawer;
 mod events;
@@ -81,6 +82,7 @@ pub struct Workspace {
     drawer_dragged: Option<Pixels>,
     /// The tea party shows in place of the columns.
     party: bool,
+    butler: crate::butler::Briefing,
     /// The sessions as last saved for the next start.
     saved: Option<restore::Saved>,
     party_focus: FocusHandle,
@@ -119,12 +121,17 @@ impl Workspace {
             ticking: None,
             drawer_dragged: None,
             party: false,
+            butler: crate::butler::Briefing::default(),
             saved: None,
             party_focus: cx.focus_handle(),
             meters: usage::Meters::default(),
             glide: panel::Glide::default(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
+                if !SettingsStore::get(cx).butler.enabled {
+                    this.butler.cancel();
+                    this.butler.visible = false;
+                }
                 cx.notify();
             }),
             _updates: cx.observe_global::<crate::update::Updates>(|_, cx| cx.notify()),
@@ -155,6 +162,7 @@ impl Workspace {
         let trinket = sessions::free_trinket(self.sessions.iter().map(|session| session.trinket));
         self.sessions.push(Session {
             id,
+            link_id: Default::default(),
             agent: None,
             terminal,
             title: String::new(),
@@ -298,6 +306,7 @@ impl Render for Workspace {
         let now = Instant::now();
         self.tick(now, cx);
         let body = self.terminal_body(window, cx);
+        let bubble = self.butler_bubble(window, cx);
         let settings = SettingsStore::get(cx).clone();
         let workspace = cx.entity();
         // It leads the first column or ends the last.
@@ -398,6 +407,7 @@ impl Render for Workspace {
         // The context sits above the focus root, so its keys work wherever focus is.
         div()
             .size_full()
+            .relative()
             .key_context(CONTEXT)
             // A press anywhere wakes the mascot; the terminals note the keys.
             .capture_any_mouse_down(|_, _, cx| crate::pet::touch(cx))
@@ -452,5 +462,7 @@ impl Render for Workspace {
                             }),
                     ),
             )
+            .children(bubble)
+            .child(crate::butler::outside_click_listener())
     }
 }

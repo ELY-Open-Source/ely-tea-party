@@ -22,7 +22,9 @@ use crate::{
 };
 
 mod drag;
+mod link;
 mod menu;
+pub use link::LinkId;
 mod status;
 
 #[cfg(test)]
@@ -39,6 +41,7 @@ use orb::Look;
 pub struct Session {
     /// Its hooks report under this.
     pub id: u64,
+    pub link_id: LinkId,
     /// The coding agent it runs, if any.
     pub agent: Option<Agent>,
     pub terminal: Entity<TerminalView>,

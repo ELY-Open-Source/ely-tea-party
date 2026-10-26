@@ -92,7 +92,6 @@ pub fn init(cx: &mut App) {
     if cfg!(target_os = "macos") {
         cx.bind_keys([KeyBinding::new("cmd-m", Minimize, None)]);
     }
-    cx.set_global(zoom::Enlarged::default());
     cx.on_action(|_: &Quit, cx| {
         log::info!("app: quit asked");
         cx.quit();

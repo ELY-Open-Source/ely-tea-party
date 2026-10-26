@@ -73,6 +73,17 @@ linux_init() {
 linux_stage() {
     dest=$1
     install -Dm755 "$binary" "$dest/usr/bin/ely-tea-party"
+    [ -x target/butler/node ] && [ -s target/butler/main.mjs ] || {
+        echo "linux-packaging: build the Pi runtime with scripts/linux-build.sh" >&2; exit 1
+    }
+    node_arch=$arch
+    [ "$arch" != x86_64 ] || node_arch=x64
+    [ "$arch" != aarch64 ] || node_arch=arm64
+    grep -q "linux-$node_arch" target/butler/versions.json || {
+        echo "linux-packaging: Pi runtime architecture does not match $arch" >&2; exit 1
+    }
+    install -d "$dest/usr/lib/ely-tea-party"
+    cp -R target/butler "$dest/usr/lib/ely-tea-party/butler"
     install -Dm644 "packaging/linux/$id.desktop" "$dest/usr/share/applications/$id.desktop"
     install -Dm644 assets/icons/ely-tea-party.svg "$dest/usr/share/icons/hicolor/scalable/apps/$id.svg"
     docs=$dest/usr/share/doc/ely-tea-party

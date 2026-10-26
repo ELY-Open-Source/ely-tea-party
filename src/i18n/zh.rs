@@ -1,6 +1,49 @@
 //! Simplified Chinese, in the words macOS and Ely use.
 
 pub const MESSAGES: &[(&str, &str)] = &[
+    ("et.session.copy_link", "复制会话链接"),
+    ("et.butler.waiting", "让我看看大家忙得怎么样啦…"),
+    ("et.butler.persona", "Agent 人设"),
+    (
+        "et.butler.persona_hint",
+        "她是什么性格、怎么称呼你、用什么口吻汇报？都可以写在这里。",
+    ),
+    ("et.butler.persona_save", "保存人设"),
+    ("et.butler.persona_reset", "恢复默认"),
+    (
+        "et.butler.persona_limit",
+        "最多 2000 字 · 保存后下次汇报生效",
+    ),
+    ("et.butler.failed", "这次没能看完呢：{error}"),
+    ("et.butler.title", "Agent Butler"),
+    ("et.butler.enabled", "启用管家"),
+    (
+        "et.butler.enabled_hint",
+        "点击鲸鱼汇报终端进展。仅在你发起汇报时，将选取的终端片段发送给模型服务商。",
+    ),
+    ("et.butler.provider", "模型服务商"),
+    ("et.butler.model", "模型"),
+    ("et.butler.model_choose", "选择模型"),
+    ("et.butler.model_hint", "仅列出当前精选型号。"),
+    (
+        "et.butler.model_retired",
+        "已保存的模型不在精选列表中，选择新模型并应用后切换。",
+    ),
+    ("et.butler.key", "API Key"),
+    (
+        "et.butler.key_hint",
+        "只在本次运行的内存中保存。留空则使用服务商对应的 API Key 环境变量。",
+    ),
+    ("et.butler.connection", "连接配置"),
+    (
+        "et.butler.connection_hint",
+        "保存服务商和模型；密钥不会写入设置文件。请在终端设置中显示鲸鱼吉祥物。",
+    ),
+    ("et.butler.save", "应用"),
+    (
+        "et.butler.omitted",
+        "这次先看了 32 个会话，剩下的还没顾上呢。",
+    ),
     ("et.panel.activity", "活动"),
     ("et.menu.check_updates", "检查更新…"),
     ("et.menu.toggle_drawer", "切换抽屉"),

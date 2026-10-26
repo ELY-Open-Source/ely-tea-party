@@ -40,6 +40,7 @@ tar -xzf %{SOURCE0} -C %{buildroot}
 
 %files
 /usr/bin/ely-tea-party
+/usr/lib/ely-tea-party
 /usr/share/applications/$id.desktop
 /usr/share/icons/hicolor/scalable/apps/$id.svg
 /usr/share/man/man1/ely-tea-party.1.gz

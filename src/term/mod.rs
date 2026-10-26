@@ -27,6 +27,7 @@ mod rail;
 mod reports;
 mod scrollbar;
 pub mod shell;
+pub mod snapshot;
 mod speed;
 mod status;
 mod tap;

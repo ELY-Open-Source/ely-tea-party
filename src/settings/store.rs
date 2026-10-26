@@ -21,8 +21,7 @@ impl Global for SettingsStore {}
 impl SettingsStore {
     /// Loads `settings.json` from the platform config folder into the app.
     pub fn init(cx: &mut App) -> anyhow::Result<()> {
-        let folder = dirs::config_dir().context("settings: the platform names no config folder")?;
-        let path = folder.join("ely-tea-party").join("settings.json");
+        let path = folder()?.join("settings.json");
         let settings = load(&path)?;
         fonts(&settings, cx)
             .with_context(|| format!("settings: {} holds a bad value", path.display()))?;
@@ -52,6 +51,22 @@ impl SettingsStore {
         cx.global_mut::<Self>().settings = next;
         Ok(())
     }
+}
+
+pub fn folder() -> anyhow::Result<PathBuf> {
+    if cfg!(debug_assertions)
+        && let Some(folder) = std::env::var_os("ELY_TEST_CONFIG_DIR")
+    {
+        let folder = PathBuf::from(folder);
+        anyhow::ensure!(
+            folder.is_absolute(),
+            "settings: ELY_TEST_CONFIG_DIR must be absolute"
+        );
+        return Ok(folder);
+    }
+    Ok(dirs::config_dir()
+        .context("settings: the platform names no config folder")?
+        .join("ely-tea-party"))
 }
 
 /// Checks the terminal can load its family and each fallback; the error names the field.
@@ -172,6 +187,7 @@ mod tests {
         let path = folder.join("settings.json");
         let settings = Settings {
             font_size: 15.5,
+            font_zoom: 2.0,
             cursor_style: CursorStyle::Bar,
             dark_theme: Some("catppuccin-latte".into()),
             ..Settings::default()
@@ -230,6 +246,7 @@ mod tests {
         fs::write(&path, r#"{ "font_size": 16.0 }"#).expect("write");
         let settings = load(&path).expect("loads");
         assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_zoom, 0.0);
         assert_eq!(settings.theme, Settings::default().theme);
         fs::remove_dir_all(folder).expect("cleanup");
     }

@@ -23,6 +23,8 @@ if [ -n "$sign" ]; then
     exit 1
   }
 fi
+npm --prefix butler ci --ignore-scripts --no-audit --no-fund
+npm --prefix butler run build
 cargo build --release --locked
 version=$(cargo pkgid)
 version=${version##*[#@]}
@@ -36,6 +38,7 @@ cargo run --release --locked --quiet --example icons -- \
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$out/ely-tea-party" "$app/Contents/MacOS/"
+cp -R target/butler "$app/Contents/Resources/butler"
 iconutil -c icns "$work/ely-tea-party.iconset" -o "$app/Contents/Resources/ely-tea-party.icns"
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -60,8 +63,10 @@ cat > "$app/Contents/Info.plist" <<EOF
 EOF
 plutil -lint -s "$app/Contents/Info.plist"
 if [ -n "$sign" ]; then
+  codesign --force --options runtime --timestamp --entitlements packaging/node-entitlements.plist --sign "$sign" "$app/Contents/Resources/butler/node"
   codesign --force --options runtime --timestamp --sign "$sign" "$app"
 else
+  codesign --force --options runtime --entitlements packaging/node-entitlements.plist --sign - "$app/Contents/Resources/butler/node"
   codesign --force --sign - "$app"
 fi
 if [ -n "${DEV:-}" ]; then

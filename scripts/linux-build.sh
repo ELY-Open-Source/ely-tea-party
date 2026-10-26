@@ -16,6 +16,8 @@ linux_run \
     -e CARGO_HOME=/src/target/linux-cargo -e CARGO_TARGET_DIR=/src/target/linux-build \
     -e CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
     ely-tea-party-release sh -eu -c '
+        npm --prefix butler ci --ignore-scripts --no-audit --no-fund
+        npm --prefix butler run build
         cargo build --release --locked
         install -m755 target/linux-build/release/ely-tea-party target/release/ely-tea-party
     '

@@ -21,6 +21,7 @@ use super::{Settings, SettingsStore};
 use crate::{app::APP_ID, menus, term::BLINK, update::Updates};
 
 mod appearance;
+mod butler;
 mod terminal;
 
 actions!(ely_tea_party, [OpenSettings, CloseSettings]);
@@ -29,9 +30,10 @@ actions!(ely_tea_party, [OpenSettings, CloseSettings]);
 const CONTEXT: &str = "Settings";
 
 /// Each category's key, its name's key and its icon.
-const SECTIONS: [(&str, &str, IconName); 2] = [
+const SECTIONS: [(&str, &str, IconName); 3] = [
     ("appearance", "et.settings.appearance", IconName::Palette),
     ("terminal", "et.settings.terminal", IconName::Terminal),
+    ("butler", "et.butler.title", IconName::Bot),
 ];
 
 /// Cmd-, opens the settings, Cmd-W closes them; off macOS Ctrl-, and Ctrl-Shift-W, as Ghostty's.
@@ -100,6 +102,7 @@ pub struct SettingsWindow {
     /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
     drafts: usize,
     font: Entity<TextInput>,
+    butler_fields: Option<butler::Fields>,
     /// A picker's input for each fallback family, and one for the family being added.
     fallbacks: Vec<Entity<TextInput>>,
     /// The empty picker that adds a fallback shows.
@@ -161,6 +164,7 @@ impl SettingsWindow {
             failed: None,
             drafts: 0,
             font,
+            butler_fields: None,
             fallbacks: Vec::new(),
             adding: false,
             lit: true,
@@ -363,6 +367,7 @@ impl Render for SettingsWindow {
                 self.appearance(window, cx).into_any_element()
             }
             "terminal" => self.terminal(cx).into_any_element(),
+            "butler" => self.butler_page(window, cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };
         let page = div()
@@ -413,6 +418,7 @@ impl Render for SettingsWindow {
                 log::info!("settings: the window comes forward");
                 window.activate_window();
             })
+            .child(crate::butler::outside_click_listener())
             .child(
                 ResizeBorder::new()
                     .child(FocusScope::new(&self.focus).root().size_full().child(shell)),

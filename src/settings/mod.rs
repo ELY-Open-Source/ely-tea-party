@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::themes;
 
-pub use store::{SettingsStore, load, save};
+pub use store::{SettingsStore, folder, load, save};
 
 /// Who peeks over the main window.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +90,7 @@ pub enum PanelTab {
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub language: Language,
+    pub butler: crate::butler::Config,
     /// A program path; empty runs the login shell.
     pub shell: String,
     pub start_in: StartIn,
@@ -102,6 +103,8 @@ pub struct Settings {
     /// Families tried in order for a character Font family lacks.
     pub font_fallbacks: Vec<String>,
     pub font_size: f32,
+    /// Saved zoom offset in points; zero uses the base font size.
+    pub font_zoom: f32,
     pub line_height: f32,
     pub ligatures: bool,
     pub cursor_style: CursorStyle,
@@ -145,6 +148,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: Language::English,
+            butler: crate::butler::Config::default(),
             shell: String::new(),
             start_in: StartIn::Home,
             start_folder: String::new(),
@@ -153,6 +157,7 @@ impl Default for Settings {
             font_family: "JetBrains Mono".into(),
             font_fallbacks: Vec::new(),
             font_size: 13.0,
+            font_zoom: 0.0,
             line_height: 1.2,
             ligatures: true,
             cursor_style: CursorStyle::Block,
@@ -197,7 +202,10 @@ pub const ELY_LEFT: RangeInclusive<f32> = 0.0..=16384.0;
 impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
     pub fn validate(&self) -> anyhow::Result<()> {
+        self.butler.validate()?;
         within("font_size", self.font_size, &FONT_SIZE)?;
+        let zoom_span = FONT_SIZE.end() - FONT_SIZE.start();
+        within("font_zoom", self.font_zoom, &(-zoom_span..=zoom_span))?;
         within("line_height", self.line_height, &LINE_HEIGHT)?;
         within("background_opacity", self.background_opacity, &OPACITY)?;
         within("padding_x", self.padding_x, &PADDING)?;

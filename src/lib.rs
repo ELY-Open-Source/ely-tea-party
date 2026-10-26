@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod app;
 pub mod blur;
+pub mod butler;
 pub mod curl;
 #[cfg(target_os = "macos")]
 pub mod dock;

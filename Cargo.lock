@@ -1773,6 +1773,7 @@ dependencies = [
  "sysinfo 0.39.6",
  "toml_edit 0.22.27",
  "unicode-normalization",
+ "uuid",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols",

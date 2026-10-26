@@ -18,6 +18,13 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - run: npm --prefix butler ci --ignore-scripts --no-audit --no-fund
+      - run: npm --prefix butler test
+      - run: npm --prefix butler run build
+      - run: npm --prefix butler run smoke
       # pwsh comes with the image; zsh and fish run the shell tests, Xvfb the X11 one.
       - if: runner.os == 'Linux'
         run: |

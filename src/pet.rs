@@ -74,6 +74,8 @@ pub struct Pet {
     /// How far in from the pane's left edge she stands, and a drag under way: the pointer's x where it began and where she stood then.
     at: f32,
     drag: Option<(f32, f32)>,
+    dragged: bool,
+    pressed_y: Pixels,
     /// The edge she dives to move to, and when the dive began.
     moving: Option<(Edge, Instant)>,
     /// The whale girl's stroll under way, the antics turn of her last one, and when it last stepped.
@@ -239,6 +241,8 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 anchor: wayland.then_some(spot),
                 at: kept,
                 drag: None,
+                dragged: false,
+                pressed_y: px(0.),
                 moving: None,
                 stroll: None,
                 strolled: None,
@@ -415,7 +419,7 @@ impl Render for Pet {
                 window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
                     if phase == DispatchPhase::Bubble && event.dragging() {
                         let scale = window.scale_factor();
-                        held.update(cx, |pet, cx| pet.slide(event.position.x, scale, cx));
+                        held.update(cx, |pet, cx| pet.slide(event.position, scale, cx));
                     }
                 });
                 window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
@@ -434,6 +438,7 @@ impl Render for Pet {
                 MouseButton::Left,
                 cx.listener(|pet, event: &MouseDownEvent, window, cx| {
                     pet.press(Instant::now());
+                    pet.pressed_y = event.position.y;
                     pet.grab(event.position.x, window.scale_factor());
                     cx.notify();
                 }),

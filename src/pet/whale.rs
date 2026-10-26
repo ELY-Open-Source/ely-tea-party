@@ -40,6 +40,7 @@ pub fn frames(cx: &mut Context<Pet>) -> Task<()> {
             cx.background_executor().timer(FRAME).await;
             let drawn = pet.update(cx, |pet, cx| {
                 pet.stroll(Instant::now(), cx);
+                pet.sync_butler(cx);
                 if SettingsStore::get(cx).mascot == Mascot::Whale && !cx.reduce_motion() {
                     cx.notify();
                 }

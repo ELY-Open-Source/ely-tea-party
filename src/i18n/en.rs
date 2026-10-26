@@ -1,6 +1,52 @@
 //! English, the catalog every other one mirrors.
 
 pub const MESSAGES: &[(&str, &str)] = &[
+    ("et.session.copy_link", "Copy session link"),
+    ("et.butler.waiting", "Let me see what everyone is up to…"),
+    ("et.butler.persona", "Agent persona"),
+    (
+        "et.butler.persona_hint",
+        "Give her a personality, choose how she addresses you, and set her reporting style.",
+    ),
+    ("et.butler.persona_save", "Save persona"),
+    ("et.butler.persona_reset", "Restore default"),
+    (
+        "et.butler.persona_limit",
+        "2000 characters · Applies to the next report",
+    ),
+    (
+        "et.butler.failed",
+        "I couldn’t finish checking this time: {error}",
+    ),
+    ("et.butler.title", "Agent Butler"),
+    ("et.butler.enabled", "Enable butler"),
+    (
+        "et.butler.enabled_hint",
+        "Click the whale girl to report on terminal output. Selected excerpts are sent to your model provider only on request.",
+    ),
+    ("et.butler.provider", "Model provider"),
+    ("et.butler.model", "Model"),
+    ("et.butler.model_choose", "Choose a model"),
+    ("et.butler.model_hint", "A short list of current models."),
+    (
+        "et.butler.model_retired",
+        "Your saved model is outside this list. Choose one and Apply to switch.",
+    ),
+    ("et.butler.key", "API key"),
+    (
+        "et.butler.key_hint",
+        "Kept in memory for this app run only. Leave empty to use the provider API-key environment variable.",
+    ),
+    ("et.butler.connection", "Connection"),
+    (
+        "et.butler.connection_hint",
+        "Save the provider and model; the key is never written to settings. Turn on the whale mascot in Terminal settings to use her.",
+    ),
+    ("et.butler.save", "Apply"),
+    (
+        "et.butler.omitted",
+        "I checked 32 sessions this time; I haven’t reached the rest yet.",
+    ),
     ("et.panel.activity", "Activity"),
     ("et.menu.check_updates", "Check for Updates…"),
     ("et.menu.toggle_drawer", "Toggle Drawer"),
