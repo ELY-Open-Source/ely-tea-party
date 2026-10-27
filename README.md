@@ -79,7 +79,7 @@ The desktop entry runs `ely-tea-party`, so `~/.local/bin` must be on `PATH`. Cha
 
 ## Hook up your agents
 
-Characters work out of the box: once a second each session's foreground job is read (`node …/codex` and `npx @openai/codex` included), and an agent there gets its character, guessed busy while it draws and idle when quiet. For the exact state, install the hooks:
+Characters work out of the box: once a second each session's foreground job is read (`node …/codex` and `npx @openai/codex` included), and an agent there gets its character, guessed busy while it draws and idle when quiet. For the exact state on macOS and Linux, open **Settings → Terminal → Agent hooks → Install hooks**. The button uses your login shell to find installed agents, shows the installation results, and can be run again after an update. Restart running agents afterward. The command line also supports installing hooks:
 
 ```sh
 ely-tea-party hooks install              # every agent found on PATH
@@ -87,6 +87,8 @@ ely-tea-party hooks install codex kimi   # or just these
 ```
 
 It covers Claude Code, Codex, Gemini, Antigravity, Grok, Kimi Code and dscode, plus plugins for OpenCode, Pi and oh-my-pi. Each file it changes is backed up first as `NAME.ely-tea-party.bak`, and running it again changes nothing. The hooks do nothing in any other terminal. On macOS, the app's command line is inside the bundle: `/Applications/Ely\ Tea\ Party.app/Contents/MacOS/ely-tea-party`.
+
+**Settings → Characters** lets you replace every agent character and the whale mascot with your own PNG, APNG, GIF or WebP. Import one image for all states, customize individual actions, preview them, adjust the mascot's size and position, or share a complete `.elyskin` pack. Missing actions use your custom idle image. Imported images are saved inside the app's configuration directory, and each character can be restored independently. See [Character skins](docs/character-skins.md) for the pack format and image limits.
 
 Fast sessions light the terminal edges while the agent works: Claude uses its warm copper color and Codex its green. Codex Ultrafast adds faster green/cyan long trails, counter-rotating sparks, and softly pulsing corners. They stop while idle or awaiting input, and become a faint static edge with Reduce Motion. Run `ely-tea-party hooks install claude codex` again after upgrading, then restart those agents. Claude's status-line command forwards its session's `fast_mode` while preserving your existing command and output. Codex's title gains its `fast-mode` field while keeping your other title items; an explicitly empty title stays disabled.
 

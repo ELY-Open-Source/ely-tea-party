@@ -173,7 +173,10 @@ impl SettingsWindow {
             .row(updates_row(cx));
         let keys = SettingsSection::new(word("et.terminal.shortcuts"))
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
-        div().flex().flex_col().gap_6().child(section).child(keys)
+        let page = div().flex().flex_col().gap_6();
+        #[cfg(unix)]
+        let page = page.child(super::hooks::section(cx));
+        page.child(section).child(keys)
     }
 }
 

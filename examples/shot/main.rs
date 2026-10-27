@@ -21,6 +21,11 @@ fn main() {
         ely_tea_party::agents::hooks::run(&all[1..]);
         return;
     }
+    if all.first().map(String::as_str) == Some("hooks")
+        && all.get(1).map(String::as_str) == Some("install")
+    {
+        std::process::exit(ely_tea_party::agents::install::cli(&all[2..]));
+    }
     let mut args = std::env::args().skip(1).peekable();
     let keys: Vec<String> = if args.peek().map(String::as_str) == Some("--keys") {
         args.next();
