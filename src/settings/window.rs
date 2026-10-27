@@ -22,6 +22,9 @@ use crate::{app::APP_ID, menus, term::BLINK, update::Updates};
 
 mod appearance;
 mod butler;
+mod characters;
+#[cfg(unix)]
+mod hooks;
 mod terminal;
 
 actions!(ely_tea_party, [OpenSettings, CloseSettings]);
@@ -30,9 +33,10 @@ actions!(ely_tea_party, [OpenSettings, CloseSettings]);
 const CONTEXT: &str = "Settings";
 
 /// Each category's key, its name's key and its icon.
-const SECTIONS: [(&str, &str, IconName); 3] = [
+const SECTIONS: [(&str, &str, IconName); 4] = [
     ("appearance", "et.settings.appearance", IconName::Palette),
     ("terminal", "et.settings.terminal", IconName::Terminal),
+    ("characters", "et.characters.title", IconName::Palette),
     ("butler", "et.butler.title", IconName::Bot),
 ];
 
@@ -103,6 +107,7 @@ pub struct SettingsWindow {
     drafts: usize,
     font: Entity<TextInput>,
     butler_fields: Option<butler::Fields>,
+    characters: characters::Fields,
     /// A picker's input for each fallback family, and one for the family being added.
     fallbacks: Vec<Entity<TextInput>>,
     /// The empty picker that adds a fallback shows.
@@ -113,11 +118,17 @@ pub struct SettingsWindow {
     _settings: Subscription,
     _updates: Subscription,
     _language: Subscription,
+    #[cfg(unix)]
+    _hooks: Subscription,
     _blink: Task<()>,
+    _characters: Subscription,
+    _preview: Task<()>,
 }
 
 impl SettingsWindow {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        #[cfg(unix)]
+        cx.default_global::<hooks::Installation>();
         let shell = cx.new(|cx| {
             let placeholder = text(cx, "et.settings.login_shell", &[]);
             let mut input = TextInput::new(window, cx).placeholder(placeholder);
@@ -165,6 +176,7 @@ impl SettingsWindow {
             drafts: 0,
             font,
             butler_fields: None,
+            characters: characters::Fields::default(),
             fallbacks: Vec::new(),
             adding: false,
             lit: true,
@@ -172,7 +184,11 @@ impl SettingsWindow {
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
             _updates: cx.observe_global::<Updates>(|_, cx| cx.notify()),
             _language: cx.observe_global_in::<I18n>(window, Self::speak),
+            #[cfg(unix)]
+            _hooks: cx.observe_global::<hooks::Installation>(|_, cx| cx.notify()),
             _blink: Self::blink(cx),
+            _characters: cx.observe_global::<crate::skins::Library>(|_, cx| cx.notify()),
+            _preview: characters::animate(cx),
         }
     }
 
@@ -367,6 +383,7 @@ impl Render for SettingsWindow {
                 self.appearance(window, cx).into_any_element()
             }
             "terminal" => self.terminal(cx).into_any_element(),
+            "characters" => self.characters_page(cx).into_any_element(),
             "butler" => self.butler_page(window, cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };

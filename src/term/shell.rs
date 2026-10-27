@@ -202,7 +202,7 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
 }
 
 #[cfg(unix)]
-fn default_shell() -> anyhow::Result<String> {
+pub(crate) fn default_shell() -> anyhow::Result<String> {
     Ok(super::unix::login_shell_path()?)
 }
 

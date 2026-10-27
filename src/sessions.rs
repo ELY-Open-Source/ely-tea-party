@@ -195,8 +195,11 @@ pub fn avatar(
     (session, now): (&Session, Instant),
     cx: &App,
 ) -> impl IntoElement {
-    let frame = agents::assets::frame(agent.kind, pose, session.id, now);
-    let trinket = agents::assets::trinket(agent.kind, session.trinket);
+    let frame = agents::assets::frame(agent.kind, pose, session.id, now, cx);
+    let trinket = crate::skins::custom(crate::skins::Slot::agent(agent.kind), cx)
+        .is_none()
+        .then(|| agents::assets::trinket(agent.kind, session.trinket))
+        .flatten();
     div()
         .relative()
         .size(size)

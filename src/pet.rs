@@ -402,7 +402,7 @@ impl Render for Pet {
         // The whale girl draws over the canvas, which then paints no Ely but still holds her drag.
         let whale = (SettingsStore::get(cx).mascot == Mascot::Whale).then(|| {
             let walk = self.stroll.map(|stroll| stroll.drawn(self.edge));
-            whale::whale(&pose, self.quiet(now, cx), walk, now)
+            whale::whale(&pose, self.quiet(now, cx), walk, now, cx)
         });
         let ely = whale.is_none();
         let rig = self.rig.clone();

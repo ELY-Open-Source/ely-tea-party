@@ -108,12 +108,17 @@ pub fn whale(
     quiet: f64,
     walk: Option<&'static str>,
     now: Instant,
+    cx: &App,
 ) -> impl IntoElement + use<> {
     let name = walk.unwrap_or_else(|| drawn(pose.act, quiet));
-    let frame = crate::agents::assets::mascot(name, now);
+    let frame = crate::agents::assets::mascot(name, now, cx);
     // Standing still, she breathes as Ely does.
     let breath = if name == "calm" { pose.bob } else { 0.0 };
     let top = ROOM + HEAD - SIDE + SUNK - (pose.lift + breath) * UNIT;
+    let layout = crate::skins::custom(crate::skins::Slot::Whale, cx).map(|skin| skin.layout);
+    let side = layout.map_or(SIDE, |layout| SIDE * layout.scale);
+    let top = layout.map_or(top, |layout| top - SUNK + SIDE - side + layout.y);
+    let left = layout.map_or(0.0, |layout| (SIDE - side) / 2.0 + layout.x);
     // Her color, light enough to read over any window behind her.
     let color = gpui::Hsla {
         l: 0.78,
@@ -136,9 +141,9 @@ pub fn whale(
         .children(frame.map(|frame| {
             img(frame)
                 .absolute()
-                .left(px(pose.shake * UNIT))
+                .left(px(left + pose.shake * UNIT))
                 .top(px(top))
-                .size(px(SIDE))
+                .size(px(side))
                 .object_fit(ObjectFit::Contain)
         }))
         .when(name == "sleeping", |her| her.children(zs(quiet).map(z)))

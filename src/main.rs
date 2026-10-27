@@ -43,16 +43,7 @@ fn command() -> Option<i32> {
             Some(0)
         }
         Some("hooks") if args.get(1).map(String::as_str) == Some("install") => {
-            let installed = dirs::home_dir()
-                .ok_or_else(|| anyhow::anyhow!("install: no home folder"))
-                .and_then(|home| ely_tea_party::agents::install::run(&home, &args[2..]));
-            Some(match installed {
-                Ok(()) => 0,
-                Err(error) => {
-                    eprintln!("{error:#}");
-                    1
-                }
-            })
+            Some(ely_tea_party::agents::install::cli(&args[2..]))
         }
         _ => None,
     }

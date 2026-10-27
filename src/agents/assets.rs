@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui::RenderImage;
+use gpui::{App, RenderImage};
 use image::{AnimationDecoder, DynamicImage, Frame, Rgba, codecs::webp::WebPDecoder};
 
 use super::{Kind, Pose};
@@ -140,14 +140,41 @@ fn strips() -> &'static Strips {
 }
 
 /// `kind` in `pose`, the frame for `now`; `seed` staggers sessions so they move apart.
-pub fn frame(kind: Kind, pose: Pose, seed: u64, now: Instant) -> Option<Arc<RenderImage>> {
+pub fn frame(
+    kind: Kind,
+    pose: Pose,
+    seed: u64,
+    now: Instant,
+    cx: &App,
+) -> Option<Arc<RenderImage>> {
+    if let Some(skin) = crate::skins::custom(crate::skins::Slot::agent(kind), cx) {
+        return Some(skin.frame(pose.stem(), seed, now));
+    }
     let name = format!("{}-{}", kind.stem(), pose.stem());
     play(ART, &name, seed, now)
 }
 
 /// The mascot's loop `name`, the frame for `now`; none for one she lacks.
-pub fn mascot(name: &str, now: Instant) -> Option<Arc<RenderImage>> {
+pub fn mascot(name: &str, now: Instant, cx: &App) -> Option<Arc<RenderImage>> {
+    if let Some(skin) = crate::skins::custom(crate::skins::Slot::Whale, cx) {
+        return Some(skin.frame(name, 0, now));
+    }
     play(MASCOT, &format!("whale-{name}"), 0, now)
+}
+
+pub fn builtin(slot: crate::skins::Slot) -> std::collections::BTreeMap<String, Arc<[u8]>> {
+    let art = if slot == crate::skins::Slot::Whale {
+        MASCOT
+    } else {
+        ART
+    };
+    let prefix = format!("{}-", slot.id());
+    art.iter()
+        .filter_map(|(name, bytes)| {
+            name.strip_prefix(&prefix)
+                .map(|pose| (pose.to_string(), Arc::from(*bytes)))
+        })
+        .collect()
 }
 
 /// Trinket `index` from `kind`'s box, the box cut into its cells the first time.

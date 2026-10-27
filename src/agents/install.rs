@@ -1,6 +1,7 @@
 //! `ely-tea-party hooks install [AGENT…]`: each agent on this machine reports to Ely Tea Party; outside it, its hooks do nothing.
 
 mod codex;
+pub mod desktop;
 mod files;
 mod groups;
 mod kimi;
@@ -69,6 +70,20 @@ pub fn names() -> Vec<&'static str> {
     AGENTS.iter().map(|agent| agent.0).collect()
 }
 
+/// Runs the CLI installer, returning its exit status.
+pub fn cli(only: &[String]) -> i32 {
+    let installed = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("install: no home folder"))
+        .and_then(|home| run(&home, only));
+    match installed {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("{error:#}");
+            1
+        }
+    }
+}
+
 /// Installs for each agent in `only`, else for each whose program is on `PATH`; a failure stops none of the rest.
 pub fn run(home: &Path, only: &[String]) -> anyhow::Result<()> {
     if let Some(unknown) = only.iter().find(|name| !names().contains(&name.as_str())) {
@@ -78,6 +93,7 @@ pub fn run(home: &Path, only: &[String]) -> anyhow::Result<()> {
         );
     }
     let mut failed = Vec::new();
+    let mut found = 0;
     for Agent(name, program, install, note) in &AGENTS {
         let named = only.iter().any(|only| only == name);
         if !only.is_empty() && !named {
@@ -87,6 +103,7 @@ pub fn run(home: &Path, only: &[String]) -> anyhow::Result<()> {
             println!("{name:<9} skipped: {program} is not on PATH");
             continue;
         }
+        found += 1;
         match install(home) {
             Ok(Installed { path, added: 0 }) => {
                 println!("{name:<9} up to date in {}", path.display())
@@ -104,6 +121,7 @@ pub fn run(home: &Path, only: &[String]) -> anyhow::Result<()> {
         }
     }
     anyhow::ensure!(failed.is_empty(), "install: {} failed", failed.join(", "));
+    anyhow::ensure!(found > 0, "install: no supported agents found on PATH");
     println!("Restart running agents so they load their hooks.");
     Ok(())
 }
