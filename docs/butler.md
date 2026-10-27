@@ -1,90 +1,148 @@
-# Optional Agent Butler
+# Whale task cards and optional AI explanations
 
-Settings → Agent Butler enables click-to-report on the whale mascot. It defaults off.
-Keep the whale visible in Settings → Terminal. Click and drag are separate: a drag
-moves her; a click opens a compact speech bubble containing only her reply.
-The bubble stays open after completion; no timer hides it. Clicking the mascot
-again keeps the same reply and never starts a duplicate request. Click elsewhere
-inside the app (including Settings or another workspace) to dismiss it and cancel
-any current run; clicking or scrolling inside the bubble keeps it open.
-Opening it after dismissal reads fresh snapshots. Disabling the feature or closing the
-workspace also cancels the run. Loading and failures appear as short messages.
+Click the whale mascot to open local task cards. This works without enabling AI,
+entering an API key, or starting the bundled Node runtime. Cards show each main
+terminal's current status, folder, most recent hook-reported task and latest hook
+activity when available. Errors and waiting sessions come first. Open terminal
+jumps to the card's stable session UUID, including when session names are identical.
 
-When a session reports an error or waits for input/approval, the existing whale
-animation indicates attention; no extra badge is overlaid. Clicking her immediately opens the first affected session (errors
-before waiting sessions, then tab order) and asks Pi to explain those terminals
-only, excluding healthy sessions. Session references in her reply are real internal hyperlinks, displayed as underlined names. Their destinations are `ely://session/<UUID>`, so duplicate names, renaming and reordering do not affect routing. Selection uses
-stable session IDs and happens only on a click, never on asynchronous model output.
-Each session gets a UUID at creation, retained when saved sessions are restored.
-A duplicated tab gets a new UUID. Older saved sessions receive IDs on first load;
-invalid empty or duplicate saved IDs are replaced. Right-click a tab and choose
-Copy session link to copy its address. These are app-internal links; no OS URL
-handler or browser integration is registered. Closed or unknown targets remain
-plain labels, and never open another tab by matching its name.
-Normal clicks with no attention signals still produce the general briefing.
-Existing terminal/agent status flags route attention; explanations still come
-from terminal snapshots, without reading hook payloads or Activity history.
-There is no background LLM scan for arbitrary errors in otherwise unflagged output.
+The cards distinguish reported errors, waiting, working, reported completion,
+idle and unknown status. A reported completion is labelled unreviewed; idle or
+silent output never counts as completed work. Hook messages remain attributed
+as “Agent reports” or “Agent asks”. Missing hooks do not prevent opening cards;
+they limit how much task detail is available. Drawer terminals are not included.
 
-The bubble uses a curved speech tail, asymmetric corners, a soft blue gradient
-and theme-aware shadows, without a header,
-portrait, timestamp, status bar or action buttons. Replies are one conversational
-paragraph, without headings, bullets or inline source numbers. A brief fade and
-upward entrance respects reduced-motion preferences; streaming does not replay it.
-Placement follows the mascot's actual edge and horizontal position. At the bottom,
-the bubble opens above her with a downward tail, reserving her height. At the top,
-it opens below her. Available space limits the scrollable reply; resizing or
-moving the mascot updates the anchor without starting another model request.
-Settings → Agent Butler → Agent persona provides a multiline personality editor, up to
-2,000 characters. Save persona persists the tone and preferred form of address
-for subsequent reports; Restore default clears the override. A blank field uses
-the built-in cheeky DeepSeek whale-girl persona. The editor displays the default
-as editable text; a saved custom persona is preserved. Persona settings do
-not replace the read-only tool boundary or terminal-evidence rules.
+Opening the bubble selects the first attention target, preserving the existing
+error-before-waiting behavior. Card states update locally while it is open.
+Clicking the whale again keeps it open without requesting an explanation. A drag
+moves her; the bubble follows her actual top/bottom edge and horizontal position.
+Clicking outside the bubble dismisses it and cancels any running explanation.
+Clicking or scrolling inside it keeps it open. Reduced-motion settings are respected.
 
-Choose DeepSeek (default), OpenAI, Anthropic, Gemini, or OpenRouter, then pick a
-model from the short dropdown list. There is no model-ID text field. The shared
-`butler/models.json` lists 2–4 current models per provider, checked against Pi's
-bundled catalog by tests. A previously saved model outside the list remains in
-use until the user selects a listed model and applies it; the UI explains this
-and does not silently replace the saved model. Apply saves provider and model. API keys are held
-only in memory for this app run, separately per provider. An empty key uses
-DEEPSEEK_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or
-OPENROUTER_API_KEY from the application's launch environment. No credential is
-written to settings or passed in process arguments. New provider credentials
-must be applied before requesting a report.
+## Task overview layout
 
-## Runtime and evidence
+The mascot opens a compact panel with a fixed title and local/AI footer. Sessions
+are grouped into attention items and other activity, with character avatars,
+short status badges and two-line previews. Details expands the task context
+locally; the title or arrow opens its terminal. The close button dismisses the
+panel. Full status meanings and folder paths are available on hover. AI usage
+and interpretation continue to appear inside their originating task.
 
-The Rust application starts a bundled Node process only when a report is requested.
-`@earendil-works/pi-agent-core` and `pi-ai` are pinned to 1.4.0. Node is pinned to
-22.23.4; its platform archive is verified against a pinned SHA-256 before packaging.
-The runtime is packaged with the app, so users do not need Node or npm.
+The visual hierarchy draws on [Linear Inbox](https://mobbin.com/screens/beb9d6b3-ec34-46d7-9332-320fcb32a338)
+and [Delphi notifications](https://mobbin.com/screens/11350c17-180f-437c-a48d-384f653b477e)
+references on Mobbin: restrained surfaces, compact rows and light separators.
+The implementation uses Ely's native theme tokens and built-in character assets.
 
-The host takes frozen snapshots of up to 32 main terminal sessions, limiting the
-set to attention targets when flagged sessions exist, without reading agent hooks
-or Activity. Each snapshot includes at most 400 physical grid rows
-and about 32 KB of text, with capture time, session identity, alternate-screen
-and truncation flags. Wrapped rows are joined; wide and hidden cells are handled.
-Reading does not depend on the displayed scroll position and does not type into
-or switch terminals. Snapshotting runs off the UI thread under a bounded grid read.
+## Controlling model use
 
-Pi can only call `list_sessions`, `read_terminal`, and `search_terminal` against
-those frozen snapshots. Tool output is untrusted evidence. The prompt requires
-source attribution through host-provided session links, uncertainty for missing history, and a distinction between
-reported and verified success. Capture time is not an output timestamp. TUI redraws
-and trimmed scrollback cannot be reconstructed. Drawer terminals are not included.
-The tools provide each session's URL and escaped Markdown link alongside its ID.
-Pi copies those links; the bubble renders only labels, hiding incomplete URL
-syntax while streaming and accepting only exact addresses of open sessions.
-Only excerpts selected by the agent's tools are sent to the configured provider.
-There is no background monitoring or persisted report history.
+Settings → Agent Butler → Enable AI explanations is off by default. Enabling it
+adds an Explain with AI button to each task card. Only that explicit button
+starts a task explanation. Opening cards, switching tabs and moving the mascot
+remain local. The separate, opt-in companion mode below can generate an idea
+after a sustained period of watching a working agent.
 
-The run is limited to six model calls, 64,000 characters of tool output, and 120 seconds. Input and protocol output
-are bounded. The host kills and reaps the helper on cancellation or timeout;
-a helper also exits if its parent disappears. No provider-specific loop or Pi event type is exposed to the UI.
+Each explanation uses:
 
-## Development
+- One selected main terminal, never all open sessions.
+- The most recent nonblank tail, at most 60 logical lines and 6,000 UTF-8 bytes
+  including line separators. Empty excerpts do not reach a model.
+- One model request, no model tool loop, reasoning disabled, an output limit of
+  600 tokens, and provider retry count set to zero where supported.
+- A short reply grounded in the excerpt. The model must distinguish claims from
+  verified success and acknowledge missing context instead of requesting more text.
+
+The excerpt limit is a byte limit, not a promise about input tokens or price.
+Input also includes the fixed instructions, session metadata and configured
+persona. Tokenization and billing depend on the selected provider/model. When the
+provider returns usage, the card displays its reported total tokens; unavailable
+usage is not displayed as zero. Output limits are passed to the provider.
+
+Successful explanations are cached only in workspace memory for five minutes,
+with at most eight entries. Matching requires the same excerpt, session identity,
+metadata, status signal, model, provider, language and persona. Capture timestamps
+are excluded. A repeated request for unchanged input reuses the answer without
+starting Node or making an API call; the card explicitly labels the reused answer.
+Reads do not extend expiry. Failures, truncated replies and cancelled runs are not
+cached. Closing the workspace removes its cache. Explanation reports are not persisted. Optional [local whale memory](memory.md) stores separate bounded events, preferences and project records.
+
+While a request runs, other Explain buttons are disabled. Dismissal, disabling AI,
+or closing the workspace cancels the request and terminates its helper. An
+explanation describes the excerpt captured at click time, not subsequent output;
+new output does not automatically spend tokens to regenerate it. Model output
+never changes the selected tab. Links in a reply accept only exact UUID addresses
+of currently open sessions, so closed or unknown targets cannot open another tab
+by matching its name.
+
+## Occasional companion ideas
+
+Settings → Agent Butler → Occasional AI ideas is a separate switch, off by
+default. It uses the same provider, model and in-memory/environment credential
+as task explanations, without requiring the manual-explanation switch. Enabling
+it permits automatic requests containing a small excerpt from the current session.
+
+The whale only speaks while her main window is active and visible, the same
+session and project stay selected, and that session has a working agent. Any
+error or waiting session suppresses suggestions. Open task cards, the party view
+and an open drawer also suppress them. Typing (including IME), clicks, scrolling,
+changing sessions/projects, hiding the mascot, leaving/minimizing the window,
+or disabling the setting resets the quiet period and cancels pending ideas.
+A gap in timer delivery after sleep also restarts the quiet period.
+
+After a randomly selected 5–10 minute quiet period, she may make one request.
+Across all windows in this app run, attempts are at least 20 minutes apart, with
+at most three in a rolling hour. Failures and cancellations consume that budget;
+recent identical input is suppressed even after the cooldown. No network polling
+runs in the background; eligibility is checked locally. Budgets and the last 32
+input fingerprints live in memory and reset when the app exits.
+
+Each idea uses the current task reported by hooks, if available, and a short
+terminal tail: at most 24 lines / 2,400 UTF-8 bytes total. Metadata and up to 500
+persona characters are additional input. If local memory is enabled, up to three
+explicit expression preferences and, only for an exactly matching unresolved task,
+up to two historical excerpts may be added; see [memory limits](memory.md). There is one model call, no tools,
+no automatic retry where the provider supports that option, and at most 160
+output tokens. Bytes are not a token-price guarantee. The model is asked for
+one natural, optional suggestion in 1–2 sentences, without canned openers, forced
+whale jokes, invented project facts, or
+claiming it will perform work. It does not inspect project files.
+
+Only complete answers appear, in a small bubble that never takes focus or switches
+sessions. The bubble shows reported token usage, disappears after 25 seconds or
+when the owner resumes interaction, and offers Quiet for this window until the
+window closes. AI failures stay out of the UI and retain the request cooldown.
+
+## Provider and persona settings
+
+Choose DeepSeek (default), OpenAI, Anthropic, Gemini or OpenRouter and a model from
+the curated dropdown, then Apply. The bundled `butler/models.json` is validated
+against Pi's catalog. An existing saved model outside the list remains in use
+until the user deliberately selects and applies another model.
+
+API keys are held only in memory for this app run, separately per provider. An
+empty key uses DEEPSEEK_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
+or OPENROUTER_API_KEY from the app's launch environment. No credential is written
+to settings or included in process arguments. Missing credentials affect only AI
+explanations; the local cards continue to work.
+
+Agent persona supports up to 2,000 characters and controls tone and form of
+address. Save persona persists it; Restore default clears the override. A blank
+value uses the bundled whale persona from `butler/persona.json`. Personality does
+not override the evidence rules. Terminal text and labels are untrusted data,
+never instructions. The model receives no tools, filesystem access, or ability
+to type into the terminal.
+
+## Runtime and development
+
+Rust captures the chosen terminal off the UI thread from a bounded frozen grid
+snapshot, then compacts it before passing it to the helper. Wrapped grid rows are
+joined and hidden cells are excluded; capture time is observation time, not an
+output timestamp. TUI redraws and trimmed scrollback cannot be reconstructed.
+
+The host and helper validate request limits. The helper uses pinned Pi 1.4.0 and
+Node 22.23.4 bundled with the application. Users do not need a system Node or npm.
+The host kills and reaps the helper on cancellation or its 120-second timeout;
+the helper exits if its parent disappears. The Node runtime is signed separately
+on macOS, with its own JIT entitlements. Licenses accompany the runtime.
 
 ```
 npm --prefix butler ci --ignore-scripts --no-audit --no-fund
@@ -95,66 +153,13 @@ cargo test --lib bundled_pi_validates -- --ignored
 scripts/check.sh
 ```
 
-`target/butler` contains the development runtime. Packagers copy it into the
-macOS bundle, Windows zip, or Linux payload. The Node helper is signed separately
-on macOS with its own JIT entitlements; the terminal receives no new entitlements.
-Pi, Node, and dependency licenses accompany the runtime.
+Tests exercise Pi's real loop with a scripted provider: a single request, no tool
+loop, excerpt limits, cancellation, incomplete answers, persona and session links.
+Rust tests cover status semantics, Unicode excerpt bounds, cache expiry and
+invalidation, successful-result caching, cancellation and helper protocol checks.
+These checks do not contact or establish compatibility with every live provider.
 
-For isolated debug UI checks, set `ELY_TEST_CONFIG_DIR` to an absolute temporary
-directory containing settings.json. Settings and session persistence use that
-directory in debug builds only. The `shot` example accepts `to:pet` and dispatches
-pet clicks through GPUI because the non-key mascot has no normal first responder.
-
-Provider support is not a claim that every model or hosted gateway has been tested.
-The automated tests use Pi's real loop with a scripted provider, and test the
-bundled process without contacting a provider. Check actual provider behavior and
-signed distribution artifacts separately before publishing a release.
-
-Initial validation includes the twelve JavaScript tests, the macOS check gate,
-Linux Rust and IME tests, and a live DeepSeek report from a synthetic terminal.
-The live check exercised whale click, snapshot tools, Chinese streaming output,
-session navigation, and helper exit. Other providers, Windows execution,
-and notarized release delivery have not been exercised by that check.
-The macOS development app passes strict recursive signature verification. Its
-packaged Node/Pi runtime also completed a live DeepSeek tool loop and exited cleanly.
-The persona editor was exercised through the UI: a multiline custom persona was
-saved to isolated settings, then a live DeepSeek report used the requested address.
-Attention navigation was checked with three isolated sessions: a build error, a
-permission prompt, and a healthy shell. Clicking the whale switched from the
-healthy shell to the error and sent only the two affected snapshots. Selecting
-the second alert while Pi was running opened its session; report completion did
-not switch back. This predates the replacement of alert buttons with text links.
-The compact bubble was then checked with a live DeepSeek reply: only prose and
-underlined session names remain, clicking the second name opens its session,
-and outside clicks dismiss the bubble. Repeated mascot clicks now keep it open.
-The compact-bubble gate passed 398 Rust tests (two ignored) and 12 JavaScript tests.
-The edge-placement follow-up passed 400 Rust tests (two ignored). A live macOS
-maximize check opened the reply above the bottom mascot, and restoring the window
-moved an already-open bubble back to the top without requesting another report.
-The persistent-reply follow-up checked repeated mascot clicks during and after a
-live report: one model run, with the reply still visible afterward. Clicking
-inside kept it open; a click in Settings dismissed it without consuming the click.
-
-## Selection references
-
-The curated model list was checked on 2026-10-25 against the official
-[DeepSeek](https://api-docs.deepseek.com/quick_start/pricing),
-[OpenAI](https://developers.openai.com/api/docs/models),
-[Anthropic](https://platform.claude.com/docs/en/models/overview),
-[Gemini](https://ai.google.dev/gemini-api/docs/models), and
-[OpenRouter](https://openrouter.ai/deepseek/deepseek-v4.1-flash-1017) catalogs.
-This is a release-maintained list, not a live model-discovery service.
-
-The default persona is our own wording inspired by the community's clever,
-snack-loving, cheeky whale characterization, including this
-[community project](https://github.com/yunyunyunyunsuan/dsh-plugin-moments).
-It is not an official DeepSeek character specification. Both the editor and
-Pi runtime use `butler/persona.json` as the single source for the default text.
-
-## Session-link validation
-
-The address change passed 404 Rust tests (two ignored) and 14 JavaScript tests.
-A live DeepSeek run with two restored tabs both named Same produced distinct
-internal links. Clicking the first displayed link opened the second tab by its
-UUID, with the bubble still visible. Both UUIDs survived another app launch.
-The new copy-link menu entry was also checked in the isolated app.
+For isolated macOS UI checks, set `ELY_TEST_CONFIG_DIR` to an absolute temporary
+directory with settings.json. It changes settings/session persistence only in
+debug builds. The `shot` example accepts `to:pet` and sends clicks through GPUI.
+Use synthetic terminal status reports to verify cards without any model request.

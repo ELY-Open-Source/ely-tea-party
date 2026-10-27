@@ -410,6 +410,7 @@ impl EntityInputHandler for TerminalView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        crate::pet::touch(cx);
         log::debug!("terminal {}: composing {text:?}", self.pty.pid);
         self.marked = (!text.is_empty()).then(|| text.to_string());
         cx.notify();

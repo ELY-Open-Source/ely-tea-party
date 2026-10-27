@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub enabled: bool,
+    pub companion: bool,
+    pub memory: bool,
+    pub memory_ai: bool,
     pub provider: String,
     pub model: String,
     pub persona: String,
@@ -16,6 +19,9 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             enabled: false,
+            companion: false,
+            memory: false,
+            memory_ai: false,
             provider: "deepseek".into(),
             model: "deepseek-flash".into(),
             persona: String::new(),
@@ -104,6 +110,9 @@ mod tests {
     fn settings_are_optional_and_cannot_contain_credentials() {
         let old: crate::settings::Settings = serde_json::from_str("{}").unwrap();
         assert!(!old.butler.enabled);
+        assert!(!old.butler.companion);
+        assert!(!old.butler.memory);
+        assert!(!old.butler.memory_ai);
         assert!(serde_json::from_str::<Config>(r#"{"api_key":"example"}"#).is_err());
         let mut credentials = Credentials::default();
         credentials
@@ -124,6 +133,7 @@ mod tests {
     fn persona_survives_settings_roundtrip_and_limits_unicode_characters() {
         let mut config: Config = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
         assert!(config.persona.is_empty());
+        config.companion = true;
         config.persona = "叫我船长。\n语气活泼，先说需要我处理的事。".into();
         let restored: Config =
             serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();

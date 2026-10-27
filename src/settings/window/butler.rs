@@ -69,6 +69,24 @@ impl SettingsWindow {
             SettingsStore::get(cx).butler.enabled,
             |settings, enabled| settings.butler.enabled = enabled,
         );
+        let companion = switch(
+            &this,
+            "butler-companion",
+            SettingsStore::get(cx).butler.companion,
+            |settings, enabled| settings.butler.companion = enabled,
+        );
+        let memory = switch(
+            &this,
+            "butler-memory",
+            SettingsStore::get(cx).butler.memory,
+            |s, v| s.butler.memory = v,
+        );
+        let memory_ai = switch(
+            &this,
+            "butler-memory-ai",
+            SettingsStore::get(cx).butler.memory_ai,
+            |s, v| s.butler.memory_ai = v,
+        );
         let provider = PROVIDERS
             .iter()
             .fold(
@@ -159,11 +177,36 @@ impl SettingsWindow {
             .flex_col()
             .gap_5()
             .child(
-                SettingsSection::new(word("et.butler.title")).row(
-                    SettingsRow::new(word("et.butler.enabled"))
-                        .description(word("et.butler.enabled_hint"))
-                        .control(enabled),
-                ),
+                SettingsSection::new(word("et.butler.title"))
+                    .row(
+                        SettingsRow::new(word("et.butler.enabled"))
+                            .description(word("et.butler.enabled_hint"))
+                            .control(enabled),
+                    )
+                    .row(
+                        SettingsRow::new(word("et.butler.companion"))
+                            .description(word("et.butler.companion_hint"))
+                            .control(companion),
+                    ),
+            )
+            .child(
+                SettingsSection::new(word("et.memory.title"))
+                    .row(
+                        SettingsRow::new(word("et.memory.enable"))
+                            .description(word("et.memory.setting_hint"))
+                            .control(memory),
+                    )
+                    .row(
+                        SettingsRow::new(word("et.memory.organize"))
+                            .description(word("et.memory.organize_hint"))
+                            .control(memory_ai),
+                    )
+                    .row(
+                        SettingsRow::new(word("et.memory.manage")).control(
+                            Button::new("open-memory", word("et.memory.manage"))
+                                .on_click(|_, _, cx| crate::memory::window::open(None, None, cx)),
+                        ),
+                    ),
             )
             .child(persona)
             .child(

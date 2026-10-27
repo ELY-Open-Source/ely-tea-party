@@ -8,6 +8,7 @@ pub mod dock;
 pub mod files;
 pub mod git;
 pub mod i18n;
+pub mod memory;
 pub mod menus;
 pub mod pet;
 pub mod sessions;
