@@ -130,7 +130,8 @@ impl Workspace {
                 this.background.follow(window, SettingsStore::get(cx));
                 if !SettingsStore::get(cx).butler.enabled {
                     this.butler.cancel();
-                    this.butler.visible = false;
+                    this.butler.text.clear();
+                    this.butler.error = None;
                 }
                 cx.notify();
             }),

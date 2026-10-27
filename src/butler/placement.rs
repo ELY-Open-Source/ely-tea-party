@@ -16,7 +16,7 @@ pub struct Placement {
 impl Anchor {
     pub fn place(self, width: f32, height: f32, rem: f32) -> Placement {
         let gap = rem * 0.5;
-        let bubble_width = (rem * 25.).min((width - 2. * gap).max(0.));
+        let bubble_width = (rem * 27.).min((width - 2. * gap).max(0.));
         let left = self.left.clamp(gap, (width - bubble_width - gap).max(gap));
         let top_room = rem * 3.;
         let padding = rem * 2.5 + 2.;

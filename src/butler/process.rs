@@ -25,25 +25,30 @@ pub struct Request {
     pub api_key: String,
     pub language: String,
     pub persona: String,
-    pub attention: Vec<super::attention::Attention>,
+    pub status: super::tasks::Status,
     pub snapshots: Vec<Snapshot>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    #[serde(skip)]
+    Prepared {
+        key: String,
+    },
+    #[serde(skip)]
+    Cached {
+        text: String,
+    },
     Reset,
     Delta {
         text: String,
     },
-    Tool {
-        name: String,
-        #[serde(rename = "sessionId")]
-        session_id: Option<String>,
-    },
     Done {
         text: String,
         sources: Vec<String>,
+        #[serde(default)]
+        tokens: Option<u64>,
     },
     Error {
         text: String,
@@ -247,8 +252,17 @@ mod tests {
             api_key: "test-only-key".into(),
             language: "zh-CN".into(),
             persona: String::new(),
-            attention: vec![],
-            snapshots: vec![],
+            status: super::super::tasks::Status::Unknown,
+            snapshots: vec![Snapshot {
+                id: "1".into(),
+                title: "Test".into(),
+                folder: "/tmp".into(),
+                url: "ely://session/12345678-1234-4234-8234-123456789abc".into(),
+                captured_at: "now".into(),
+                alternate_screen: false,
+                truncated: false,
+                lines: vec!["test".into()],
+            }],
         }
     }
 

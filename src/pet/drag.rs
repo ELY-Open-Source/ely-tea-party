@@ -15,9 +15,6 @@ impl Pet {
     }
 
     pub(super) fn sync_butler(&self, cx: &mut App) {
-        if !SettingsStore::get(cx).butler.enabled {
-            return;
-        }
         let anchor = self.butler_anchor();
         let main = self.main;
         cx.defer(move |cx| {
