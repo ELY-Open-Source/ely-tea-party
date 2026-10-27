@@ -69,6 +69,16 @@ impl Workspace {
                     )),
             )
             .child(
+                IconButton::new("butler-memory", IconName::BookOpen)
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip(text(cx, "et.memory.title", &[]))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let folder = this.sessions.get(this.active).map(|s| s.folder.clone());
+                        crate::memory::window::open(folder, None, cx);
+                    })),
+            )
+            .child(
                 IconButton::new("butler-close", IconName::X)
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)

@@ -44,6 +44,12 @@ impl Workspace {
     }
 
     pub fn move_butler(&mut self, anchor: Anchor, cx: &mut Context<Self>) {
+        if self.companion.reply.anchor != anchor {
+            self.companion.reply.anchor = anchor;
+            if self.companion.reply.visible {
+                cx.notify();
+            }
+        }
         if self.butler.visible && self.butler.anchor != anchor {
             log::debug!("butler: bubble follows mascot at {anchor:?}");
             self.butler.anchor = anchor;
@@ -52,6 +58,7 @@ impl Workspace {
     }
 
     pub fn show_butler(&mut self, anchor: Anchor, window: &mut Window, cx: &mut Context<Self>) {
+        self.quiet_companion(cx);
         if self.butler.visible {
             self.move_butler(anchor, cx);
             return;
@@ -116,6 +123,12 @@ impl Workspace {
             }
         };
         let cache = self.butler.cache.clone();
+        let memory_enabled = config.memory;
+        let memory_service = crate::memory::Service::get(cx);
+        let memory_revision = memory_service.revision();
+        let folder = session.folder.clone();
+        let session_link = session.link_id.url();
+        let read_service = memory_service.clone();
         let cancel = Cancellation::default();
         let flag = cancel.0.clone();
         let (tx, rx) = mpsc::channel();
@@ -133,8 +146,25 @@ impl Workspace {
                 });
                 return;
             }
+            let memory = if memory_enabled {
+                match read_service
+                    .request(move |store| store.recall(&folder, &session_link, "", memory_revision))
+                    .await
+                {
+                    Ok(Ok(memory)) => memory,
+                    other => {
+                        log::warn!("memory: preferences unavailable: {other:?}");
+                        Default::default()
+                    }
+                }
+            } else {
+                Default::default()
+            };
             let request = Request {
                 version: 1,
+                purpose: process::Purpose::Explain,
+                memory,
+                consolidation: None,
                 provider: config.provider,
                 model: config.model,
                 api_key: key,
@@ -158,6 +188,12 @@ impl Workspace {
                     .timer(Duration::from_millis(33))
                     .await;
                 let finished = this.update(cx, |this, cx| {
+                    if memory_enabled && memory_service.revision() != memory_revision {
+                        this.butler.cancel();
+                        this.butler.text.clear();
+                        cx.notify();
+                        return true;
+                    }
                     let mut finished = false;
                     let mut changed = false;
                     for event in rx.try_iter() {

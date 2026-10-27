@@ -45,6 +45,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         );
     }
     SettingsStore::init(cx)?;
+    crate::memory::Service::init(cx)?;
     crate::skins::init(cx)?;
     i18n::init(cx);
     ShellIntegration::init(cx)?;

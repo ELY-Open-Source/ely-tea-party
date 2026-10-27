@@ -106,6 +106,20 @@ fn main() {
                                 .expect("a pet window");
                             capture::front(number(aim, cx)).expect("the pet on screen");
                         }
+                        "open:memory" => {
+                            cx.update(|cx| ely_tea_party::memory::window::open(None, None, cx));
+                        }
+                        "to:memory" => {
+                            aim = cx
+                                .update(|cx| cx.windows())
+                                .into_iter()
+                                .find(|w| {
+                                    w.downcast::<ely_tea_party::memory::window::MemoryWindow>()
+                                        .is_some()
+                                })
+                                .expect("a memory window");
+                            capture::front(number(aim, cx)).expect("the window on screen");
+                        }
                         "to:settings" => {
                             let windows = cx.update(|cx| cx.windows());
                             let settings = windows

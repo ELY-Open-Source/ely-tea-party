@@ -250,6 +250,23 @@ impl Workspace {
         {
             log::info!("agents: session {} speed is {speed:?}", session.id);
         }
+        if crate::settings::SettingsStore::get(cx).butler.memory {
+            let kind = match report.event.as_str() {
+                "UserPromptSubmit" => Some("prompt"),
+                "Stop" | "agent-turn-complete" => Some("reported"),
+                "StopFailure" => Some("failed"),
+                "PermissionRequest" => Some("question"),
+                _ => None,
+            };
+            if let (Some(kind), Some(detail)) = (kind, &report.detail) {
+                crate::memory::Service::get(cx).record(
+                    session.folder.clone(),
+                    session.link_id.url(),
+                    kind.into(),
+                    detail.clone(),
+                );
+            }
+        }
         let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
         agent.note(&report.event, (tool, detail), &mut session.log, now);
         if let Some(said) = report.detail.clone() {

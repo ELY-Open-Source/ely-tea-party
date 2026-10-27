@@ -312,6 +312,7 @@ impl TerminalView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        crate::pet::touch(cx);
         let height = self.pointer.cell.height;
         if height <= Pixels::ZERO {
             return;

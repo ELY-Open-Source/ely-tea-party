@@ -37,8 +37,9 @@ The implementation uses Ely's native theme tokens and built-in character assets.
 
 Settings → Agent Butler → Enable AI explanations is off by default. Enabling it
 adds an Explain with AI button to each task card. Only that explicit button
-starts an explanation; opening cards, switching tabs, moving the mascot and
-incoming terminal output never trigger a model request.
+starts a task explanation. Opening cards, switching tabs and moving the mascot
+remain local. The separate, opt-in companion mode below can generate an idea
+after a sustained period of watching a working agent.
 
 Each explanation uses:
 
@@ -62,7 +63,7 @@ metadata, status signal, model, provider, language and persona. Capture timestam
 are excluded. A repeated request for unchanged input reuses the answer without
 starting Node or making an API call; the card explicitly labels the reused answer.
 Reads do not extend expiry. Failures, truncated replies and cancelled runs are not
-cached. Closing the workspace removes its cache. There is no persisted report history.
+cached. Closing the workspace removes its cache. Explanation reports are not persisted. Optional [local whale memory](memory.md) stores separate bounded events, preferences and project records.
 
 While a request runs, other Explain buttons are disabled. Dismissal, disabling AI,
 or closing the workspace cancels the request and terminates its helper. An
@@ -71,6 +72,44 @@ new output does not automatically spend tokens to regenerate it. Model output
 never changes the selected tab. Links in a reply accept only exact UUID addresses
 of currently open sessions, so closed or unknown targets cannot open another tab
 by matching its name.
+
+## Occasional companion ideas
+
+Settings → Agent Butler → Occasional AI ideas is a separate switch, off by
+default. It uses the same provider, model and in-memory/environment credential
+as task explanations, without requiring the manual-explanation switch. Enabling
+it permits automatic requests containing a small excerpt from the current session.
+
+The whale only speaks while her main window is active and visible, the same
+session and project stay selected, and that session has a working agent. Any
+error or waiting session suppresses suggestions. Open task cards, the party view
+and an open drawer also suppress them. Typing (including IME), clicks, scrolling,
+changing sessions/projects, hiding the mascot, leaving/minimizing the window,
+or disabling the setting resets the quiet period and cancels pending ideas.
+A gap in timer delivery after sleep also restarts the quiet period.
+
+After a randomly selected 5–10 minute quiet period, she may make one request.
+Across all windows in this app run, attempts are at least 20 minutes apart, with
+at most three in a rolling hour. Failures and cancellations consume that budget;
+recent identical input is suppressed even after the cooldown. No network polling
+runs in the background; eligibility is checked locally. Budgets and the last 32
+input fingerprints live in memory and reset when the app exits.
+
+Each idea uses the current task reported by hooks, if available, and a short
+terminal tail: at most 24 lines / 2,400 UTF-8 bytes total. Metadata and up to 500
+persona characters are additional input. If local memory is enabled, up to three
+explicit expression preferences and, only for an exactly matching unresolved task,
+up to two historical excerpts may be added; see [memory limits](memory.md). There is one model call, no tools,
+no automatic retry where the provider supports that option, and at most 160
+output tokens. Bytes are not a token-price guarantee. The model is asked for
+one natural, optional suggestion in 1–2 sentences, without canned openers, forced
+whale jokes, invented project facts, or
+claiming it will perform work. It does not inspect project files.
+
+Only complete answers appear, in a small bubble that never takes focus or switches
+sessions. The bubble shows reported token usage, disappears after 25 seconds or
+when the owner resumes interaction, and offers Quiet for this window until the
+window closes. AI failures stay out of the UI and retain the request cooldown.
 
 ## Provider and persona settings
 

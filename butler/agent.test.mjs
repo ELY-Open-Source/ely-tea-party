@@ -96,3 +96,38 @@ test('a truncated model answer is not cached as a complete explanation', async (
     fixture([fauxAssistantMessage([fauxText('unfinished')], { stopReason: 'length' })])), /without a complete explanation/);
   assert.ok(!events.some(e => e.type === 'done'));
 });
+
+
+test('proactive ideas use one small request with no tools, retries, or implied actions', async () => {
+  const transport = fixture([fauxAssistantMessage([fauxText('下载入口要不要记住上次选的平台？下次就不用再找一遍了。')])]);
+  const events = [];
+  let calls = 0;
+  await report({ ...request, purpose: 'idea', status: 'working' }, e => events.push(e), new AbortController().signal, {
+    model: transport.model, stream: (model, context, options) => {
+      calls++;
+      const system = context.messages.find(m => m.role === 'system');
+      assert.ok(system.content.includes('ONE concrete, optional idea'));
+      assert.ok(system.content.includes('not a verified finding or a new task'));
+      assert.ok(system.content.includes('plain text without links'));
+      assert.ok(system.content.includes('avoid canned openers'));
+      assert.ok(system.content.includes('Do not force whale jokes'));
+      assert.deepEqual(system.toolsAdded ?? [], []);
+      assert.equal(options.maxTokens, 160);
+      assert.equal(options.maxRetries, 0);
+      return transport.stream(model, context, options);
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(events.at(-1).type, 'done');
+});
+
+test('proactive protocol rejects excess context and nonworking sessions before spending tokens', () => {
+  const idea = { ...request, purpose: 'idea', status: 'working' };
+  const s = idea.snapshots[0];
+  for (const changes of [{ purpose: 'unknown' }, { status: 'waiting' }, { persona: '鲸'.repeat(501) },
+    { snapshots: [{ ...s, lines: Array(25).fill('x') }] },
+    { snapshots: [{ ...s, lines: ['鲸'.repeat(800)] }] }]) {
+    assert.throws(() => validateRequest({ ...idea, ...changes }));
+  }
+  assert.doesNotThrow(() => validateRequest({ ...idea, snapshots: [{ ...s, lines: ['鲸'.repeat(799)] }] }));
+});

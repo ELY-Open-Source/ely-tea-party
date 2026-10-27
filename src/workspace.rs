@@ -16,6 +16,7 @@ use gpui::{
 
 mod agents;
 mod butler;
+mod companion;
 mod divider;
 mod drawer;
 mod events;
@@ -83,6 +84,7 @@ pub struct Workspace {
     /// The tea party shows in place of the columns.
     party: bool,
     butler: crate::butler::Briefing,
+    companion: companion::Companion,
     /// The sessions as last saved for the next start.
     saved: Option<restore::Saved>,
     party_focus: FocusHandle,
@@ -122,12 +124,15 @@ impl Workspace {
             drawer_dragged: None,
             party: false,
             butler: crate::butler::Briefing::default(),
+            companion: companion::Companion::default(),
             saved: None,
             party_focus: cx.focus_handle(),
             meters: usage::Meters::default(),
             glide: panel::Glide::default(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
+                this.quiet_companion(cx);
+                crate::memory::organize::cancel(cx);
                 if !SettingsStore::get(cx).butler.enabled {
                     this.butler.cancel();
                     this.butler.text.clear();
@@ -139,6 +144,7 @@ impl Workspace {
             _acted: acted,
             _agents: agents::watch(window, cx),
         };
+        workspace.watch_companion(window, cx);
         workspace.add((id, pty, events), launch, window, cx);
         workspace.select(0, window, cx);
         workspace
@@ -212,6 +218,9 @@ impl Workspace {
     pub fn select(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index >= self.sessions.len() {
             return;
+        }
+        if index != self.active {
+            self.quiet_companion(cx);
         }
         if index != self.active
             && let Some(hidden) = self.sessions.get(self.active)
@@ -363,7 +372,7 @@ impl Render for Workspace {
                     cx,
                 )
             });
-            let list = List::new().children(rows);
+            let list = List::new().divided().children(rows);
             let new = IconButton::new("new-session", IconName::Plus)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
@@ -412,6 +421,8 @@ impl Render for Workspace {
             .key_context(CONTEXT)
             // A press anywhere wakes the mascot; the terminals note the keys.
             .capture_any_mouse_down(|_, _, cx| crate::pet::touch(cx))
+            .on_scroll_wheel(|_, _, cx| crate::pet::touch(cx))
+            .capture_key_down(|_, _, cx| crate::pet::touch(cx))
             .map(menus::window_actions)
             .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
                 this.toggle(
@@ -464,6 +475,7 @@ impl Render for Workspace {
                     ),
             )
             .children(bubble)
+            .children(self.companion_bubble(window, cx))
             .child(crate::butler::outside_click_listener())
     }
 }

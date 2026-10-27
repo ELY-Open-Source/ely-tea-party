@@ -88,6 +88,7 @@ pub fn row(
     };
     div()
         .id(("session-row", pid))
+        .my_1()
         .relative()
         .rounded(cx.theme().radius(Radius::Lg))
         .border_1()

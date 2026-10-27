@@ -32,6 +32,10 @@ impl Cache {
 }
 
 pub fn compact(snapshot: &mut Snapshot) {
+    bound(snapshot, EXCERPT_LINES, EXCERPT_BYTES);
+}
+
+pub fn bound(snapshot: &mut Snapshot, max_lines: usize, max_bytes: usize) {
     while snapshot
         .lines
         .last()
@@ -41,8 +45,8 @@ pub fn compact(snapshot: &mut Snapshot) {
     }
     let mut bytes = 0;
     let mut lines = Vec::new();
-    for line in snapshot.lines.iter().rev().take(EXCERPT_LINES) {
-        let remaining = EXCERPT_BYTES.saturating_sub(bytes);
+    for line in snapshot.lines.iter().rev().take(max_lines) {
+        let remaining = max_bytes.saturating_sub(bytes);
         if remaining <= 1 {
             break;
         }
@@ -62,6 +66,8 @@ pub fn compact(snapshot: &mut Snapshot) {
 pub fn key(request: &super::process::Request) -> String {
     let snapshot = &request.snapshots[0];
     serde_json::json!([
+        request.purpose,
+        request.memory,
         request.provider,
         request.model,
         request.language,
@@ -124,6 +130,9 @@ mod tests {
     fn cache_ignores_capture_clock_but_tracks_evidence_model_and_persona() {
         let mut r = super::super::process::Request {
             version: 1,
+            purpose: super::super::process::Purpose::Explain,
+            memory: Default::default(),
+            consolidation: None,
             provider: "deepseek".into(),
             model: "model".into(),
             api_key: "secret-not-in-key".into(),

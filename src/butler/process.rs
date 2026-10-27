@@ -16,10 +16,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::term::snapshot::Snapshot;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Purpose {
+    #[default]
+    Explain,
+    Idea,
+    Remember,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
     pub version: u8,
+    pub purpose: Purpose,
     pub provider: String,
     pub model: String,
     pub api_key: String,
@@ -27,6 +37,8 @@ pub struct Request {
     pub persona: String,
     pub status: super::tasks::Status,
     pub snapshots: Vec<Snapshot>,
+    pub memory: crate::memory::Context,
+    pub consolidation: Option<crate::memory::Job>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,6 +259,9 @@ mod tests {
     fn request() -> Request {
         Request {
             version: 1,
+            purpose: Purpose::Explain,
+            memory: Default::default(),
+            consolidation: None,
             provider: "deepseek".into(),
             model: "missing-model-for-test".into(),
             api_key: "test-only-key".into(),

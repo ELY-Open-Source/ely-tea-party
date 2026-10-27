@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod companion;
 pub mod config;
 pub mod links;
 pub mod placement;

@@ -12,6 +12,7 @@ mod tests;
 mod whale;
 
 pub use whale::touch;
+pub(crate) use whale::{Touched, touched};
 mod wayland;
 #[cfg(windows)]
 mod windows;
