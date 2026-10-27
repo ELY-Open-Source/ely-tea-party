@@ -73,9 +73,9 @@ linux_init() {
 linux_stage() {
     dest=$1
     install -Dm755 "$binary" "$dest/usr/bin/ely-tea-party"
-    [ -x target/butler/node ] && [ -s target/butler/main.mjs ] || {
+    if [ ! -x target/butler/node ] || [ ! -s target/butler/main.mjs ]; then
         echo "linux-packaging: build the Pi runtime with scripts/linux-build.sh" >&2; exit 1
-    }
+    fi
     node_arch=$arch
     [ "$arch" != x86_64 ] || node_arch=x64
     [ "$arch" != aarch64 ] || node_arch=arm64
