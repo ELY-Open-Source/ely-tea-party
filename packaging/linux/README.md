@@ -58,7 +58,10 @@ Native packages install the binary in `/usr/bin`, the shared desktop entry in
 ELF dependency scans supply native library requirements. Libraries loaded at
 runtime and external programs need explicit requirements as well: Git uses
 `git`, update checks use `curl`, and desktop links use `xdg-open`.
-Native package copies are stripped; the tarball keeps the original binary.
+Native package copies of the app and bundled Node runtime are stripped; the
+tarball keeps the original binaries. DEB dependency scans include both executables.
+The pinned upstream Node runtime bundles zlib; its path-specific Lintian override
+is intentional, and Node updates are managed in `butler/build.mjs`.
 RPM builds use an isolated temporary database, so an unprivileged builder
 does not need a user or system RPM database.
 `man ely-tea-party` describes startup and the settings location.

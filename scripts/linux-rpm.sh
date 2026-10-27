@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 linux_init x86_64
 linux_require rpmbuild rpm desktop-file-validate strip
 linux_stage "$work/payload"
-strip --strip-unneeded "$work/payload/usr/bin/ely-tea-party"
+strip --strip-unneeded "$work/payload/usr/bin/ely-tea-party" "$work/payload/usr/lib/ely-tea-party/butler/node"
 desktop-file-validate "$work/payload/usr/share/applications/$id.desktop"
 mkdir -p "$work/rpmbuild/SPECS" "$work/rpmbuild/SOURCES"
 mkdir "$work/rpmdb"

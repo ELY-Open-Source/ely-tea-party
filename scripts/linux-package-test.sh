@@ -46,6 +46,16 @@ payload() {
     ldd "$root/usr/bin/ely-tea-party" > "$work/ldd"
     cat "$work/ldd"
     if grep -q 'not found' "$work/ldd"; then fail "unresolved ELF dependency"; fi
+    runtime="$root/usr/lib/ely-tea-party/butler"
+    [ -x "$runtime/node" ] || fail "missing bundled Node runtime"
+    [ -s "$runtime/main.mjs" ] || fail "missing bundled AI worker"
+    "$runtime/node" --version
+    if printf '{}' | "$runtime/node" "$runtime/main.mjs" > "$work/runtime.json"; then
+        fail "AI worker accepted an invalid request"
+    else
+        [ "$?" -eq 1 ] || fail "AI worker failed to load"
+    fi
+    "$runtime/node" -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(r.type!=="error" || r.text!=="Invalid butler request") process.exit(1)' "$work/runtime.json" || fail "AI worker returned an unexpected response"
 }
 
 case $package in

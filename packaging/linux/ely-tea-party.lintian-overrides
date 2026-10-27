@@ -1,2 +1,4 @@
 # freetype-sys bundles FreeType below 24.3.18, as on Ubuntu 22.04.
 ely-tea-party: embedded-library freetype usr/bin/ely-tea-party
+# The checksum-pinned upstream Node runtime includes zlib; update it with butler/build.mjs.
+ely-tea-party: embedded-library zlib usr/lib/ely-tea-party/butler/node

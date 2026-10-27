@@ -7,7 +7,7 @@ linux_init x86_64
 linux_require dpkg-deb dpkg-shlibdeps desktop-file-validate strip
 package=$work/debian/ely-tea-party
 linux_stage "$package"
-strip --strip-unneeded "$package/usr/bin/ely-tea-party"
+strip --strip-unneeded "$package/usr/bin/ely-tea-party" "$package/usr/lib/ely-tea-party/butler/node"
 desktop-file-validate "$package/usr/share/applications/$id.desktop"
 install -Dm644 packaging/linux/ely-tea-party.lintian-overrides \
     "$package/usr/share/lintian/overrides/ely-tea-party"
@@ -23,7 +23,7 @@ Package: ely-tea-party
 Architecture: amd64
 Description: Terminal on GPUI and Ely
 EOF
-depends=$(cd "$work" && dpkg-shlibdeps -O -edebian/ely-tea-party/usr/bin/ely-tea-party)
+depends=$(cd "$work" && dpkg-shlibdeps -O -edebian/ely-tea-party/usr/bin/ely-tea-party -edebian/ely-tea-party/usr/lib/ely-tea-party/butler/node)
 depends=${depends#shlibs:Depends=}
 [ -n "$depends" ] || { echo "linux-deb: dpkg-shlibdeps returned no dependencies" >&2; exit 1; }
 cat > "$work/changelog" <<EOF
