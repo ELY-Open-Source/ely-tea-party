@@ -25,11 +25,11 @@ pub fn bundle() -> Option<PathBuf> {
     (id == APP_ID).then(|| bundle.to_path_buf())
 }
 
-/// Downloads `release`'s disk image and puts its app in `bundle`'s place, once signed as `bundle` is.
+/// Downloads `release`'s disk image and puts its app in `bundle`'s place, once its hash is the listed one and it is signed as `bundle` is.
 pub fn install(release: &Release, bundle: &Path) -> anyhow::Result<()> {
-    let url = release
+    let image = release
         .image
-        .as_deref()
+        .as_ref()
         .with_context(|| format!("update: {} holds no disk image", release.version))?;
     let work = std::env::temp_dir().join(format!("ely-tea-party-update-{}", std::process::id()));
     if work.exists() {
@@ -38,9 +38,16 @@ pub fn install(release: &Release, bundle: &Path) -> anyhow::Result<()> {
     }
     std::fs::create_dir_all(&work)
         .with_context(|| format!("update: cannot make {}", work.display()))?;
-    let image = work.join("update.dmg");
-    log::info!("update: downloading {url}");
-    crate::curl::download("update", url, &image)?;
+    let disk = work.join("update.dmg");
+    log::info!("update: downloading {}", image.url);
+    crate::curl::download("update", &image.url, &disk)?;
+    if let Some(listed) = &image.sha256 {
+        let read = super::sha256(&disk)?;
+        anyhow::ensure!(
+            &read == listed,
+            "update: the disk image hashes {read}, the store lists {listed}"
+        );
+    }
     let mount = work.join("mount");
     run(
         "hdiutil",
@@ -52,7 +59,7 @@ pub fn install(release: &Release, bundle: &Path) -> anyhow::Result<()> {
             OsStr::new("-quiet"),
             OsStr::new("-mountpoint"),
             mount.as_os_str(),
-            image.as_os_str(),
+            disk.as_os_str(),
         ],
     )?;
     let new = mount.join(APP);
