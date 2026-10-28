@@ -61,7 +61,7 @@ pub fn classify(argv: &[String]) -> Option<Kind> {
         if FETCHERS.contains(&stem(script).as_str()) {
             return operands.next().and_then(package);
         }
-        return installed(script);
+        return installed(script).or_else(|| standalone(script));
     }
     if FETCHERS.contains(&program) {
         return operands
@@ -104,6 +104,13 @@ fn installed(script: &str) -> Option<Kind> {
         first
     };
     Kind::named(name)
+}
+
+/// dscode's self-contained install, whose launcher runs `<root>/scripts/standalone.mjs` on its own Node.
+fn standalone(script: &str) -> Option<Kind> {
+    let root = Path::new(script).parent()?.parent()?;
+    (stem(script) == "standalone" && root.join(".dscode-standalone.json").is_file())
+        .then_some(Kind::Deepseek)
 }
 
 fn command(pid: u32) -> Option<Vec<String>> {
@@ -169,6 +176,27 @@ mod tests {
             Some(Kind::Claude)
         );
         assert_eq!(kind("npx prettier"), None);
+    }
+
+    #[test]
+    fn dscode_standalone_runs_its_launcher_on_its_own_node() {
+        let root = std::env::temp_dir().join(format!("ely-dscode-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("scripts")).unwrap();
+        let line = |root: &Path| {
+            format!(
+                "{0}/runtime/bin/node {0}/scripts/standalone.mjs --resume",
+                root.display()
+            )
+        };
+        assert_eq!(kind(&line(&root)), None, "no marker, no dscode");
+        std::fs::write(root.join(".dscode-standalone.json"), "{}").unwrap();
+        assert_eq!(kind(&line(&root)), Some(Kind::Deepseek));
+        assert_eq!(
+            kind(&format!("node {}/scripts/server.mjs", root.display())),
+            None,
+            "only its launcher"
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
