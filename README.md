@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://elyteaparty.com">Website · 官网与下载</a> ·
   <a href="https://github.com/ELY-Open-Source/ely-tea-party/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ELY-Open-Source/ely-tea-party?style=flat-square&color=8b5cf6"></a>
   <a href="https://github.com/ELY-Open-Source/ely-tea-party/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ELY-Open-Source/ely-tea-party/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="https://github.com/ELY-Open-Source/ely-tea-party/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/ELY-Open-Source/ely-tea-party/total?style=flat-square&color=ec4899"></a>

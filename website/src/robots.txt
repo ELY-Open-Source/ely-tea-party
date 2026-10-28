@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://elyteaparty.com/sitemap.xml

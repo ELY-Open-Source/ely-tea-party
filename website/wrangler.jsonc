@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.154.0/config-schema.json",
+  "name": "ely-tea-party-website",
+  "account_id": "221784d24eb2a95d148bc96b6f06d6be",
+  "compatibility_date": "2026-10-27",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "elyteaparty.com", "custom_domain": true },
+    { "pattern": "www.elyteaparty.com", "custom_domain": true }
+  ]
+}

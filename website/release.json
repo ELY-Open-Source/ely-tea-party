@@ -1,0 +1,8 @@
+{
+  "version": "0.3.14",
+  "page": "https://github.com/ELY-Open-Source/ely-tea-party/releases/tag/v0.3.14",
+  "base": "https://github.com/ELY-Open-Source/ely-tea-party/releases/download/v0.3.14",
+  "mac": "ely-tea-party-0.3.14.dmg",
+  "windows": "ely-tea-party-0.3.14-windows-x86_64.zip",
+  "linux": "ely-tea-party-0.3.14-linux-x86_64.tar.gz"
+}
