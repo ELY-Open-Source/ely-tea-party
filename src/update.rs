@@ -1,4 +1,4 @@
-//! Whether GitHub holds a newer release than this build and, on macOS, putting it in this app's place.
+//! Whether a newer release than this build is out, asked of the site's download store, else GitHub, and on macOS putting it in this app's place.
 
 use std::time::Duration;
 
@@ -9,10 +9,14 @@ use serde::Deserialize;
 #[cfg(target_os = "macos")]
 mod macos;
 
-use crate::settings::SettingsStore;
+use crate::settings::{Language, SettingsStore};
 
 actions!(ely_tea_party, [CheckForUpdates]);
 
+/// The download store's newest release, which the website's `scripts/mirror.mjs` copies there from GitHub.
+const MANIFEST: &str = "https://download.elyteaparty.com/latest.json";
+
+/// GitHub's, asked when the store's cannot be read.
 const LATEST: &str = "https://api.github.com/repos/ELY-Open-Source/ely-tea-party/releases/latest";
 
 /// How often the app asks on its own.
@@ -28,10 +32,62 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Clone, Debug, PartialEq)]
 pub struct Release {
     pub version: String,
-    /// Its page on GitHub.
-    pub page: String,
-    /// Its macOS disk image's download.
-    pub image: Option<String>,
+    /// Where a person downloads it, in each interface language.
+    pub pages: Pages,
+    /// Its macOS disk image.
+    pub image: Option<Image>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pages {
+    pub en: String,
+    pub zh: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Image {
+    pub url: String,
+    /// Its SHA-256 in hex, which the download store lists and GitHub does not.
+    pub sha256: Option<String>,
+}
+
+impl Release {
+    /// Its download page in the interface's language.
+    pub fn page<'a>(&'a self, cx: &App) -> &'a str {
+        match SettingsStore::get(cx).language {
+            Language::SimplifiedChinese => &self.pages.zh,
+            Language::English => &self.pages.en,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct Manifest {
+    version: String,
+    files: Files,
+    pages: ManifestPages,
+}
+
+#[derive(Deserialize)]
+struct Files {
+    mac: Option<File>,
+}
+
+#[derive(Deserialize)]
+struct File {
+    url: String,
+    sha256: String,
+}
+
+#[derive(Deserialize)]
+struct ManifestPages {
+    download: Localized,
+}
+
+#[derive(Deserialize)]
+struct Localized {
+    en: String,
+    zh: String,
 }
 
 #[derive(Deserialize)]
@@ -48,13 +104,43 @@ struct Asset {
     browser_download_url: String,
 }
 
-/// The newest release that is neither a draft nor a pre-release; it blocks.
+/// The newest release that is neither a draft nor a pre-release, from the download store, else GitHub; it blocks.
 pub fn latest() -> anyhow::Result<Release> {
-    let headers = "Accept: application/vnd.github+json\nUser-Agent: ely-tea-party\n";
-    let body = crate::curl::get("update", LATEST, headers)?;
-    let answer: Answer =
-        serde_json::from_slice(&body).context("update: GitHub's answer does not parse")?;
-    release(answer)
+    stored().or_else(|error| {
+        log::info!("{error:#}, so GitHub is asked");
+        let headers = "Accept: application/vnd.github+json\nUser-Agent: ely-tea-party\n";
+        let body = crate::curl::get("update", LATEST, headers)?;
+        let answer: Answer =
+            serde_json::from_slice(&body).context("update: GitHub's answer does not parse")?;
+        release(answer)
+    })
+}
+
+fn stored() -> anyhow::Result<Release> {
+    let body = crate::curl::get("update", MANIFEST, "User-Agent: ely-tea-party\n")?;
+    let manifest: Manifest = serde_json::from_slice(&body)
+        .context("update: the download store's latest.json does not parse")?;
+    manifested(manifest)
+}
+
+fn manifested(manifest: Manifest) -> anyhow::Result<Release> {
+    numbers(&manifest.version)?;
+    let image = manifest.files.mac.map(|file| Image {
+        url: file.url,
+        sha256: Some(file.sha256.to_ascii_lowercase()),
+    });
+    anyhow::ensure!(
+        image
+            .as_ref()
+            .is_none_or(|image| image.url.starts_with("https://")),
+        "update: the download store's disk image is not on https"
+    );
+    let Localized { en, zh } = manifest.pages.download;
+    Ok(Release {
+        version: manifest.version,
+        pages: Pages { en, zh },
+        image,
+    })
 }
 
 fn release(answer: Answer) -> anyhow::Result<Release> {
@@ -68,12 +154,30 @@ fn release(answer: Answer) -> anyhow::Result<Release> {
         .assets
         .into_iter()
         .find(|asset| asset.name == image)
-        .map(|asset| asset.browser_download_url);
+        .map(|asset| Image {
+            url: asset.browser_download_url,
+            sha256: None,
+        });
     Ok(Release {
         version,
-        page: answer.html_url,
+        pages: Pages {
+            en: answer.html_url.clone(),
+            zh: answer.html_url,
+        },
         image,
     })
+}
+
+/// `file`'s SHA-256, in hex.
+#[cfg(any(target_os = "macos", test))]
+pub fn sha256(file: &std::path::Path) -> anyhow::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut read = std::fs::File::open(file)
+        .with_context(|| format!("update: cannot open {}", file.display()))?;
+    let mut hash = Sha256::new();
+    std::io::copy(&mut read, &mut hash)
+        .with_context(|| format!("update: cannot read {}", file.display()))?;
+    Ok(format!("{:x}", hash.finalize()))
 }
 
 fn numbers(version: &str) -> anyhow::Result<Vec<u64>> {
@@ -169,7 +273,7 @@ fn set(state: State, cx: &mut App) {
     updates._clear = clear;
 }
 
-/// Asks GitHub for its newest release, unless a check or an install is under way.
+/// Asks for the newest release, unless a check or an install is under way.
 pub fn check(asked: bool, cx: &mut App) {
     let updates = cx.global::<Updates>();
     let busy = matches!(updates.state, State::Installing(_) | State::Ready(_));
@@ -216,7 +320,7 @@ pub fn press(cx: &mut App) {
         State::Available(release) => install(release, cx),
         State::Ready(release) => restart(release, cx),
         State::Failed(release, _) => {
-            cx.open_url(&release.page);
+            cx.open_url(release.page(cx));
             set(State::Available(release), cx);
         }
         State::Current | State::Unchecked(_) => set(State::Idle, cx),
@@ -227,8 +331,11 @@ pub fn press(cx: &mut App) {
 #[cfg(target_os = "macos")]
 fn install(release: Release, cx: &mut App) {
     let Some(bundle) = macos::bundle() else {
-        log::info!("update: not a release bundle, so {} opens", release.page);
-        cx.open_url(&release.page);
+        log::info!(
+            "update: not a release bundle, so {} opens",
+            release.page(cx)
+        );
+        cx.open_url(release.page(cx));
         return;
     };
     set(State::Installing(release.clone()), cx);
@@ -249,8 +356,8 @@ fn install(release: Release, cx: &mut App) {
 
 #[cfg(not(target_os = "macos"))]
 fn install(release: Release, cx: &mut App) {
-    log::info!("update: {} opens", release.page);
-    cx.open_url(&release.page);
+    log::info!("update: {} opens", release.page(cx));
+    cx.open_url(release.page(cx));
 }
 
 #[cfg(target_os = "macos")]
@@ -269,7 +376,7 @@ fn restart(release: Release, cx: &mut App) {
 
 #[cfg(not(target_os = "macos"))]
 fn restart(release: Release, cx: &mut App) {
-    cx.open_url(&release.page);
+    cx.open_url(release.page(cx));
 }
 
 #[cfg(test)]
@@ -297,9 +404,56 @@ mod tests {
         .expect("parses");
         let release = release(answer).expect("a release");
         assert_eq!(release.version, "0.3.4");
-        assert_eq!(release.image.as_deref(), Some("https://example.com/dmg"));
+        let image = release.image.expect("a disk image");
+        assert_eq!(image.url, "https://example.com/dmg");
+        assert_eq!(image.sha256, None);
+        assert_eq!(release.pages.zh, release.pages.en);
         let bare: Answer =
             serde_json::from_str(r#"{"tag_name":"0.3.4","html_url":"x"}"#).expect("parses");
         assert!(super::release(bare).is_err());
+    }
+
+    fn manifest(version: &str, url: &str) -> anyhow::Result<Release> {
+        let json = format!(
+            r#"{{"version":"{version}","published":"2026-10-28T05:30:59Z","files":{{
+                "mac":{{"name":"ely-tea-party-{version}.dmg","url":"{url}","size":1,"sha256":"7BF516A1"}},
+                "linux":{{"name":"x","url":"https://example.com/linux","size":1,"sha256":"35ac"}}
+            }},"pages":{{"download":{{"zh":"https://elyteaparty.com/#download","en":"https://elyteaparty.com/en/#download"}},
+                "notes":{{"zh":"z","en":"e"}},"github":"g"}},"kept":[]}}"#
+        );
+        manifested(serde_json::from_str(&json).expect("parses"))
+    }
+
+    #[test]
+    fn the_download_store_names_its_disk_image_hash_and_pages() {
+        let release = manifest(
+            "0.3.15",
+            "https://download.elyteaparty.com/v0.3.15/ely-tea-party-0.3.15.dmg",
+        )
+        .expect("a release");
+        assert_eq!(release.version, "0.3.15");
+        let image = release.image.expect("a disk image");
+        assert_eq!(image.sha256.as_deref(), Some("7bf516a1"));
+        assert_eq!(release.pages.en, "https://elyteaparty.com/en/#download");
+        assert_eq!(release.pages.zh, "https://elyteaparty.com/#download");
+        assert!(
+            manifest("0.3.15", "http://example.com/x.dmg").is_err(),
+            "only https"
+        );
+        assert!(
+            manifest("v0.3.15", "https://example.com/x.dmg").is_err(),
+            "a bare version"
+        );
+    }
+
+    #[test]
+    fn a_file_hashes_as_sha256_says() {
+        let file = std::env::temp_dir().join(format!("ely-update-sha-{}", std::process::id()));
+        std::fs::write(&file, "abc").expect("writes");
+        assert_eq!(
+            sha256(&file).expect("hashes"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        std::fs::remove_file(&file).expect("removes");
     }
 }
