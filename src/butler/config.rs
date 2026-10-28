@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use gpui::Global;
 use serde::{Deserialize, Serialize};
+
+use super::Credentials;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -80,12 +81,11 @@ impl Config {
 
     pub fn api_key(&self, credentials: &Credentials) -> anyhow::Result<String> {
         self.validate()?;
-        if let Some(key) = credentials
-            .0
-            .get(&self.provider)
-            .filter(|key| !key.is_empty())
+        let stored = credentials.key(&self.provider);
+        if let Ok(Some(key)) = &stored
+            && !key.is_empty()
         {
-            return Ok(key.clone());
+            return Ok(key.to_string());
         }
         let env = PROVIDERS
             .iter()
@@ -93,14 +93,17 @@ impl Config {
             .expect("validated provider")
             .env
             .as_str();
-        std::env::var(env).ok().filter(|key| !key.trim().is_empty())
-            .ok_or_else(|| anyhow::anyhow!("butler: enter an API key in Settings → Agent Butler, or set {env} before launching the app"))
+        if let Ok(key) = std::env::var(env)
+            && !key.trim().is_empty()
+        {
+            return Ok(key);
+        }
+        stored?;
+        anyhow::bail!(
+            "butler: enter an API key in Settings → Agent Butler, or set {env} before launching the app"
+        )
     }
 }
-
-#[derive(Default)]
-pub struct Credentials(pub HashMap<String, String>);
-impl Global for Credentials {}
 
 #[cfg(test)]
 mod tests {
@@ -114,19 +117,6 @@ mod tests {
         assert!(!old.butler.memory);
         assert!(!old.butler.memory_ai);
         assert!(serde_json::from_str::<Config>(r#"{"api_key":"example"}"#).is_err());
-        let mut credentials = Credentials::default();
-        credentials
-            .0
-            .insert("deepseek".into(), "test-only-secret".into());
-        assert_eq!(
-            old.butler.api_key(&credentials).unwrap(),
-            "test-only-secret"
-        );
-        assert!(
-            !serde_json::to_string(&old)
-                .unwrap()
-                .contains("test-only-secret")
-        );
     }
 
     #[test]

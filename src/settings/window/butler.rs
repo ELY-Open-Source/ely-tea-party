@@ -5,9 +5,7 @@ use ely_gpui_component::{
     settings::{SettingsRow, SettingsSection},
     theme::{ActiveTheme, ControlSize, Radius},
 };
-use gpui::{
-    AppContext, BorrowAppContext, Context, Div, Entity, ParentElement, Styled, Window, div, rems,
-};
+use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window, div, rems};
 
 use super::{SettingsWindow, set, switch};
 use crate::{
@@ -25,25 +23,78 @@ pub(super) struct Fields {
     persona: Entity<TextInput>,
 }
 
+fn save_connection(this: &Entity<SettingsWindow>, remove: bool, cx: &mut App) {
+    let fields = this
+        .read(cx)
+        .butler_fields
+        .as_ref()
+        .expect("fields initialized");
+    let provider = fields.provider.clone();
+    let model = fields.model.clone();
+    let draft = fields.key.read(cx).text().to_string();
+    let key = draft.trim().to_string();
+    let credentials = cx.global::<Credentials>();
+    if credentials.saving || !credentials.loaded(&provider) {
+        return;
+    }
+    if !remove && key.is_empty() {
+        if set(this, "butler connection updated".into(), cx, |settings| {
+            settings.butler.provider = provider;
+            settings.butler.model = model;
+        }) {
+            this.update(cx, |this, cx| {
+                this.failed = None;
+                cx.notify();
+            });
+        }
+        return;
+    }
+    let save = Credentials::save(&provider, (!remove).then_some(key), cx);
+    let this = this.clone();
+    cx.spawn(async move |cx| {
+        let result = save.await;
+        cx.update(|cx| match result {
+            Ok(()) => {
+                let saved = if !remove {
+                    set(&this, "butler connection updated".into(), cx, |settings| {
+                        settings.butler.provider = provider.clone();
+                        settings.butler.model = model;
+                    })
+                } else {
+                    true
+                };
+                this.update(cx, |this, cx| {
+                    if saved {
+                        this.failed = None;
+                    }
+                    let fields = this.butler_fields.as_ref().expect("fields initialized");
+                    if fields.provider == provider && fields.key.read(cx).text() == draft {
+                        fields.key.update(cx, |input, cx| input.set_text("", cx));
+                    }
+                    cx.notify();
+                });
+            }
+            Err(error) => {
+                log::error!("{error:#}");
+                this.update(cx, |this, cx| {
+                    this.failed = Some(format!("{error:#}").into());
+                    cx.notify();
+                });
+            }
+        });
+    })
+    .detach();
+}
+
 impl SettingsWindow {
     pub(super) fn butler_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         if self.butler_fields.is_none() {
             let config = SettingsStore::get(cx).butler.clone();
             cx.default_global::<Credentials>();
-            let key = cx
-                .global::<Credentials>()
-                .0
-                .get(&config.provider)
-                .cloned()
-                .unwrap_or_default();
             self.butler_fields = Some(Fields {
                 provider: config.provider,
                 model: config.model,
-                key: cx.new(|cx| {
-                    let mut input = TextInput::new(window, cx).masked();
-                    input.set_text(key, cx);
-                    input
-                }),
+                key: cx.new(|cx| TextInput::new(window, cx).masked()),
                 persona: cx.new(|cx| {
                     let mut input = TextInput::new(window, cx)
                         .multi_line(4, 6)
@@ -61,6 +112,20 @@ impl SettingsWindow {
             });
         }
         let fields = self.butler_fields.as_ref().expect("fields initialized");
+        let credentials = cx.global::<Credentials>();
+        let loaded = credentials.loaded(&fields.provider);
+        let saving = credentials.saving;
+        let saved_key = credentials.key(&fields.provider);
+        let has_key = matches!(saved_key, Ok(Some(_)));
+        let key_status = if !loaded {
+            text(cx, "et.butler.key_loading", &[])
+        } else {
+            match saved_key {
+                Ok(Some(_)) => text(cx, "et.butler.key_saved", &[]),
+                Ok(None) => text(cx, "et.butler.key_missing", &[]),
+                Err(error) => format!("{error:#}").into(),
+            }
+        };
         let this = cx.entity();
         let word = |key| text(cx, key, &[]);
         let enabled = switch(
@@ -97,6 +162,9 @@ impl SettingsWindow {
             .on_change({
                 let this = this.clone();
                 move |provider, _, cx| {
+                    if cx.global::<Credentials>().saving {
+                        return;
+                    }
                     this.update(cx, |this, cx| {
                         let fields = this.butler_fields.as_mut().expect("fields initialized");
                         let entry = PROVIDERS
@@ -105,13 +173,7 @@ impl SettingsWindow {
                             .expect("listed provider");
                         fields.provider = provider.to_string();
                         fields.model = entry.models[0].id.clone();
-                        let key = cx
-                            .global::<Credentials>()
-                            .0
-                            .get(provider.as_ref())
-                            .cloned()
-                            .unwrap_or_default();
-                        fields.key.update(cx, |input, cx| input.set_text(key, cx));
+                        fields.key.update(cx, |input, cx| input.set_text("", cx));
                         cx.notify();
                     })
                 }
@@ -134,6 +196,9 @@ impl SettingsWindow {
         .on_change({
             let this = this.clone();
             move |model, _, cx| {
+                if cx.global::<Credentials>().saving {
+                    return;
+                }
                 this.update(cx, |this, cx| {
                     this.butler_fields
                         .as_mut()
@@ -143,33 +208,27 @@ impl SettingsWindow {
                 });
             }
         });
-        let save = Button::new("butler-save", word("et.butler.save"))
-            .disabled(!listed)
+        let save = Button::new(
+            "butler-save",
+            word(if saving {
+                "et.butler.key_saving"
+            } else {
+                "et.butler.save"
+            }),
+        )
+        .disabled(!listed || !loaded || saving)
+        .on_click({
+            let this = this.clone();
+            move |_, _, cx| save_connection(&this, false, cx)
+        });
+        let remove = Button::new("butler-key-remove", word("et.butler.key_remove"))
+            .disabled(!has_key || saving)
+            .on_click(move |_, _, cx| save_connection(&this, true, cx));
+        let retry_provider = fields.provider.clone();
+        let retry = Button::new("butler-key-reload", word("et.butler.key_reload"))
+            .disabled(!loaded || saving)
             .on_click(move |_, _, cx| {
-                let (provider, model, key) = {
-                    let fields = this
-                        .read(cx)
-                        .butler_fields
-                        .as_ref()
-                        .expect("fields initialized");
-                    (
-                        fields.provider.clone(),
-                        fields.model.clone(),
-                        fields.key.read(cx).text().trim().to_string(),
-                    )
-                };
-                if set(&this, "butler connection updated".into(), cx, |settings| {
-                    settings.butler.provider = provider.clone();
-                    settings.butler.model = model;
-                }) {
-                    cx.update_global::<Credentials, _>(|credentials, _| {
-                        if key.is_empty() {
-                            credentials.0.remove(&provider);
-                        } else {
-                            credentials.0.insert(provider, key);
-                        }
-                    });
-                }
+                Credentials::load(&retry_provider, cx);
             });
         let persona = self.persona_card(cx);
         div()
@@ -225,6 +284,10 @@ impl SettingsWindow {
                         SettingsRow::new(word("et.butler.key"))
                             .description(word("et.butler.key_hint"))
                             .control(div().w(rems(18.)).child(PasswordInput::new(&fields.key))),
+                    )
+                    .row(
+                        SettingsRow::new(key_status)
+                            .control(div().flex().gap_2().child(retry).child(remove)),
                     )
                     .row(
                         SettingsRow::new(word("et.butler.connection"))
