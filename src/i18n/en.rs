@@ -185,12 +185,24 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.butler.key", "API key"),
     (
         "et.butler.key_hint",
-        "Kept in memory for this app run only. Leave empty to use the provider API-key environment variable.",
+        "Saved in your system credential store across restarts. Leave empty to keep the saved key; Remove saved key switches to the provider environment variable.",
     ),
+    ("et.butler.key_loading", "Loading saved API key…"),
+    (
+        "et.butler.key_saved",
+        "API key saved in system credential store",
+    ),
+    (
+        "et.butler.key_missing",
+        "No saved key; uses provider environment variable",
+    ),
+    ("et.butler.key_saving", "Saving…"),
+    ("et.butler.key_remove", "Remove saved key"),
+    ("et.butler.key_reload", "Reload key"),
     ("et.butler.connection", "Connection"),
     (
         "et.butler.connection_hint",
-        "Save the provider and model; the key is never written to settings. Turn on the whale mascot in Terminal settings to use her.",
+        "Save the provider, model and API key. Keys stay out of settings files. Turn on the whale mascot in Terminal settings to use her.",
     ),
     ("et.butler.save", "Apply"),
     ("et.panel.activity", "Activity"),

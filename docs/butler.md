@@ -76,7 +76,7 @@ by matching its name.
 ## Occasional companion ideas
 
 Settings → Agent Butler → Occasional AI ideas is a separate switch, off by
-default. It uses the same provider, model and in-memory/environment credential
+default. It uses the same provider, model and saved/environment credential
 as task explanations, without requiring the manual-explanation switch. Enabling
 it permits automatic requests containing a small excerpt from the current session.
 
@@ -118,11 +118,17 @@ the curated dropdown, then Apply. The bundled `butler/models.json` is validated
 against Pi's catalog. An existing saved model outside the list remains in use
 until the user deliberately selects and applies another model.
 
-API keys are held only in memory for this app run, separately per provider. An
-empty key uses DEEPSEEK_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
-or OPENROUTER_API_KEY from the app's launch environment. No credential is written
-to settings or included in process arguments. Missing credentials affect only AI
-explanations; the local cards continue to work.
+API keys are saved separately per provider in the system credential store
+(macOS Keychain, Windows Credential Manager, or Linux Secret Service), then loaded
+at launch. Apply with an empty key keeps the saved key, including when changing
+models. Remove saved key deletes it; without a saved key the app uses
+DEEPSEEK_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or
+OPENROUTER_API_KEY from its launch environment. The settings page shows loading,
+saved, missing and read-error states, and offers Reload key to retry access.
+Failed writes are reported and do not replace the key in use. No credential is
+written to settings or included in process arguments. Debug and dev app builds use
+separate credential entries; ELY_TEST_CONFIG_DIR also isolates test entries in debug
+builds. Missing credentials affect only AI explanations; local cards continue to work.
 
 Agent persona supports up to 2,000 characters and controls tone and form of
 address. Save persona persists it; Restore default clears the override. A blank
@@ -158,6 +164,14 @@ loop, excerpt limits, cancellation, incomplete answers, persona and session link
 Rust tests cover status semantics, Unicode excerpt bounds, cache expiry and
 invalidation, successful-result caching, cancellation and helper protocol checks.
 These checks do not contact or establish compatibility with every live provider.
+
+For native credential persistence checks, build `cargo build --example butler_credentials`.
+Set `ELY_TEST_CONFIG_DIR` to one unused absolute temporary directory, then run
+`target/debug/examples/butler_credentials` with `write`, `read`, `replace`,
+`read-replaced`, `remove`, and `missing`, in that order as separate processes.
+This uses synthetic keys for two providers, checks restart isolation and replacement,
+and removes the test entries. It requires access to the system credential store;
+unit tests alone do not establish native keychain persistence.
 
 For isolated macOS UI checks, set `ELY_TEST_CONFIG_DIR` to an absolute temporary
 directory with settings.json. It changes settings/session persistence only in

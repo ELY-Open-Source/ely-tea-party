@@ -1,8 +1,8 @@
-//! The marks on the terminal's scrollbar track, one for each prompt an agent took, which shows it and goes to it; the scrollbar shows where the view is.
+//! Prompt marks inside the terminal's left gutter; hovering previews a turn and clicking jumps to it.
 
 use ely_gpui_component::theme::{ActiveTheme, Elevation, Radius, TextSize};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
+    AnyElement, App, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, relative,
 };
 
@@ -25,11 +25,20 @@ pub struct Rail {
     hovered: Option<Pin>,
 }
 
+impl Rail {
+    pub(super) fn width(window: &Window, cx: &App) -> Pixels {
+        cx.theme()
+            .scrollbar_thickness()
+            .to_pixels(window.rem_size())
+            * 2.
+    }
+}
+
 /// The scrollback's size and the screen's, in lines.
 pub type Scrollback = (usize, usize);
 
 impl TerminalView {
-    /// The marks, over the scrollbar's track and as tall, so each stands beside the thumb when the view shows its prompt, and the card of the prompt the pointer is over.
+    /// Marks in a dedicated left gutter, with the hovered prompt's card opening into the terminal.
     pub(super) fn rail(
         &self,
         (history, lines): Scrollback,
@@ -50,15 +59,11 @@ impl TerminalView {
         if history == 0 && marks.is_empty() && gone == 0 {
             return Vec::new();
         }
-        let width = cx
-            .theme()
-            .scrollbar_thickness()
-            .to_pixels(window.rem_size())
-            * 2.;
+        let width = Rail::width(window, cx);
         let colors = &cx.theme().colors;
         let total = (history + lines) as f32;
         let at = |line: i32| ((line + history as i32) as f32 + 0.5) / total;
-        let mut rail = div().absolute().top_0().bottom_0().right_0().w(width);
+        let mut rail = div().absolute().top_0().bottom_0().left_0().w(width);
         let pins = marks
             .iter()
             .map(|&(index, line)| (Pin::Turn(index), at(line)))
@@ -85,7 +90,7 @@ impl TerminalView {
                     .h(px(8.))
                     .flex()
                     .items_center()
-                    .justify_end()
+                    .justify_center()
                     .occlude()
                     .when(pin != Pin::Gone, |mark| mark.cursor_pointer())
                     .child(
@@ -157,7 +162,7 @@ impl TerminalView {
         });
         let card = div()
             .absolute()
-            .right(width + px(6.))
+            .left(width + px(6.))
             .max_w(px(380.))
             .flex()
             .flex_col()

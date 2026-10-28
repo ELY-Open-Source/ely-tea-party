@@ -443,6 +443,7 @@ impl Render for TerminalView {
             .on_drop(cx.listener(|view, paths: &ExternalPaths, _, cx| view.drop_paths(paths, cx)))
             .size_full()
             .px(px(settings.padding_x))
+            .pl(px(settings.padding_x) + Rail::width(window, cx))
             .py(px(settings.padding_y))
             // The window's glass grounds the theme's background; a program's own paints over it.
             .when(ink.bg != theme.background, |root| {

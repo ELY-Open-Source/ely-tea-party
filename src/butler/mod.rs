@@ -1,13 +1,15 @@
 pub mod cache;
 pub mod companion;
 pub mod config;
+pub mod credentials;
 pub mod links;
 pub mod placement;
 pub mod process;
 pub mod state;
 pub mod tasks;
 
-pub use config::{Config, Credentials};
+pub use config::Config;
+pub use credentials::Credentials;
 pub use state::Briefing;
 
 fn dismiss_other_windows(current: gpui::AnyWindowHandle, cx: &mut gpui::App) {

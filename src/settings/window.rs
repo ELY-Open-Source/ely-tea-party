@@ -116,6 +116,7 @@ pub struct SettingsWindow {
     lit: bool,
     _typed: [Subscription; 2],
     _settings: Subscription,
+    _credentials: Subscription,
     _updates: Subscription,
     _language: Subscription,
     #[cfg(unix)]
@@ -182,6 +183,7 @@ impl SettingsWindow {
             lit: true,
             _typed: typed,
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
+            _credentials: cx.observe_global::<crate::butler::Credentials>(|_, cx| cx.notify()),
             _updates: cx.observe_global::<Updates>(|_, cx| cx.notify()),
             _language: cx.observe_global_in::<I18n>(window, Self::speak),
             #[cfg(unix)]
