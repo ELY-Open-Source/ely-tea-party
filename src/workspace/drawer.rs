@@ -138,6 +138,10 @@ impl Workspace {
             session.id,
             drawer.terminal.read(cx).pid()
         );
+        // Its textures leave the window's atlas with it.
+        drawer
+            .terminal
+            .update(cx, |view, _| view.set_front(false, window));
         if index == self.active && drawer.open {
             window.focus(&session.terminal.focus_handle(cx), cx);
         }

@@ -1,5 +1,8 @@
 //! Codex 0.163 emits this styled confirmation when a session's service tier changes.
 
+use futures::channel::mpsc::UnboundedSender;
+
+use super::pty::PtyEvent;
 use crate::agents::speed::Speed;
 
 const PREFIX: &[u8] = "\x1b[K\x1b[2m• \x1b[22mService tier set to ".as_bytes();
@@ -12,6 +15,13 @@ pub(super) struct Scanner {
 }
 
 impl Scanner {
+    /// Feeds `bytes`, sending each tier they set.
+    pub fn send(&mut self, bytes: &[u8], events: &UnboundedSender<PtyEvent>) {
+        self.feed(bytes, |speed| {
+            let _ = events.unbounded_send(PtyEvent::Speed(speed));
+        });
+    }
+
     pub fn feed(&mut self, bytes: &[u8], mut found: impl FnMut(Speed)) {
         for &byte in bytes {
             self.pending.push(byte);

@@ -55,6 +55,16 @@ pub enum OptionAsAlt {
     Both,
 }
 
+/// What blurs behind a see-through window on Windows 11.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Backdrop {
+    #[default]
+    Acrylic,
+    Mica,
+    MicaAlt,
+}
+
 /// The interface's language, by the tag Ely's `I18n` names it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Language {
@@ -99,6 +109,10 @@ pub struct Settings {
     pub theme: String,
     /// The theme while the system is dark; none keeps `theme`.
     pub dark_theme: Option<String>,
+    /// Themes the user made, each from Ely Dark.
+    pub custom_themes: Vec<themes::CustomTheme>,
+    /// A picture under the terminal; empty for none.
+    pub background_image: String,
     pub font_family: String,
     /// Families tried in order for a character Font family lacks.
     pub font_fallbacks: Vec<String>,
@@ -111,6 +125,8 @@ pub struct Settings {
     pub cursor_blink: bool,
     pub background_opacity: f32,
     pub background_blur: bool,
+    /// Windows 11's backdrop while blurred.
+    pub backdrop: Backdrop,
     pub padding_x: f32,
     pub padding_y: f32,
     pub scrollback: u32,
@@ -134,6 +150,8 @@ pub struct Settings {
     pub drag_sessions: bool,
     /// A right press on a session's row opens its menu.
     pub session_menu: bool,
+    /// A right press on a Files name opens its menu.
+    pub files_menu: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
     /// The sessions and right columns' widths, in pixels, as their borders were dragged.
@@ -142,6 +160,17 @@ pub struct Settings {
     /// The main window's size, unmaximized, in pixels.
     pub window_width: f32,
     pub window_height: f32,
+    /// Where the main window was left.
+    pub window_place: Option<Place>,
+}
+
+/// A display's gpui uuid, and the window's top-left from its origin.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Place {
+    pub display: String,
+    pub x: f32,
+    pub y: f32,
 }
 
 impl Default for Settings {
@@ -154,6 +183,8 @@ impl Default for Settings {
             start_folder: String::new(),
             theme: themes::default_id().into(),
             dark_theme: None,
+            custom_themes: Vec::new(),
+            background_image: String::new(),
             font_family: "JetBrains Mono".into(),
             font_fallbacks: Vec::new(),
             font_size: 13.0,
@@ -164,6 +195,7 @@ impl Default for Settings {
             cursor_blink: true,
             background_opacity: 0.88,
             background_blur: true,
+            backdrop: Backdrop::Acrylic,
             padding_x: 10.0,
             padding_y: 8.0,
             scrollback: 10_000,
@@ -179,12 +211,14 @@ impl Default for Settings {
             drawer_height: 260.0,
             drag_sessions: true,
             session_menu: true,
+            files_menu: true,
             show_panel: true,
             panel: PanelTab::Git,
             sessions_width: 288.0,
             panel_width: 240.0,
             window_width: 1200.0,
             window_height: 760.0,
+            window_place: None,
         }
     }
 }
@@ -198,6 +232,7 @@ pub const COLUMN: RangeInclusive<f32> = 160.0..=960.0;
 pub const WINDOW: RangeInclusive<f32> = 100.0..=16384.0;
 pub const DRAWER_HEIGHT: RangeInclusive<f32> = 100.0..=1600.0;
 pub const ELY_LEFT: RangeInclusive<f32> = 0.0..=16384.0;
+pub const PLACE: RangeInclusive<f32> = -32768.0..=32768.0;
 
 impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
@@ -217,13 +252,35 @@ impl Settings {
         within("window_height", self.window_height, &WINDOW)?;
         within("drawer_height", self.drawer_height, &DRAWER_HEIGHT)?;
         within("ely_left", self.ely_left, &ELY_LEFT)?;
+        if let Some(place) = &self.window_place {
+            anyhow::ensure!(!place.display.is_empty(), "window_place names no display");
+            within("window_place", place.x, &PLACE)?;
+            within("window_place", place.y, &PLACE)?;
+        }
         for (field, id) in [
             ("theme", Some(&self.theme)),
             ("dark_theme", self.dark_theme.as_ref()),
         ] {
             if let Some(id) = id {
-                anyhow::ensure!(themes::known(id), "{field} is {id:?}, no built-in theme");
+                let custom = self.custom_themes.iter().any(|theme| theme.id == *id);
+                anyhow::ensure!(
+                    themes::known(id) || custom,
+                    "{field} is {id:?}, no built-in or custom theme"
+                );
             }
+        }
+        for (at, theme) in self.custom_themes.iter().enumerate() {
+            theme.theme()?;
+            anyhow::ensure!(
+                !self.custom_themes[..at]
+                    .iter()
+                    .any(|other| other.id == theme.id),
+                "custom_themes holds {} twice",
+                theme.id
+            );
+        }
+        if !self.background_image.is_empty() {
+            background_image(&self.background_image)?;
         }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");
         anyhow::ensure!(
@@ -242,6 +299,20 @@ impl Settings {
         );
         Ok(())
     }
+}
+
+/// The background picture: a full path to a file.
+pub fn background_image(image: &str) -> anyhow::Result<PathBuf> {
+    let path = Path::new(image);
+    anyhow::ensure!(
+        path.is_absolute(),
+        "background_image is {image:?}, not a full path"
+    );
+    anyhow::ensure!(
+        path.is_file(),
+        "background_image is {image:?}, which names no file"
+    );
+    Ok(path.to_path_buf())
 }
 
 /// `folder` to start sessions in: a full path that exists.

@@ -2,13 +2,14 @@ use std::path::PathBuf;
 
 use ely_gpui_component::{
     forms::TextInput,
+    i18n::text,
     menus::{Menu, MenuItem},
     overlays::{AlertDialog, PromptDialog},
     primitives::Severity,
 };
-use gpui::{AppContext, Context, Entity, Subscription, Window};
+use gpui::{AppContext, ClipboardItem, Context, Entity, Subscription, Window};
 
-use super::{Files, ops};
+use super::{Files, Here, here_folder, ops};
 use crate::sessions;
 
 pub(super) struct Creation {
@@ -25,10 +26,23 @@ impl Files {
     }
 
     pub(super) fn menu(&self, path: PathBuf, folder: bool, cx: &Context<Self>) -> Menu {
+        let (open, host, here) = (path.clone(), cx.entity(), here_folder(&path, folder));
         let refresh = cx.entity();
-        let mut menu = Menu::new().item(MenuItem::new("Refresh").on_click(move |_, cx| {
-            refresh.update(cx, |files, cx| files.refresh(cx));
-        }));
+        let mut menu = Menu::new()
+            .item(
+                MenuItem::new(text(cx, "et.files.open", &[])).on_click(move |_, cx| {
+                    log::info!("files: opening {}", open.display());
+                    cx.open_with_system(&open);
+                }),
+            )
+            .item(
+                MenuItem::new(text(cx, "et.files.new_session", &[]))
+                    .on_click(move |_, cx| host.update(cx, |_, cx| cx.emit(Here(here.clone())))),
+            )
+            .separator()
+            .item(MenuItem::new("Refresh").on_click(move |_, cx| {
+                refresh.update(cx, |files, cx| files.refresh(cx));
+            }));
         let parent = if folder {
             Some(path.clone())
         } else {
@@ -48,7 +62,7 @@ impl Files {
                     }),
             );
         }
-        let reveal = path.clone();
+        let (reveal, copy) = (path.clone(), path.clone());
         let label = if cfg!(target_os = "macos") {
             "Open in Finder"
         } else {
@@ -59,7 +73,18 @@ impl Files {
             .item(MenuItem::new(label).on_click(move |_, cx| {
                 log::info!("files: revealing {}", reveal.display());
                 cx.reveal_path(&reveal);
-            }));
+            }))
+            .item(
+                MenuItem::new(text(cx, "et.files.copy_path", &[])).on_click(
+                    move |_, cx| match copy.to_str() {
+                        Some(text) => {
+                            log::info!("files: copied {text}");
+                            cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
+                        }
+                        None => log::error!("files: {} is no UTF-8 to copy", copy.display()),
+                    },
+                ),
+            );
         let files = cx.entity();
         menu.separator().item(
             MenuItem::new("Move to Trash")

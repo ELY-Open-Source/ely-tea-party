@@ -1,7 +1,9 @@
 //! The private modes the tap follows before the parser.
 
+use futures::channel::mpsc::UnboundedSender;
+
 use super::PARAMS;
-use crate::term::mouse::MouseMode;
+use crate::term::{mouse::MouseMode, pty::PtyEvent};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Csi {
@@ -28,13 +30,32 @@ pub(crate) struct Modes {
 }
 
 impl Modes {
+    /// Feeds `bytes`, sending each mode they changed.
+    pub fn report(&mut self, bytes: &[u8], pid: u32, events: &UnboundedSender<PtyEvent>) {
+        #[cfg(windows)]
+        let win32 = self.win32;
+        if let Some(mode) = self.feed(bytes) {
+            log::info!("pty {pid}: mouse {mode:?}");
+            if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
+                log::debug!("pty {pid}: a mouse mode after its session closed");
+            }
+        }
+        #[cfg(windows)]
+        if self.win32 != win32 {
+            log::info!("pty {pid}: win32-input-mode {}", self.win32);
+            if events.unbounded_send(PtyEvent::Win32(self.win32)).is_err() {
+                log::debug!("pty {pid}: win32-input-mode after its session closed");
+            }
+        }
+    }
+
     /// The mode after `bytes`, when they changed it.
     pub fn feed(&mut self, bytes: &[u8]) -> Option<MouseMode> {
         let was = self.mode;
         let mut rest = bytes;
         while !rest.is_empty() {
             if self.state == Csi::Ground {
-                let Some(at) = rest.iter().position(|&byte| byte == 0x1b) else {
+                let Some(at) = memchr::memchr(0x1b, rest) else {
                     break;
                 };
                 self.state = Csi::Escape;

@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 #[cfg(windows)]
 use alacritty_terminal::tty;
@@ -12,7 +17,9 @@ use alacritty_terminal::{
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
 use super::{
+    clipboard::Packet,
     drop::Quote,
+    graphics::{Graphics, Shared},
     marks::Mark,
     mouse::MouseMode,
     notify::Ask,
@@ -38,6 +45,8 @@ pub enum PtyEvent {
     Speed(crate::agents::speed::Speed),
     /// A full reset, `ESC c`.
     Reset,
+    /// kitty's clipboard protocol, OSC 5522.
+    Clipboard(Packet),
     /// win32-input-mode set or reset.
     #[cfg(windows)]
     Win32(bool),
@@ -79,6 +88,8 @@ pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
     pub pid: u32,
     pub quote: Quote,
+    /// Its kitty graphics: the parser writes them, the view draws.
+    pub graphics: Arc<Mutex<Shared>>,
     notifier: Notifier,
     #[cfg(unix)]
     master: std::fs::File,
@@ -177,7 +188,11 @@ pub fn spawn(
         pid,
     };
     let grid = TermSize::new(size.num_cols.into(), size.num_lines.into());
-    let term = Arc::new(FairMutex::new(Term::new(config, &grid, listener.clone())));
+    let mut term = Term::new(config, &grid, listener.clone());
+    let graphics = Graphics::new(pid, (size.num_cols.into(), size.num_lines.into()), cell);
+    let shared = graphics.shared();
+    term.set_graphics(Box::new(graphics));
+    let term = Arc::new(FairMutex::new(term));
     let tapped = Tapped::new(raw, sender, pid);
     #[cfg(unix)]
     let tapped = tapped.holding(master.try_clone().map_err(|error| {
@@ -191,6 +206,7 @@ pub fn spawn(
             term,
             pid,
             quote: launch.quote,
+            graphics: shared,
             notifier,
             #[cfg(unix)]
             master,
@@ -221,10 +237,58 @@ fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std
         env,
         escape_args: true,
     };
-    tty::new(&options, size, 0)
+    let pty = tty::new(&options, size, 0)?;
+    let dll = conpty()?;
+    log::info!("pty: ConPTY is {}", dll.display());
+    Ok(pty)
+}
+
+/// The `conpty.dll` alacritty loaded; it must be the bundled one.
+#[cfg(windows)]
+fn conpty() -> std::io::Result<PathBuf> {
+    use std::{io, os::windows::ffi::OsStringExt};
+    use windows_sys::{
+        Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW},
+        w,
+    };
+    // SAFETY: a module name, no ownership taken.
+    let module = unsafe { GetModuleHandleW(w!("conpty.dll")) };
+    if module.is_null() {
+        return Err(io::Error::other(
+            "pty: Windows' own conhost runs the session; no conpty.dll loaded",
+        ));
+    }
+    let mut name = [0u16; 32768];
+    // SAFETY: the buffer's length bounds the write.
+    let n = unsafe { GetModuleFileNameW(module, name.as_mut_ptr(), name.len() as u32) } as usize;
+    if n == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let loaded = PathBuf::from(std::ffi::OsString::from_wide(&name[..n]));
+    let beside = std::env::current_exe()?.with_file_name("conpty.dll");
+    if loaded.canonicalize()? != beside.canonicalize()? {
+        return Err(io::Error::other(format!(
+            "pty: conpty.dll came from {}, not {}",
+            loaded.display(),
+            beside.display()
+        )));
+    }
+    let console = loaded.with_file_name("OpenConsole.exe");
+    if !console.is_file() {
+        return Err(io::Error::other(format!(
+            "pty: no {} beside conpty.dll",
+            console.display()
+        )));
+    }
+    Ok(loaded)
 }
 
 impl Pty {
+    /// Its kitty graphics, locked after the term, as the parser.
+    pub fn graphics(&self) -> std::sync::MutexGuard<'_, Shared> {
+        self.graphics.lock().expect("graphics: a holder panicked")
+    }
+
     /// Sends bytes to the program, as typing does.
     pub fn write(&self, bytes: impl Into<Cow<'static, [u8]>>) {
         self.notifier.notify(bytes);
@@ -301,6 +365,9 @@ pub fn fit(columns: usize, lines: usize, cell: (u16, u16)) -> WindowSize {
 
 #[cfg(all(test, unix))]
 mod tests;
+
+#[cfg(all(test, windows))]
+mod through_conpty;
 
 #[cfg(test)]
 mod scrollback {

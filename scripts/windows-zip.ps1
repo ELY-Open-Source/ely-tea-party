@@ -1,4 +1,4 @@
-# windows-zip.ps1: the release build, its icon inside, in a zip.
+# windows-zip.ps1: the release build with icon and ConPTY, zipped.
 Set-Location (Join-Path $PSScriptRoot '..') -ErrorAction Stop
 npm --prefix butler ci --ignore-scripts --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { throw "windows-zip: Pi dependencies failed" }
@@ -16,5 +16,7 @@ $zip = Join-Path $out "ely-tea-party-$version-windows-$arch.zip"
 $runtime = Join-Path $out 'butler'
 if (Test-Path $runtime) { Remove-Item -Recurse -Force $runtime -ErrorAction Stop }
 Copy-Item -Recurse target/butler $runtime -ErrorAction Stop
-Compress-Archive -Force -Path (Join-Path $out 'ely-tea-party.exe'), (Join-Path $out 'butler') -DestinationPath $zip -ErrorAction Stop
+Copy-Item 'vendor/conpty/LICENSE' (Join-Path $out 'LICENSE-conpty') -ErrorAction Stop
+$files = 'ely-tea-party.exe', 'butler', 'conpty.dll', 'OpenConsole.exe', 'LICENSE-conpty' | ForEach-Object { Join-Path $out $_ }
+Compress-Archive -Force -Path $files -DestinationPath $zip -ErrorAction Stop
 Write-Output "windows-zip: $zip"

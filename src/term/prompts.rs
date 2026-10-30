@@ -57,6 +57,8 @@ enum State {
     Held,
     /// An OSC passed on as it comes.
     Passing,
+    /// An APC, DCS, SOS or PM string: no control runs.
+    String,
 }
 
 /// Rewrites what goes to the parser so it stamps each prompt's cells with a link of its own, numbered per prompt.
@@ -92,8 +94,19 @@ impl Prompts {
     /// What goes to the parser for `read`: marks become links, and a held start waits for its end.
     pub fn pass(&mut self, read: &[u8]) -> &[u8] {
         self.out.clear();
-        for &byte in read {
-            self.step(byte);
+        let mut rest = read;
+        while !rest.is_empty() {
+            // Ground passes on whole, up to the next ESC.
+            if self.state == State::Ground {
+                let run = memchr::memchr(ESC, rest).unwrap_or(rest.len());
+                self.out.extend_from_slice(&rest[..run]);
+                rest = &rest[run..];
+                if rest.is_empty() {
+                    break;
+                }
+            }
+            self.step(rest[0]);
+            rest = &rest[1..];
         }
         &self.out
     }
@@ -133,6 +146,11 @@ impl Prompts {
                 self.out.push(byte);
                 State::Escape { sent: true }
             }
+            (State::Escape { .. }, b'_' | b'P' | b'X' | b'^') => {
+                self.held.push(byte);
+                self.release();
+                State::String
+            }
             (State::Escape { .. }, _) => {
                 // A full reset clears the link the parser writes with.
                 if byte == b'c' {
@@ -170,6 +188,19 @@ impl Prompts {
                 self.out.push(byte);
                 self.read(byte);
                 State::Passing
+            }
+            // Its ESC leaves vte in the escape: send now.
+            (State::String, ESC) => {
+                self.out.push(ESC);
+                State::Escape { sent: true }
+            }
+            (State::String, 0x18 | 0x1a) => {
+                self.out.push(byte);
+                State::Ground
+            }
+            (State::String, _) => {
+                self.out.push(byte);
+                State::String
             }
         };
     }

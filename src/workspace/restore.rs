@@ -188,7 +188,9 @@ impl Workspace {
                         session.pending = place.resume.clone();
                         dress(session, place);
                         // Out of view until shown, so it posts notifications.
-                        session.terminal.update(cx, |view, _| view.set_front(false));
+                        session
+                            .terminal
+                            .update(cx, |view, _| view.set_front(false, window));
                     }
                 }
                 Err(error) => log::error!("restore: a session did not start: {error:#}"),

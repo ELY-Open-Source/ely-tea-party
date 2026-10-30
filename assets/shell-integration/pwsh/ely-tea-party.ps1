@@ -30,11 +30,26 @@ function global:prompt {
     }
     "$text$esc]133;B$bel"
 }
+# Git Bash's /e/x is E:\x where nothing lies at \e\x here.
+function global:ElyDrivePath([string]$line) {
+    # One line, one plain token: no quote of any kind.
+    $token = '^([ \t]*cd[ \t]+)/([A-Za-z])(/[\w.\-/*?\[\]+@#%!,=~]*)?([ \t]*)$'
+    if ($env:OS -ne 'Windows_NT' -or $line -match '[\r\n]' -or $line -notmatch $token) { return $line }
+    $lead, $letter, $rest, $tail = $Matches[1], $Matches[2], "$($Matches[3])", $Matches[4]
+    $cd = Get-Command cd -ErrorAction Ignore
+    $own = -not ($cd -is [System.Management.Automation.AliasInfo] -and
+        $cd.ResolvedCommand -is [System.Management.Automation.CmdletInfo] -and
+        $cd.ResolvedCommand.Name -eq 'Set-Location')
+    # A cd of the user's own, or a path that exists, stays as typed.
+    if ($own -or (Test-Path -Path "/$letter$rest" -ErrorAction Ignore) -or
+        -not (Test-Path -LiteralPath "${letter}:\" -ErrorAction Ignore)) { return $line }
+    "$lead$($letter.ToUpperInvariant()):\$($rest.TrimStart('/').Replace('/', '\'))$tail"
+}
 # A command starts once PSReadLine hands over a line that is not blank.
 if (Test-Path Function:\PSConsoleHostReadLine) {
     $global:ElyReadLine = $function:PSConsoleHostReadLine
     function global:PSConsoleHostReadLine {
-        $line = & $global:ElyReadLine
+        $line = ElyDrivePath (& $global:ElyReadLine)
         if (-not [string]::IsNullOrWhiteSpace($line)) {
             $global:ElyRan = $true
             $global:ElyExit = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
