@@ -47,7 +47,7 @@ use widths::{Dragged, Side};
 use crate::{
     agents as characters,
     blur::Blur,
-    files::Files,
+    files::{Files, Here},
     git::panel::{Acted, GitPanel},
     menus,
     sessions::{self, Session, orb},
@@ -96,6 +96,7 @@ pub struct Workspace {
     _updates: Subscription,
     _acted: Subscription,
     _agents: [Task<()>; 3],
+    _here: Subscription,
 }
 
 impl Workspace {
@@ -112,11 +113,15 @@ impl Workspace {
             let folder = this.sessions[this.active].folder.clone();
             this.files.update(cx, |files, cx| files.show(&folder, cx));
         });
+        let files = cx.new(|_| Files::new(launch.cwd.clone()));
+        let here = cx.subscribe_in(&files, window, |this, _, Here(folder), window, cx| {
+            this.here(folder.clone(), window, cx)
+        });
         let mut workspace = Self {
             focus: cx.focus_handle(),
             sessions: Vec::new(),
             active: 0,
-            files: cx.new(|_| Files::new(launch.cwd.clone())),
+            files,
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
@@ -143,6 +148,7 @@ impl Workspace {
             _updates: cx.observe_global::<crate::update::Updates>(|_, cx| cx.notify()),
             _acted: acted,
             _agents: agents::watch(window, cx),
+            _here: here,
         };
         workspace.watch_companion(window, cx);
         workspace.add((id, pty, events), launch, window, cx);
@@ -229,13 +235,17 @@ impl Workspace {
             for terminal in std::iter::once(&hidden.terminal).chain(drawer) {
                 terminal.update(cx, |view, cx| view.let_go(cx));
             }
-            hidden.terminal.update(cx, |view, _| view.set_front(false));
+            hidden
+                .terminal
+                .update(cx, |view, _| view.set_front(false, window));
         }
         self.party = false;
         let session = &mut self.sessions[index];
         session.bell = false;
         session.waiting = false;
-        session.terminal.update(cx, |view, _| view.set_front(true));
+        session
+            .terminal
+            .update(cx, |view, _| view.set_front(true, window));
         window.focus(&session.terminal.focus_handle(cx), cx);
         let folder = session.folder.clone();
         self.files.update(cx, |files, cx| files.show(&folder, cx));
@@ -253,6 +263,11 @@ impl Workspace {
         }
         let session = self.sessions.remove(index);
         log::info!("app: session {} closes", session.terminal.read(cx).pid());
+        // Its textures leave the window's atlas with it.
+        let drawer = session.drawer.as_ref().map(|drawer| &drawer.terminal);
+        for terminal in std::iter::once(&session.terminal).chain(drawer) {
+            terminal.update(cx, |view, _| view.set_front(false, window));
+        }
         if self.sessions.is_empty() {
             // Closed by hand, none comes back.
             self.keep();

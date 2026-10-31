@@ -12,15 +12,15 @@ use gpui::{
     ScrollStrategy, Styled, UniformListScrollHandle, Window, div, prelude::*, uniform_list,
 };
 
-use super::{Files, key, mark_key};
-use crate::sessions;
+use super::{Files, MenuAsk, key, mark_key};
+use crate::{sessions, settings::SettingsStore};
 
 pub(super) struct State {
     pub open: HashSet<PathBuf>,
     pub selected: Option<PathBuf>,
     focus: Option<FocusHandle>,
     scroll: UniformListScrollHandle,
-    pub menu: Option<(u64, Point<Pixels>, PathBuf, bool)>,
+    pub menu: Option<MenuAsk>,
     serial: u64,
 }
 
@@ -136,8 +136,18 @@ impl Files {
 
     fn context(&mut self, path: PathBuf, folder: bool, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.tree.selected = Some(path.clone());
+        if !SettingsStore::get(cx).files_menu {
+            cx.notify();
+            return;
+        }
         self.tree.serial += 1;
-        self.tree.menu = Some((self.tree.serial, at, path, folder));
+        log::info!("files: menu for {}", path.display());
+        self.tree.menu = Some(MenuAsk {
+            n: self.tree.serial,
+            at: Some(at),
+            path,
+            folder,
+        });
         cx.notify();
     }
 
@@ -332,14 +342,10 @@ impl Render for Files {
             .tree
             .menu
             .as_ref()
-            .map(|(_, _, path, folder)| (path.clone(), *folder))
+            .map(|ask| (ask.path.clone(), ask.folder))
             .unwrap_or_else(|| (self.root.clone(), true));
         let menu = self.menu(target.0, target.1, cx);
-        let request = self
-            .tree
-            .menu
-            .as_ref()
-            .map(|(serial, at, _, _)| (*serial, *at));
+        let request = self.request();
         div()
             .size_full()
             .child(

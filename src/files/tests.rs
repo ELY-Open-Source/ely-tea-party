@@ -236,3 +236,30 @@ fn decomposed_names_on_disk_wear_the_composed_marks_git_writes() {
         assert_eq!(row.dirty, dirty, "{name}");
     }
 }
+
+#[test]
+fn a_file_starts_a_session_in_its_folder() {
+    let root = PathBuf::from("/tmp/elyterminal-files-here");
+    assert_eq!(here_folder(&root.join("a.txt"), false), root);
+    assert_eq!(here_folder(&root, true), root);
+    assert_eq!(
+        here_folder(&root.join("gone"), true),
+        root.join("gone"),
+        "a listed folder keeps itself, even if it has gone"
+    );
+}
+
+#[test]
+fn a_menu_request_goes_out_once() {
+    let mut files = Files::new(PathBuf::from("/tmp"));
+    let at = gpui::point(gpui::px(3.), gpui::px(4.));
+    files.tree.menu = Some(MenuAsk {
+        n: 7,
+        at: Some(at),
+        path: PathBuf::from("/tmp/a"),
+        folder: false,
+    });
+    assert_eq!(files.request(), Some((7, at)));
+    assert_eq!(files.request(), None, "a hidden column must not reopen it");
+    assert!(files.tree.menu.is_some(), "the open menu keeps its items");
+}

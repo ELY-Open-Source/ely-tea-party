@@ -1,10 +1,11 @@
 mod cards;
+mod custom;
 
 use std::ops::RangeInclusive;
 
 use ely_gpui_component::{
     buttons::{Button, ButtonVariant, IconButton},
-    forms::{FontPicker, NumberInput, Slider, Switch, TextInput},
+    forms::{FontPicker, NumberInput, PathInput, Slider, Switch, TextInput},
     i18n::text,
     primitives::IconName,
     settings::{SettingsRow, SettingsSection},
@@ -16,10 +17,15 @@ use gpui::{
 };
 
 use self::cards::grid;
-use super::{SettingsWindow, choice, set, switch};
+use super::{
+    SettingsWindow, choice, set, switch,
+    terminal::{chosen, path_field},
+};
 use crate::{
+    blur,
     settings::{
-        CursorStyle, FONT_SIZE, LINE_HEIGHT, Language, OPACITY, PADDING, Settings, SettingsStore,
+        Backdrop, CursorStyle, FONT_SIZE, LINE_HEIGHT, Language, OPACITY, PADDING, Settings,
+        SettingsStore,
     },
     themes::{self, TerminalTheme},
 };
@@ -30,6 +36,13 @@ const CURSORS: [(CursorStyle, &str, &str); 4] = [
     (CursorStyle::Bar, "bar", "et.cursor.bar"),
     (CursorStyle::Underline, "underline", "et.cursor.underline"),
     (CursorStyle::Hollow, "hollow", "et.cursor.hollow"),
+];
+
+/// Each Windows 11 backdrop, its key and its name's key.
+const BACKDROPS: [(Backdrop, &str, &str); 3] = [
+    (Backdrop::Acrylic, "acrylic", "et.backdrop.acrylic"),
+    (Backdrop::Mica, "mica", "et.backdrop.mica"),
+    (Backdrop::MicaAlt, "mica_alt", "et.backdrop.mica_alt"),
 ];
 
 /// Each language, its key, and its own name's key.
@@ -75,6 +88,11 @@ impl SettingsWindow {
         if separate {
             let dark = Some(word("et.appearance.dark"));
             themes = themes.row(grid(&this, dark, true, settings, window, cx));
+        }
+        if let Some(worn) = &self.editing {
+            for row in self.custom_editor(worn, cx) {
+                themes = themes.row(row);
+            }
         }
         let family = FontPicker::new("font_family", &self.font)
             .selected(settings.font_family.clone())
@@ -179,14 +197,35 @@ impl SettingsWindow {
                     .text_size(theme.text_size(TextSize::Sm))
                     .child(format!("{opacity}%")),
             );
-        let background = SettingsSection::new(word("et.appearance.window"))
+        let image = PathInput::new("settings-background-image", &self.image)
+            .on_choose(chosen(&this, "background_image"));
+        let image = path_field(image, self.refused_image.clone(), cx);
+        let mut background = SettingsSection::new(word("et.appearance.window"))
             .row(SettingsRow::new(word("et.appearance.opacity")).control(opacity))
+            .row(
+                SettingsRow::new(word("et.appearance.image"))
+                    .description(word("et.appearance.image_hint"))
+                    .control(image),
+            )
             .row(SettingsRow::new(word("et.appearance.blur")).control(switch(
                 &this,
                 "background_blur",
                 settings.background_blur,
                 |settings, on| settings.background_blur = on,
-            )))
+            )));
+        if blur::mica() {
+            let backdrop = choice(
+                &this,
+                "backdrop",
+                &BACKDROPS,
+                settings.backdrop,
+                |settings, backdrop| settings.backdrop = backdrop,
+                cx,
+            );
+            background =
+                background.row(SettingsRow::new(word("et.appearance.backdrop")).control(backdrop));
+        }
+        let background = background
             .row(
                 SettingsRow::new(word("et.appearance.padding_x")).control(self.number(
                     "padding_x",

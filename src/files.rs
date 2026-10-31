@@ -7,7 +7,7 @@ use std::{
 };
 
 use ely_gpui_component::lists::GitStatus;
-use gpui::{AppContext, Context, SharedString, Task};
+use gpui::{AppContext, Context, EventEmitter, Pixels, Point, SharedString, Task};
 
 use crate::git;
 
@@ -93,6 +93,29 @@ fn key(path: &Path) -> SharedString {
     }
 }
 
+/// New session here's folder: itself, or a file's parent.
+pub(super) fn here_folder(path: &Path, folder: bool) -> PathBuf {
+    if folder {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .expect("a listed file lies in a folder")
+            .to_path_buf()
+    }
+}
+
+/// New session here: the folder it starts in.
+pub struct Here(pub PathBuf);
+
+/// A right press waiting to open Files' menu.
+struct MenuAsk {
+    n: u64,
+    /// The press's point, until a render hands it on.
+    at: Option<Point<Pixels>>,
+    path: PathBuf,
+    folder: bool,
+}
+
 /// The Files panel: the shown session's folder as a tree, Git's marks on names.
 pub struct Files {
     root: PathBuf,
@@ -111,6 +134,8 @@ pub struct Files {
     busy: bool,
     error: Option<String>,
 }
+
+impl EventEmitter<Here> for Files {}
 
 impl Files {
     pub fn new(root: PathBuf) -> Self {
@@ -210,6 +235,12 @@ impl Files {
         if self.wanted.insert(folder) {
             self.read(cx);
         }
+    }
+
+    /// The menu's request, once: a remounted menu would replay it.
+    fn request(&mut self) -> Option<(u64, Point<Pixels>)> {
+        let ask = self.tree.menu.as_mut()?;
+        Some((ask.n, ask.at.take()?))
     }
 }
 

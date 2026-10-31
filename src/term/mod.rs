@@ -1,11 +1,14 @@
+mod backdrop;
 mod boxes;
 mod click;
+mod clipboard;
 mod drop;
 #[cfg(windows)]
 mod env;
 mod find;
 mod fonts;
 pub mod frame;
+mod graphics;
 mod herdr;
 pub mod ink;
 pub mod input;

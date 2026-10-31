@@ -24,9 +24,11 @@ use gpui::{
 
 use super::{
     click::Shell,
+    clipboard,
     find::Finder,
     fonts::look,
     frame::frame,
+    graphics::{Pictures, runs},
     ink::Ink,
     input::{self, Find, Held, NextPrompt, PreviousPrompt, Went},
     marks::Mark,
@@ -71,6 +73,10 @@ pub struct TerminalView {
     pub(super) pointer: Pointer,
     /// The mouse mode, as the tap follows it.
     pub(super) mouse: MouseMode,
+    /// The background picture that last failed, logged once.
+    pub(super) backdrop_failed: Option<std::path::PathBuf>,
+    /// Kitty graphics' textures.
+    pictures: Pictures,
     /// Keys go as Windows' records, as ConPTY asks.
     #[cfg(windows)]
     pub(super) win32: bool,
@@ -92,6 +98,8 @@ pub struct TerminalView {
     pub(super) shell: Shell,
     /// The system notifications it posted.
     pub(super) notices: Notices,
+    /// kitty's clipboard protocol: its write, grants and read asking.
+    pub(super) clips: clipboard::Session,
     /// The program's title; empty while it names none.
     pub(super) title: String,
     /// The prompts an agent here took, and the rail that marks them.
@@ -116,6 +124,14 @@ pub struct TerminalView {
     kitty: TermMode,
     _events: Task<()>,
     _blink: Task<()>,
+    /// Wakes the view at its animations' next frame.
+    animate: Option<Task<()>>,
+    /// Packs idle history once output and scrolling rest.
+    _compactor: Task<()>,
+    /// When output last came or the view last moved.
+    stirred: Instant,
+    /// The view's place in the history as last drawn.
+    offset: usize,
     _herdr: Task<()>,
     _focus: [Subscription; 3],
     _settings: Subscription,
@@ -151,6 +167,8 @@ impl TerminalView {
             caret: Bounds::default(),
             pointer: Pointer::default(),
             mouse: MouseMode::default(),
+            backdrop_failed: None,
+            pictures: Pictures::default(),
             #[cfg(windows)]
             win32: false,
             herdr: false,
@@ -163,6 +181,7 @@ impl TerminalView {
             ran: None,
             shell: Shell::Busy,
             notices: Notices::default(),
+            clips: clipboard::Session::default(),
             title: String::new(),
             turns: Turns::default(),
             rail: Rail::default(),
@@ -178,6 +197,10 @@ impl TerminalView {
             kitty: TermMode::empty(),
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
+            animate: None,
+            _compactor: Self::compactor(cx),
+            stirred: Instant::now(),
+            offset: 0,
             _herdr: super::herdr::follow(cx),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
                 view.pty
@@ -205,7 +228,13 @@ impl TerminalView {
     }
 
     /// Whether it is the session shown: one shown in an active window posts no notification.
-    pub fn set_front(&mut self, front: bool) {
+    pub fn set_front(&mut self, front: bool, window: &mut Window) {
+        if front && !self.front {
+            // A hidden session's animations paused; their gaps start afresh.
+            self.pty.graphics().resume();
+        } else if !front {
+            paint::drop_pictures(self.pictures.release(), window);
+        }
         self.front = front;
     }
 
@@ -279,112 +308,6 @@ impl TerminalView {
         }
         cx.notify();
     }
-
-    fn handle(&mut self, events: Vec<PtyEvent>, cx: &mut Context<Self>) {
-        let drawn = events
-            .iter()
-            .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
-        for event in events {
-            if let PtyEvent::Mark(mark, holder) = &event {
-                self.records.mark(mark, *holder);
-            }
-            match event {
-                PtyEvent::Folder(folder) => {
-                    self.reports += 1;
-                    self.folder = Some(folder.clone());
-                    cx.emit(TerminalEvent::Folder(folder));
-                }
-                PtyEvent::Term(event) => self.term_event(event, cx),
-                PtyEvent::Speed(speed) => cx.emit(TerminalEvent::Speed(speed)),
-                PtyEvent::Mouse(mode) => self.mouse = mode,
-                #[cfg(windows)]
-                PtyEvent::Win32(on) => self.win32 = on,
-                PtyEvent::Mark(Mark::Done(status), _) => self.finished(status, cx),
-                PtyEvent::Mark(Mark::Prompt(click), _) => {
-                    self.shell = Shell::Prompting(click);
-                    self.restate(cx);
-                }
-                PtyEvent::Mark(Mark::Output, _) => {
-                    self.ran = Some(Instant::now());
-                    self.shell = Shell::Busy;
-                }
-                PtyEvent::Mark(Mark::Input, _) => self.shell = self.shell.reads(),
-                PtyEvent::Status(status, owner) => {
-                    self.status(status, owner);
-                    self.restate(cx);
-                }
-                PtyEvent::Ask(ask, owner) => {
-                    self.ask(ask, owner, cx);
-                    self.restate(cx);
-                }
-                PtyEvent::Title(title) => {
-                    self.title.clone_from(&title);
-                    cx.emit(TerminalEvent::Title(title));
-                }
-                PtyEvent::Reset => {
-                    self.records.reset();
-                    self.title.clear();
-                    cx.emit(TerminalEvent::Title(String::new()));
-                    self.restate(cx);
-                }
-            }
-        }
-        if drawn {
-            let kitty = *self.pty.term.lock().mode() & TermMode::KITTY_KEYBOARD_PROTOCOL;
-            if kitty != self.kitty {
-                log::debug!("terminal {}: kitty keyboard flags {kitty:?}", self.pty.pid);
-                self.kitty = kitty;
-            }
-        }
-        // ponytail: a full search per output batch while find is open; search only new lines if it lags.
-        if drawn && self.finder.is_some() {
-            self.search(false, cx);
-        }
-        cx.notify();
-    }
-
-    fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
-        match event {
-            Event::Wakeup => {
-                self.shown = true;
-                let now = std::time::Instant::now();
-                if now.duration_since(self.poked) > REPLY {
-                    self.drew = now;
-                }
-            }
-            // The tap reads the title in the output's order; alacritty's title events come after it.
-            Event::MouseCursorDirty
-            | Event::CursorBlinkingChange
-            | Event::Title(_)
-            | Event::ResetTitle => {}
-            Event::Bell => {
-                log::debug!("terminal {}: a bell, kept silent", self.pty.pid);
-                cx.emit(TerminalEvent::Bell);
-            }
-            Event::ClipboardStore(kind, text) => {
-                log::info!("terminal {}: OSC 52 writes the {kind:?}", self.pty.pid);
-                self.copy_text(text, kind == ClipboardType::Selection, cx);
-            }
-            Event::ClipboardLoad(..) => log::error!(
-                "terminal {}: a clipboard read arrived though OSC 52 reads are off",
-                self.pty.pid
-            ),
-            Event::ColorRequest(index, reply) => {
-                let theme = themes::active(SettingsStore::get(cx), cx.window_appearance(), cx);
-                let term = self.pty.term.lock();
-                let rgb = Ink::new(&theme, term.colors()).query(index, term.colors());
-                drop(term);
-                self.pty.write(reply(rgb).into_bytes());
-            }
-            Event::TextAreaSizeRequest(reply) => {
-                let size = fit(self.size.0, self.size.1, self.cell);
-                self.pty.write(reply(size).into_bytes());
-            }
-            Event::PtyWrite(text) => self.pty.write(text.into_bytes()),
-            Event::ChildExit(status) => cx.emit(TerminalEvent::Exited(status)),
-            Event::Exit => log::debug!("terminal {}: the grid closed", self.pty.pid),
-        }
-    }
 }
 
 impl Render for TerminalView {
@@ -400,9 +323,30 @@ impl Render for TerminalView {
             finder.lit(&term, cx.theme().colors.warning)
         });
         let shown = frame(&term, &ink, &lit);
+        let mut graphics = self.pty.graphics();
+        // Only a drawn session ticks; a hidden one pauses.
+        let next = graphics.tick(Instant::now());
+        let (pictures, stale) = self.pictures.shown(
+            &graphics,
+            &runs(&term),
+            term.grid().display_offset(),
+            (term.columns(), term.screen_lines()),
+        );
+        drop(graphics);
+        self.animate = next.map(|delay| {
+            cx.spawn(async move |view, cx| {
+                cx.background_executor().timer(delay).await;
+                view.update(cx, |_, cx| cx.notify()).ok();
+            })
+        });
         let blinks = term.cursor_style().blinking;
         let span = Span::of(&term);
+        let offset = term.grid().display_offset();
         drop(term);
+        if offset != self.offset {
+            self.offset = offset;
+            self.stirred = Instant::now();
+        }
         let focused = self.focus.is_focused(window) && window.is_window_active();
         self.blinking = focused && blinks;
         if !self.blinking {
@@ -457,10 +401,20 @@ impl Render for TerminalView {
             });
         let root = match look(&settings, zoom::size(cx), &ink, window) {
             Ok(look) => {
-                self.cell = (
-                    f32::from(look.cell.width).round() as u16,
-                    f32::from(look.cell.height).round() as u16,
+                // Device pixels, as kitty reports them, so images draw crisp.
+                let scale = window.scale_factor();
+                let cell = (
+                    (f32::from(look.cell.width) * scale).round() as u16,
+                    (f32::from(look.cell.height) * scale).round() as u16,
                 );
+                if cell != self.cell {
+                    log::debug!("terminal {}: a cell is {cell:?} pixels", self.pty.pid);
+                    self.cell = cell;
+                    let mut graphics = self.pty.graphics();
+                    graphics.cell = (cell.0.into(), cell.1.into());
+                    drop(graphics);
+                    self.pty.resize(self.size, cell);
+                }
                 let preedit = self.marked.clone();
                 root.child(paint::grid(
                     cx.entity(),
@@ -468,6 +422,7 @@ impl Render for TerminalView {
                     cursor,
                     preedit,
                     look,
+                    (pictures, stale),
                 ))
             }
             Err(error) => {
@@ -476,9 +431,11 @@ impl Render for TerminalView {
             }
         };
         let rail = self.rail(scrollback, settings.padding_y, window, cx);
+        let backdrop = self.backdrop(&settings, window, cx);
         div()
             .relative()
             .size_full()
+            .children(backdrop)
             .child(root)
             .children(scrollbar::bar(span, window, cx))
             .children(rail)
@@ -486,5 +443,8 @@ impl Render for TerminalView {
                 self.find_box(cx)
                     .map(|found| div().absolute().top_2().right_4().child(found)),
             )
+            .children(self.clipboard_prompt(cx))
     }
 }
+
+mod events;

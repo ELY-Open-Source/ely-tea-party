@@ -10,17 +10,18 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 - Every setting has a control in the settings window. No setting lives only in a file.
 - Silent: no sound, no bell, no notifications but a session's and a newer release's, below, no telemetry, no tips, no onboarding. The one call out is the update check the owner asked for, a switch in Settings › Terminal.
 - Clean: no subtitle, no tagline, no logging options, no status bar, no badges that do not carry state.
-- Built-in themes, each shown as a small preview, Catppuccin among them. A theme colors the terminal and the chrome.
+- Built-in themes, each shown as a small preview, Catppuccin among them, and themes of the user's own, each made from Ely Dark and never over a built-in one. A theme colors the terminal and the chrome.
 - The window background blurs on macOS, Windows, Wayland and X11.
 
 ## 2. Foundation
 
 - One binary crate, `elyterminal`, edition 2024, Rust 1.95.
 - Ely from github.com/ELY-Open-Source by pinned rev. gpui, gpui_platform from crates.io `gpui-pre` at the exact version Ely pins.
-- `alacritty_terminal` 0.26 for the grid, the parser and the pseudo-terminal, as Ely uses it.
+- `alacritty_terminal` 0.26 for the grid, the parser and the pseudo-terminal, as Ely uses it, taken from the org's fork, and `vte` 0.15 from the org's fork, for what the terminal adds below: kitty graphics at the cursor, mode 5522, idle history packed small, printable text in runs. gpui's platform crates for macOS, Windows and Linux come from the org's forks where a fix or a whole clipboard needs them.
 - Logs through `log` to stderr, `RUST_LOG` sets the level. No log setting in the app.
 - CI on GitHub Actions: macOS builds, tests and lints; Ubuntu and Windows build and test.
 - Repo `ELY-Open-Source/ELYTerminal` on GitHub, public; it lived on git.zacharyzhang.com until v0.1.7. No credential in any file or commit.
+- The README and the guides, install, features, keys and develop, in English and in Chinese, each true to the code.
 
 ## 3. Settings model and storage
 
@@ -40,28 +41,33 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 
 ## 5. Terminal engine
 
-Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `alacritty_terminal`; Ely's `Terminal` is a gallery widget without mouse reporting, IME, kitty keys or style settings.
+Ghostty is the bar for what the terminal does, 1.4's kitty graphics, clipboard, scrollback and speed among it. ELYTerminal owns its engine on `alacritty_terminal`; Ely's `Terminal` is a gallery widget without mouse reporting, IME, kitty keys or style settings.
 
-- PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC scanner. The scanner reports the working directory and prompt marks. Output reaches the screen as the program writes it, with no key to bring it.
-- Shell integration for zsh, bash, fish and PowerShell, injected at launch as Ghostty does: each prompt sends OSC 7 and a title. On Windows a Shell of `wsl` runs the distribution's bash, zsh or fish with that integration, and its folder reaches Files and Git as Windows names it, git running inside the distribution. Git for Windows' bash, its `sh` too, reports its folder as Windows names it. A shell without integration reports nothing, and the panels say so.
+- PTY: alacritty's `tty` and event loop; on Windows, Microsoft's OpenConsole, bundled, so a program's mouse modes reach the terminal. The pty is wrapped so its reader passes bytes through an OSC scanner. The scanner reports the working directory and prompt marks. Output reaches the screen as the program writes it, with no key to bring it.
+- Shell integration for zsh, bash, fish and PowerShell, injected at launch as Ghostty does: each prompt sends OSC 7 and a title. On Windows a Shell of `wsl` runs the distribution's bash, zsh or fish with that integration, and its folder reaches Files and Git as Windows names it, git running inside the distribution. Git for Windows' bash, its `sh` too, reports its folder as Windows names it. On Windows PowerShell's `cd` takes Git Bash's drive paths, `/e` as `E:\`, where no such path lies on the current drive. A shell without integration reports nothing, and the panels say so.
 - Prompt marks, OSC 133: the shell integration marks where each prompt starts (A) and ends (B), where a command starts (C), and where it ends with its exit status (D), all but C on macOS's bash 3.2, which has no hook for it; the terminal reads any program's OSC 133. Cmd-Up and Cmd-Down, and Cmd-Shift-Up and Cmd-Shift-Down, on macOS, Ctrl-Shift-Up and Ctrl-Shift-Down elsewhere, scroll to the prompt before or after the view's top, as in Ghostty.
 - Program status, OSC 7501 revision 0.4: each terminal keeps the records programs report (state, id, kind, progress, app, title, msg), checked as the spec checks them; a shell's new prompt drops working, blocked and idle records, while a prompt a running program marks itself, as omp does, keeps those it reported; a full reset drops them all; the terminal answers the support query with the states and kinds it takes.
 - Progress, OSC 9;4: set, error, indeterminate and pause stand as the root record until a program reports OSC 7501, until a full reset.
 - Notifications: OSC 9 (iTerm2), OSC 777 notify (rxvt) and OSC 99 (kitty: title and body in chunks, base64, ids, focus and report on activation, close, expiry, which ones live, and its query; `o` passes by, since a session posts only while unseen, below); ConEmu's other OSC 9 commands are no notifications.
 - Inside herdr, which keeps its panes' OSC 7, the session's folder is that of herdr's focused pane, read from herdr's socket while herdr's client runs in the session, on macOS, Linux and Windows.
 - Inside herdr, which passes no OSC 7501 on, herdr's agent states (idle, working, blocked, done) are the session's status records.
-- Grid: colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks. An erase, insert or delete that splits a wide character, insert mode's typing and a character written over one half among them, clears all of it in the current ground, as xterm does.
+- Grid: each grapheme cluster on its own column, as Ghostty draws, a row shaped by runs of one color; colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks. An erase, insert or delete that splits a wide character, insert mode's typing and a character written over one half among them, clears all of it in the current ground, as xterm does.
 - Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
-- Fonts: JetBrains Mono by default, any installed font by choice, and fallback families tried in order for a character it lacks, a Chinese font after a Latin one among them; Nerd Font icons the font lacks come from a bundled Nerd Font.
+- Fonts: JetBrains Mono by default, any installed font by choice, and fallback families tried in order for a character it lacks, a Chinese font after a Latin one among them, on Windows a fallback's italic drawn from its own face; Nerd Font icons the font lacks come from a bundled Nerd Font.
 - Cursor: block, bar, underline, hollow block; blinking per setting and per DECSCUSR; hollow when the window is not focused.
-- Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, with an input method selected too, and natural text editing there when the setting is on: Option-Left and Option-Right go as ESC b and ESC f, Option-Backspace and Option-Delete as ESC DEL and ESC d, Command-Left and Command-Right as Ctrl-A and Ctrl-E, Command-Backspace and Command-Delete as Ctrl-U and Ctrl-K, as iTerm2's preset; the kitty keyboard protocol as the program sets its flags; a key Shift makes a symbol of goes as its own key with Shift, the symbol its alternate, as Ghostty sends it, on macOS and Windows. On Windows keys go as win32-input-mode records while ConPTY asks, as Windows Terminal sends them. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
-- IME: marked text drawn at the cursor; committed text sent to the program. A dead key waits for the key after it, as the keyboard layout asks and as Windows' console waits: under US-International a quote then `a` types `á`. On X11 the input method's compound text composes and commits in every set libX11 writes, Simplified and Traditional Chinese among them.
+- Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, with an input method selected too, and natural text editing there when the setting is on: Option-Left and Option-Right go as ESC b and ESC f, Option-Backspace and Option-Delete as ESC DEL and ESC d, Command-Left and Command-Right as Ctrl-A and Ctrl-E, Command-Backspace and Command-Delete as Ctrl-U and Ctrl-K, as iTerm2's preset; the kitty keyboard protocol as the program sets its flags, so Shift+Enter makes a new line in codex and Claude Code on macOS, Windows and Linux; a key Shift makes a symbol of goes as its own key with Shift, the symbol its alternate, as Ghostty sends it, on macOS and Windows. On Windows keys go as win32-input-mode records while ConPTY asks, as Windows Terminal sends them. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
+- IME: marked text drawn at the cursor, on one line, a control in it as its picture; committed text sent to the program. A dead key waits for the key after it, as the keyboard layout asks and as Windows' console waits: under US-International a quote then `a` types `á`. On X11 the input method's compound text composes and commits in every set libX11 writes, Simplified and Traditional Chinese among them. On Wayland a modifier's key an input method forwards without its mask still counts, so Shift and Ctrl+Shift bindings hold under fcitx5.
 - Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen; on Windows a notch moves the lines Windows sets, a screen under one screen at a time, and elsewhere 3; with Shift, which takes the wheel back from a program that tracks the mouse, a notch does what it does where nothing tracks it.
 - Click to move: while the shell reads a line, as its OSC 133 marks say, a plain click on that line, past its prompt, moves the shell's cursor there, as Ghostty's `cursor-click-to-move`: a shell that takes clicks, as fish does, hears the click; others get arrow keys.
 - Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.
+- Kitty's clipboard protocol, OSC 5522, as Ghostty 1.4 takes it: writes up to 64 MiB allowed; each read asks first, showing what it would read, with a choice to allow a program's password for the session; text, images and file lists, written and read alike on every system; under mode 5522 a paste lists the clipboard's types with a password for one read.
+- Kitty graphics, as Ghostty 1.4 takes them: images sent direct, from a file, a temporary file or shared memory, RGB, RGBA or PNG, zlib, in chunks, within a session's quota; placed at the cursor under the ground, between it and the text or over the text, cut and sized as asked, moving with scrolls, clears and resizes; Unicode placeholders and relative placements; animation, its frames composed and played on their clock, paused while its session is hidden. Payloads decode through SIMD. A hidden session gives its images' GPU textures back.
 - Drop: files dropped on the terminal type their paths at the cursor, as macOS Terminal does, each kept literal for the session's shell and followed by a space.
 - Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees.
 - Focus reporting, title (OSC 0/2), scrollback limit per setting, find in scrollback (Ely's `FindWidget`).
+- Idle history packed small, unpacked as it is read, on every system, as Ghostty 1.4 compresses its scrollback.
+- Plain text passes the pty's scanners and the parser in runs, not a byte at a time.
+- On Linux, through gpui's wgpu, text draws on whole device pixels at fractional scales and nothing tears, on Vulkan and on GL.
 - A scrollbar over the history, along the terminal's right edge: a drag on its thumb scrolls, whatever the program does with the wheel.
 - Bell: no sound. The session row marks it until the session is shown.
 
@@ -70,7 +76,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
 - The sessions column and the right column resize by a drag on their border toward the terminal, on macOS, Windows and Linux, from 160 to 960 pixels; the widths are kept in settings once a drag rests, so the window opens with them.
-- The window opens at the size it was left at, on macOS, Windows and Linux: the size is kept in settings once it settles; a maximized or full-screen window keeps the size from before; a kept size past the screen shrinks to it; the window is no smaller than 100 by 100, the least the settings keep.
+- The window opens at the size it was left at, on macOS, Windows and Linux, and on macOS, Windows and X11 on the display and at the place it was left, else centered on the primary display: the size and place are kept in settings once they settle; a maximized or full-screen window keeps the size from before; a kept size past the screen shrinks to it; the window is no smaller than 100 by 100, the least the settings keep.
 - A double click on the column off its rows opens a session.
 - A session's row drags up or down to reorder the sessions; the shown session stays shown.
 - The tea party (Cmd-Shift-O) shows every session's character at one table with what she does; characters speak at the moments that matter; the right column's Activity tab lists the shown agent's steps; sessions and their agents' conversations come back at the next start.
@@ -101,6 +107,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - A switch at the top, centered below the title bar: Git, Files.
 - Files shows the active session's working directory as a tree, folders first, Git status colors on names.
 - Double press: a folder opens, a file opens in the system's default app.
+- A right press on a name opens a menu, while Files menu in Settings › Terminal is on: Open opens it in the system's default app; New session here starts the shown shell in that folder, or a file's parent, right after the shown session and shown; Copy path puts the path on the clipboard. Off by default; off, a right press opens nothing.
 - It reloads when the session reports a new directory and at each prompt.
 
 ## 9. Right panel: Git
@@ -118,11 +125,11 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 - Appearance
   - Language: English or 简体中文, for every window and the menu bar, applied at once; what programs, git and the system say stays as it comes.
-  - Theme: a grid of previews; on Omarchy, the Omarchy theme first.
+  - Theme: a grid of previews; on Omarchy, the Omarchy theme first; the user's themes after the built-in ones, then New theme, which makes one from Ely Dark and wears it. While a theme of the user's is worn, its name, its 21 colors (background, foreground, cursor, cursor text, selection and the 16 ANSI colors), each picked as a swatch and set in a color picker, and Delete, after which Ely Dark takes its place.
   - Separate dark theme: a switch; when on, a second grid for dark mode.
   - Font family: a list of installed fonts. Fallbacks: installed families tried in order for a character the family lacks, each added, changed or removed in a list of pickers. Font size. Line height. Ligatures.
   - Cursor: style (block, bar, underline, hollow), blink, with a live preview.
-  - Background opacity: a slider. Background blur: a switch.
+  - Background opacity: a slider. Background image: a picture under the terminal, at that opacity, chosen as a file. Background blur: a switch. Backdrop, on Windows 11 from build 22621: Acrylic, Mica or Mica Alt.
   - Padding: horizontal and vertical.
 - Terminal
   - Shell: a path; empty runs the login shell, on Windows `pwsh`, else `powershell`, else `cmd`. On Windows a session takes the registry's environment as it starts.
@@ -133,6 +140,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Copy on select.
   - Drag sessions to reorder: a switch, on by default; off, a drag on a session's row moves nothing.
   - Session menu: a switch, on by default; off, a right press on a session's row opens nothing.
+  - Files menu: a switch, off by default; off, a right press on a Files name opens nothing.
   - Ely: a switch.
   - Check for updates automatically: a switch, on by default, which checks at start and once a day.
   - Updates: what the last check found, and Check now; a newer release brings Download, which opens its page, and one an automatic check finds posts a notification.
@@ -141,7 +149,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 ## 11. Background blur
 
 - macOS: gpui's `WindowBackgroundAppearance::Blurred` (NSVisualEffectView).
-- Windows: gpui's `Blurred` (acrylic accent). On Windows 10, whose DWM drags an acrylic window seconds behind the pointer, the glass clears while the window moves or sizes and blurs again when it rests; Windows 11 keeps its acrylic throughout.
+- Windows: gpui's `Blurred` (acrylic accent), or on Windows 11 from build 22621 its `MicaBackdrop` or `MicaAltBackdrop` as Backdrop says; earlier builds keep Acrylic. On Windows 10, whose DWM drags an acrylic window seconds behind the pointer, the glass clears while the window moves or sizes and blurs again when it rests; Windows 11 keeps its acrylic throughout.
 - Wayland: gpui's `Blurred` speaks `org_kde_kwin_blur`; ELYTerminal adds `ext_background_effect_v1` on the window's surface, which GNOME 51, Plasma 6.7 and Hyprland support. Hyprland honors it only while its own blur is on, which Omarchy 4.0.4 turns off.
 - X11: ELYTerminal sets `_KDE_NET_WM_BLUR_BEHIND_REGION` (CARDINAL, 32) on the window, as Ghostty does; removes it when blur turns off.
 - A compositor with neither protocol shows transparency without blur. The app logs which path it took.
@@ -171,4 +179,4 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 ## Deferred
 
-Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, session restore, push and pull, quick terminal.
+Splits, tabs inside a session, profiles, key rebinding, sixel, session restore, push and pull, quick terminal.

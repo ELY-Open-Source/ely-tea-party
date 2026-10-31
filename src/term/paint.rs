@@ -1,15 +1,20 @@
-use std::rc::Rc;
+mod glyphs;
+
+use std::{rc::Rc, sync::Arc};
+
+use glyphs::draw;
 
 use alacritty_terminal::vte::ansi::CursorShape;
 use gpui::{
-    Bounds, ContentMask, ElementInputHandler, Entity, Font, FontId, FontStyle, FontWeight, Hsla,
-    IntoElement, PathBuilder, Pixels, Point, Size, StrikethroughStyle, Styled, TextRun,
-    UnderlineStyle, Window, canvas, fill, outline, point, px, size,
+    Bounds, ContentMask, Corners, ElementInputHandler, Entity, Font, FontId, FontStyle, FontWeight,
+    Hsla, IntoElement, PathBuilder, Pixels, Point, RenderImage, Size, StrikethroughStyle, Styled,
+    TextRun, UnderlineStyle, Window, canvas, fill, outline, point, px, size,
 };
 
 use super::{
     boxes::{self, Shape},
     frame::{Cursor, Frame, Style, Underline},
+    graphics::{Layer, Shown},
     view::TerminalView,
 };
 
@@ -40,6 +45,7 @@ pub fn grid(
     cursor: Option<(Cursor, CursorShape)>,
     preedit: Option<String>,
     look: Look,
+    (pictures, stale): (Vec<Shown>, Vec<Arc<RenderImage>>),
 ) -> impl IntoElement {
     let cell = look.cell;
     let (fit, input) = (view.clone(), view);
@@ -75,10 +81,17 @@ pub fn grid(
             let focus = input.read(cx).focus.clone();
             window.handle_input(&focus, ElementInputHandler::new(bounds, input.clone()), cx);
             let origin = snapped(bounds.origin, window);
+            drop_pictures(stale, window);
+            let top = |index: usize| origin + point(px(0.), cell.height * index as f32);
+            paint_pictures(&pictures, Layer::Under, origin, cell, window);
             for (index, row) in frame.rows.iter().enumerate() {
-                let top = origin + point(px(0.), cell.height * index as f32);
-                paint_row(row, top, &look, window);
+                paint_grounds(row, top(index), &look, window);
             }
+            paint_pictures(&pictures, Layer::Between, origin, cell, window);
+            for (index, row) in frame.rows.iter().enumerate() {
+                paint_text(row, top(index), &look, window);
+            }
+            paint_pictures(&pictures, Layer::Over, origin, cell, window);
             match (&preedit, at, &cursor) {
                 (Some(text), Some(at), _) => paint_preedit(text, at, origin, &look, window),
                 (None, _, Some((cursor, shape))) => {
@@ -106,6 +119,8 @@ fn paint_preedit(
     look: &Look,
     window: &mut Window,
 ) {
+    // gpui shapes no newline; a composition may hold one.
+    let text = &crate::sessions::one_line(text);
     let cell = look.cell;
     let corner = origin + point(cell.width * column as f32, cell.height * row as f32);
     let style = Style {
@@ -159,16 +174,66 @@ fn spans(row: &super::frame::Row) -> Vec<(usize, usize, Style)> {
         .collect()
 }
 
-fn paint_row(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: &mut Window) {
+/// Takes textures out of the window's atlas.
+pub fn drop_pictures(pictures: Vec<Arc<RenderImage>>, window: &mut Window) {
+    if !pictures.is_empty() {
+        log::debug!("terminal: {} textures dropped", pictures.len());
+    }
+    for picture in pictures {
+        if let Err(error) = window.drop_image(picture) {
+            log::error!("terminal: a texture did not drop: {error:#}");
+        }
+    }
+}
+
+/// Kitty graphics placements of `layer`, cells measured from `origin`.
+fn paint_pictures(
+    pictures: &[Shown],
+    layer: Layer,
+    origin: Point<Pixels>,
+    cell: Size<Pixels>,
+    window: &mut Window,
+) {
+    let at = |cells: Bounds<f32>| {
+        Bounds::new(
+            origin + point(cell.width * cells.origin.x, cell.height * cells.origin.y),
+            size(
+                cell.width * cells.size.width,
+                cell.height * cells.size.height,
+            ),
+        )
+    };
+    for shown in pictures.iter().filter(|shown| shown.layer == layer) {
+        let (clip, whole) = (at(shown.clip), at(shown.whole));
+        let picture = Arc::clone(&shown.picture);
+        // A mask clips it; gpui's clip rounds to source pixels.
+        let mask = Some(ContentMask { bounds: clip });
+        let painted = window.with_content_mask(mask, |window| {
+            window.paint_image(whole, whole, Corners::default(), picture, 0, false)
+        });
+        if let Err(error) = painted {
+            log::error!("terminal: an image did not paint: {error:#}");
+        }
+    }
+}
+
+/// A row's grounds, under every row's text.
+fn paint_grounds(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: &mut Window) {
+    let cell = look.cell;
+    for (column, columns, style) in spans(row) {
+        if let Some(bg) = style.bg {
+            let corner = top + point(cell.width * column as f32, px(0.));
+            let width = cell.width * columns as f32;
+            window.paint_quad(fill(Bounds::new(corner, size(width, cell.height)), bg));
+        }
+    }
+}
+
+/// A row's text and decorations.
+fn paint_text(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: &mut Window) {
     let cell = look.cell;
     let at = |column: usize| top + point(cell.width * column as f32, px(0.));
     let spans = spans(row);
-    for (column, columns, style) in &spans {
-        if let Some(bg) = style.bg {
-            let width = cell.width * *columns as f32;
-            window.paint_quad(fill(Bounds::new(at(*column), size(width, cell.height)), bg));
-        }
-    }
     let mut byte = 0;
     let runs: Vec<TextRun> = row
         .runs
@@ -228,62 +293,6 @@ fn text(
 ) {
     let runs = runs(content, style, color, look, window);
     draw(content, &runs, origin, None, look, window);
-}
-
-/// Shapes `content` and paints each glyph on the cell's baseline below `top`; `force` sets every advance.
-fn draw(
-    content: &str,
-    runs: &[TextRun],
-    top: Point<Pixels>,
-    force: Option<Pixels>,
-    look: &Look,
-    window: &mut Window,
-) {
-    let shaped =
-        window
-            .text_system()
-            .shape_line(content.to_string().into(), look.size, runs, force);
-    let baseline = top.y + look.baseline;
-    for run in &shaped.runs {
-        for glyph in &run.glyphs {
-            let color = color_at(runs, glyph.index);
-            let at = point(
-                top.x + glyph.position.x,
-                baseline + upward(glyph.position.y),
-            );
-            let painted = if glyph.is_emoji {
-                window.paint_emoji(at, run.font_id, glyph.id, look.size)
-            } else {
-                window.paint_glyph(at, run.font_id, glyph.id, look.size, color)
-            };
-            if let Err(error) = painted {
-                log::error!("terminal: a glyph of `{content}` failed to paint: {error:#}");
-            }
-        }
-    }
-}
-
-/// The color of the run holding byte `index`.
-fn color_at(runs: &[TextRun], index: usize) -> Hsla {
-    let mut end = 0;
-    runs.iter()
-        .find(|run| {
-            end += run.len;
-            index < end
-        })
-        .expect("a glyph indexes its own text")
-        .color
-}
-
-/// CoreText gives glyph offsets growing upward; the screen grows downward.
-#[cfg(target_os = "macos")]
-fn upward(y: Pixels) -> Pixels {
-    -y
-}
-
-#[cfg(not(target_os = "macos"))]
-fn upward(y: Pixels) -> Pixels {
-    y
 }
 
 /// Paints a cell's text alone at `corner`: a drawn base as shapes, its marks over a no-break space.
@@ -452,39 +461,4 @@ fn paint_cursor(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::term::frame::{Row, Underline};
-
-    #[test]
-    fn spans_count_columns_not_bytes() {
-        let style = Style {
-            fg: gpui::black(),
-            bg: None,
-            bold: false,
-            italic: false,
-            underline: Underline::None,
-            underline_color: gpui::black(),
-            strike: false,
-        };
-        let bold = Style {
-            bold: true,
-            ..style
-        };
-        let row = Row {
-            text: "中 ab".into(),
-            runs: vec![(4, style), (2, bold)],
-            alone: Vec::new(),
-        };
-        let spans: Vec<_> = spans(&row).into_iter().map(|(at, n, _)| (at, n)).collect();
-        assert_eq!(spans, [(0, 2), (2, 2)]);
-    }
-
-    #[test]
-    fn icons_live_in_the_private_use_areas() {
-        assert!(private('\u{E0B0}'));
-        assert!(private('\u{F0035}'));
-        assert!(!private('a'));
-        assert!(!private('中'));
-    }
-}
+mod tests;

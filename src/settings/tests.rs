@@ -16,6 +16,25 @@ fn a_file_without_the_session_switches_leaves_them_on() {
 }
 
 #[test]
+fn a_file_without_files_menu_leaves_it_on() {
+    let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
+    assert!(
+        settings.files_menu,
+        "the fork's Files menu stays on for settings from before the switch"
+    );
+}
+
+#[test]
+fn a_backdrop_is_acrylic_unless_named() {
+    let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
+    assert_eq!(settings.backdrop, Backdrop::Acrylic);
+    let settings: Settings =
+        serde_json::from_str(r#"{"backdrop": "mica_alt"}"#).expect("Mica Alt is a backdrop");
+    assert_eq!(settings.backdrop, Backdrop::MicaAlt);
+    assert!(serde_json::from_str::<Settings>(r#"{"backdrop": "glass"}"#).is_err());
+}
+
+#[test]
 fn a_value_out_of_range_names_its_field() {
     let settings = Settings {
         line_height: 2.5,
@@ -191,7 +210,7 @@ fn an_unknown_theme_fails() {
     };
     assert_eq!(
         settings.validate().expect_err("empty").to_string(),
-        "dark_theme is \"\", no built-in theme"
+        "dark_theme is \"\", no built-in or custom theme"
     );
     let settings = Settings {
         theme: "mocha".into(),
@@ -199,7 +218,7 @@ fn an_unknown_theme_fails() {
     };
     assert_eq!(
         settings.validate().expect_err("unknown").to_string(),
-        "theme is \"mocha\", no built-in theme"
+        "theme is \"mocha\", no built-in or custom theme"
     );
 }
 
@@ -223,4 +242,80 @@ fn start_in_a_folder_needs_one_that_exists_at_a_full_path() {
     );
     settings.start_folder.clear();
     settings.validate().expect("home, no folder");
+}
+
+#[test]
+fn a_window_place_is_kept_within_its_range() {
+    let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
+    assert_eq!(settings.window_place, None, "a first start centers");
+    let place = |display: &str, x, y| Settings {
+        window_place: Some(super::Place {
+            display: display.into(),
+            x,
+            y,
+        }),
+        ..Settings::default()
+    };
+    let error = place("d", -100.0, 40000.0)
+        .validate()
+        .expect_err("past every screen");
+    assert_eq!(
+        error.to_string(),
+        "window_place is 40000, outside -32768 to 32768"
+    );
+    let error = place("", 0.0, 0.0).validate().expect_err("no display");
+    assert_eq!(error.to_string(), "window_place names no display");
+    place("d", -2560.0, -200.0)
+        .validate()
+        .expect("a place within range");
+}
+
+#[test]
+fn a_custom_theme_is_chosen_by_its_id_and_held_once() {
+    let mine = crate::themes::CustomTheme::from_ely_dark(&[], "Mine".into());
+    let settings = Settings {
+        theme: mine.id.clone(),
+        custom_themes: vec![mine.clone()],
+        ..Settings::default()
+    };
+    settings.validate().expect("a custom theme by its id");
+    let gone = Settings {
+        custom_themes: Vec::new(),
+        ..settings.clone()
+    };
+    assert_eq!(
+        gone.validate().expect_err("no such theme").to_string(),
+        "theme is \"custom-1\", no built-in or custom theme"
+    );
+    let twice = Settings {
+        custom_themes: vec![mine.clone(), mine],
+        ..settings
+    };
+    assert_eq!(
+        twice.validate().expect_err("one id twice").to_string(),
+        "custom_themes holds custom-1 twice"
+    );
+}
+
+#[test]
+fn a_background_image_is_a_file_at_a_full_path() {
+    let image = |path: &str| Settings {
+        background_image: path.into(),
+        ..Settings::default()
+    };
+    assert_eq!(
+        image("a.png").validate().expect_err("relative").to_string(),
+        "background_image is \"a.png\", not a full path"
+    );
+    let dir = std::env::temp_dir();
+    let missing = dir.join("elyterminal-no-such-image.png");
+    let missing = missing.to_str().expect("utf-8");
+    assert!(image(missing).validate().is_err(), "no file there");
+    let folder = dir.to_str().expect("utf-8");
+    assert!(image(folder).validate().is_err(), "a folder is no picture");
+    let file = dir.join("elyterminal-background.png");
+    std::fs::write(&file, b"\x89PNG").expect("a file");
+    image(file.to_str().expect("utf-8"))
+        .validate()
+        .expect("a file at a full path");
 }

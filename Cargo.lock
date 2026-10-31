@@ -150,7 +150,7 @@ dependencies = [
 [[package]]
 name = "alacritty_terminal"
 version = "0.26.0"
-source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=4a10fb38b9497a08dbc698a787b8a0894c654f1c#4a10fb38b9497a08dbc698a787b8a0894c654f1c"
+source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=10d36c1c8873eddc0b3b3b07dd0fe09f5f8c5157#10d36c1c8873eddc0b3b3b07dd0fe09f5f8c5157"
 dependencies = [
  "base64",
  "bitflags 2.13.2",
@@ -628,6 +628,16 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "base64-simd"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339abbe78e73178762e23bea9dfd08e697eb3f3301cd4be981c0f78ba5859195"
+dependencies = [
+ "outref",
+ "vsimd",
+]
 
 [[package]]
 name = "bindgen"
@@ -1694,7 +1704,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 [[package]]
 name = "ely-gpui-component"
 version = "0.1.1"
-source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components.git?rev=4f6e80ff7bf0283170e27414cdf125b93f5b935a#4f6e80ff7bf0283170e27414cdf125b93f5b935a"
+source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components.git?rev=494c17d6e631e9e3948f26ff9306ba9c3c8ae47a#494c17d6e631e9e3948f26ff9306ba9c3c8ae47a"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1745,6 +1755,7 @@ dependencies = [
  "alacritty_terminal",
  "anyhow",
  "base64",
+ "base64-simd",
  "block",
  "chrono",
  "core-graphics 0.24.0",
@@ -1752,14 +1763,17 @@ dependencies = [
  "ely-gpui-component",
  "embed-resource",
  "env_logger",
+ "flate2",
  "foreign-types",
  "futures",
  "gethostname",
+ "getrandom 0.3.4",
  "gpui-pre",
  "gpui-pre-platform",
  "image",
  "libc",
  "log",
+ "memchr",
  "objc",
  "polling",
  "raw-window-handle",
@@ -1775,6 +1789,7 @@ dependencies = [
  "sysinfo 0.39.6",
  "toml_edit 0.22.27",
  "unicode-normalization",
+ "unicode-segmentation",
  "uuid",
  "wayland-backend",
  "wayland-client",
@@ -2618,8 +2633,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-linux"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1131746fad5c87b5de74dc9c73105655b0c820a2dd4bb247586573e7cf5720e"
+source = "git+https://github.com/ELY-Open-Source/gpui-pre-linux.git?rev=db0ff3c44e3fb1a3ee6ba6a06a44d94bf5d1ff32#db0ff3c44e3fb1a3ee6ba6a06a44d94bf5d1ff32"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -2663,8 +2677,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macos"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d756813ff1cd741a502af60fd18869e0677795936d7349642b41c49f43120c0"
+source = "git+https://github.com/ELY-Open-Source/gpui-pre-macos.git?rev=bf1ce7c431459d23522884d7e668183bd5fb9555#bf1ce7c431459d23522884d7e668183bd5fb9555"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -2876,8 +2889,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-windows"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "371f9bb13f97e3bea2f8b8e5e81232bb74d735153c244ae67f7400e743925b1c"
+source = "git+https://github.com/ELY-Open-Source/gpui-pre-windows.git?rev=8b9ce598956472934fcd54a060a9153575877475#8b9ce598956472934fcd54a060a9153575877475"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -4721,6 +4733,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "outref"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5683,9 +5701,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.41.0"
+version = "0.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c026b4444579e8d754556c6c75d040d69c4a44283cdb648ab8a8d5965c2cfa8"
+checksum = "da9bba6f3506135e120a6586df05be18b48d18896600646a4bec8f993d91a594"
 dependencies = [
  "bitflags 2.13.2",
  "fallible-iterator",
@@ -7245,6 +7263,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vsimd"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
+
+[[package]]
 name = "vswhom"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7267,8 +7291,7 @@ dependencies = [
 [[package]]
 name = "vte"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5924018406ce0063cd67f8e008104968b74b563ee1b85dde3ed1f7cb87d3dbd"
+source = "git+https://github.com/ELY-Open-Source/vte.git?rev=5142c08caf49148ece94d4ce418e54da8b9eab90#5142c08caf49148ece94d4ce418e54da8b9eab90"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.2",
