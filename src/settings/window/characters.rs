@@ -3,19 +3,19 @@ use std::time::{Duration, Instant};
 use ely_gpui_component::{
     buttons::Button,
     feedback::InlineMessage,
-    forms::{Choice, NumberInput, Select},
+    forms::{Choice, Input, NumberInput, Select, TextInput},
     i18n::text,
     primitives::Severity,
     settings::{SettingsRow, SettingsSection},
     theme::{ActiveTheme, ControlSize, Radius},
 };
 use gpui::{
-    App, Context, Div, IntoElement, ObjectFit, ParentElement, Styled, StyledImage, Task, div, img,
-    px, rems,
+    App, AppContext, Context, Div, Entity, IntoElement, ObjectFit, ParentElement, Styled,
+    StyledImage, Task, Window, div, img, px, rems,
 };
 
 use super::SettingsWindow;
-use crate::skins::{self, Layout, Library, Slot};
+use crate::skins::{self, Layout, Library, Meta, Slot};
 
 mod jobs;
 use jobs::Action;
@@ -23,6 +23,16 @@ use jobs::Action;
 pub(super) struct Fields {
     slot: Slot,
     pose: String,
+    credits: Option<Credits>,
+}
+
+/// The name, author and license an export writes, filled from the shown character.
+struct Credits {
+    name: Entity<TextInput>,
+    author: Entity<TextInput>,
+    license: Entity<TextInput>,
+    /// What the fields were last filled from.
+    filled: Option<(Slot, Option<Meta>)>,
 }
 
 impl Default for Fields {
@@ -30,6 +40,7 @@ impl Default for Fields {
         Self {
             slot: Slot::Claude,
             pose: "idle".into(),
+            credits: None,
         }
     }
 }
@@ -55,7 +66,8 @@ pub(super) fn animate(cx: &mut Context<SettingsWindow>) -> Task<()> {
 }
 
 impl SettingsWindow {
-    pub(super) fn characters_page(&self, cx: &Context<Self>) -> Div {
+    pub(super) fn characters_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+        self.fill_credits(window, cx);
         let slot = self.characters.slot;
         let pose = &self.characters.pose;
         let library = cx.global::<Library>();
@@ -122,11 +134,7 @@ impl SettingsWindow {
                 "et.characters.import",
                 Action::Import,
             ))
-            .child(button(
-                "character-export",
-                "et.characters.export",
-                Action::Export,
-            ))
+            .child(self.export_button(slot, busy, cx))
             .child(button(
                 "character-reset",
                 "et.characters.reset",
@@ -162,6 +170,7 @@ impl SettingsWindow {
                         .control(div().w(rems(18.)).child(selected)),
                 ),
             )
+            .child(self.credits_section(cx))
             .child(actions)
             .children(
                 library
@@ -174,6 +183,13 @@ impl SettingsWindow {
                     .notice
                     .map(|key| InlineMessage::new(Severity::Success, word(key))),
             )
+            .children((!library.skipped.is_empty()).then(|| {
+                let actions = library.skipped.join(", ");
+                InlineMessage::new(
+                    Severity::Warning,
+                    text(cx, "et.characters.skipped", &[("actions", &actions)]),
+                )
+            }))
             .child(
                 div()
                     .flex()
@@ -219,6 +235,104 @@ impl SettingsWindow {
                 .child(word("et.characters.limits")),
         )
     }
+}
+
+impl SettingsWindow {
+    /// Fills the credit fields when the shown character or its pack's credits change.
+    fn fill_credits(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let credits = self.characters.credits.get_or_insert_with(|| {
+            let field = |most, window: &mut Window, cx: &mut Context<Self>| {
+                cx.new(|cx| TextInput::new(window, cx).max_len(most))
+            };
+            Credits {
+                name: field(64, window, cx),
+                author: field(64, window, cx),
+                license: field(64, window, cx),
+                filled: None,
+            }
+        });
+        let slot = self.characters.slot;
+        let custom = skins::custom(slot, cx);
+        let now = (slot, custom.and_then(|skin| skin.meta.clone()));
+        if credits.filled.as_ref() == Some(&now) {
+            return;
+        }
+        let (name, author, license) = match &now.1 {
+            Some(meta) => (
+                meta.name.clone(),
+                meta.author.clone(),
+                meta.license.clone().unwrap_or_default(),
+            ),
+            None => (
+                character_name(slot, cx),
+                if custom.is_some() {
+                    String::new()
+                } else {
+                    "Ely Tea Party".into()
+                },
+                String::new(),
+            ),
+        };
+        for (input, value) in [
+            (&credits.name, name),
+            (&credits.author, author),
+            (&credits.license, license),
+        ] {
+            input.update(cx, |input, cx| input.set_text(value, cx));
+        }
+        credits.filled = Some(now);
+    }
+
+    fn credits_section(&self, cx: &Context<Self>) -> SettingsSection {
+        let word = |key| text(cx, key, &[]);
+        let credits = self.characters.credits.as_ref().expect("credits filled");
+        let field = |input: &Entity<TextInput>| div().w(rems(18.)).child(Input::new(input));
+        SettingsSection::new(word("et.characters.credits"))
+            .row(
+                SettingsRow::new(word("et.characters.name"))
+                    .description(word("et.characters.credits_hint"))
+                    .control(field(&credits.name)),
+            )
+            .row(SettingsRow::new(word("et.characters.author")).control(field(&credits.author)))
+            .row(
+                SettingsRow::new(word("et.characters.license"))
+                    .description(word("et.characters.license_hint"))
+                    .control(field(&credits.license)),
+            )
+    }
+
+    /// Export writes the typed credits; a pack's own id and links stay while its author does.
+    fn export_button(&self, slot: Slot, busy: bool, cx: &Context<Self>) -> Button {
+        let credits = self.characters.credits.as_ref().expect("credits filled");
+        let fields = [&credits.name, &credits.author, &credits.license].map(Entity::clone);
+        Button::new("character-export", text(cx, "et.characters.export", &[]))
+            .size(ControlSize::Sm)
+            .disabled(busy)
+            .on_click(move |_, _, cx| {
+                let [name, author, license] = fields
+                    .each_ref()
+                    .map(|input| input.read(cx).text().trim().to_string());
+                let kept = skins::custom(slot, cx)
+                    .and_then(|skin| skin.meta.clone())
+                    .filter(|meta| meta.author == author);
+                let meta = Meta {
+                    id: kept.as_ref().and_then(|meta| meta.id.clone()),
+                    name,
+                    author,
+                    description: kept.as_ref().and_then(|meta| meta.description.clone()),
+                    license: (!license.is_empty()).then_some(license),
+                    homepage: kept.and_then(|meta| meta.homepage),
+                };
+                jobs::start(slot, Action::Export(meta), cx)
+            })
+    }
+}
+
+fn character_name(slot: Slot, cx: &App) -> String {
+    slot.kind().map_or_else(
+        || text(cx, "et.mascot.whale", &[]).to_string(),
+        |kind| kind.name().to_string(),
+    )
 }
 
 fn preview(slot: Slot, pose: &str, cx: &App) -> Div {

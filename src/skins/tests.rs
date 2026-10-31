@@ -79,17 +79,13 @@ fn packs_survive_original_file_removal_and_preserve_all_actions_and_layout() {
     .unwrap();
     files::save(&dir.0, Slot::Whale, &skin).unwrap();
     std::fs::remove_file(original).unwrap();
-    let loaded = files::read_pack(&files::path(&dir.0, Slot::Whale), Slot::Whale).unwrap();
+    let (loaded, _) = files::read_pack(&files::path(&dir.0, Slot::Whale), Slot::Whale).unwrap();
     assert_eq!(loaded.bytes, skin.bytes);
     assert_eq!(loaded.layout, layout);
     let exported = dir.0.join("share.elyskin");
-    files::atomic_write(
-        &exported,
-        &files::document(Slot::Whale, &loaded.bytes, loaded.layout).unwrap(),
-    )
-    .unwrap();
+    files::atomic_write(&exported, &files::document(Slot::Whale, &loaded).unwrap()).unwrap();
     assert_eq!(
-        files::read_pack(&exported, Slot::Whale).unwrap().bytes,
+        files::read_pack(&exported, Slot::Whale).unwrap().0.bytes,
         skin.bytes
     );
     assert!(files::read_pack(&exported, Slot::Claude).is_err());
@@ -105,7 +101,7 @@ fn every_builtin_character_exports_to_an_importable_pack() {
         let images = crate::agents::assets::builtin(slot);
         let skin = Skin::new(slot, images, Layout::default()).unwrap();
         files::save(&dir.0, slot, &skin).unwrap();
-        let loaded = files::read_pack(&files::path(&dir.0, slot), slot).unwrap();
+        let (loaded, _) = files::read_pack(&files::path(&dir.0, slot), slot).unwrap();
         assert_eq!(loaded.bytes.len(), slot.poses().len());
     }
 }
@@ -151,7 +147,7 @@ fn invalid_images_actions_layouts_and_versions_leave_saved_skin_intact() {
         .as_object_mut()
         .unwrap()
         .remove("../outside");
-    document["version"] = 2.into();
+    document["version"] = 3.into();
     std::fs::write(&invalid, serde_json::to_vec(&document).unwrap()).unwrap();
     assert!(files::read_pack(&invalid, Slot::Claude).is_err());
     assert_eq!(std::fs::read(path).unwrap(), saved);

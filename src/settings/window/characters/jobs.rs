@@ -7,22 +7,24 @@ use std::{
 use ely_gpui_component::i18n::text;
 use gpui::{App, BorrowAppContext, PathPromptOptions};
 
-use crate::skins::{self, Layout, Library, Skin, Slot, files};
+use crate::skins::{self, Layout, Library, Meta, Skin, Slot, files};
 
 #[derive(Clone)]
 pub(super) enum Action {
     Image,
     Pose(String),
     Import,
-    Export,
+    Export(Meta),
     Reset,
     Layout(Layout),
 }
 
 enum Done {
-    Applied(Arc<Skin>),
+    /// The skin applied, and the actions its pack held that were skipped.
+    Applied(Arc<Skin>, Vec<String>),
     Reset,
-    Exported,
+    /// The credits went into the custom skin too, when there is one.
+    Exported(Option<Arc<Skin>>),
 }
 
 pub(super) fn start(slot: Slot, action: Action, cx: &mut App) {
@@ -34,6 +36,7 @@ pub(super) fn start(slot: Slot, action: Action, cx: &mut App) {
         library.busy = true;
         library.error = None;
         library.notice = None;
+        library.skipped.clear();
     });
     log::info!("characters: operation started for {}", slot.id());
     let pick = match action {
@@ -55,7 +58,7 @@ pub(super) fn start(slot: Slot, action: Action, cx: &mut App) {
         }
         _ => None,
     };
-    let export = matches!(action, Action::Export).then(|| {
+    let export = matches!(action, Action::Export(_)).then(|| {
         let home = dirs::home_dir().unwrap_or_else(std::env::temp_dir);
         cx.prompt_for_new_path(&home, Some(&format!("{}.elyskin", slot.id())))
     });
@@ -74,7 +77,7 @@ pub(super) fn start(slot: Slot, action: Action, cx: &mut App) {
             Ok(None)
                 if matches!(
                     action,
-                    Action::Image | Action::Pose(_) | Action::Import | Action::Export
+                    Action::Image | Action::Pose(_) | Action::Import | Action::Export(_)
                 ) =>
             {
                 cx.update(|cx| cx.update_global::<Library, _>(|library, _| library.busy = false));
@@ -108,44 +111,49 @@ fn execute(
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("skin: no file selected"))
     };
-    let skin = match action {
+    let first = || anyhow::anyhow!("skin: import a character first");
+    let (skin, skipped) = match action {
         Action::Reset => {
             files::reset(folder, slot)?;
             return Ok(Done::Reset);
         }
-        Action::Export => {
-            let (images, layout) = existing
-                .map(|skin| (skin.bytes.clone(), skin.layout))
-                .unwrap_or_else(|| {
-                    let mut layout = Layout::default();
-                    if slot == Slot::Whale {
-                        layout.y = 30.0;
-                    }
-                    (crate::agents::assets::builtin(slot), layout)
-                });
-            files::atomic_write(path()?, &files::document(slot, &images, layout)?)?;
-            return Ok(Done::Exported);
+        Action::Export(meta) => {
+            meta.validate()?;
+            let target = path()?;
+            let Some(existing) = existing else {
+                let mut layout = Layout::default();
+                if slot == Slot::Whale {
+                    layout.y = 30.0;
+                }
+                let builtin = Skin::new(slot, crate::agents::assets::builtin(slot), layout)?;
+                let builtin = builtin.with_meta(Some(meta));
+                files::atomic_write(target, &files::document(slot, &builtin)?)?;
+                return Ok(Done::Exported(None));
+            };
+            let skin = Skin::clone(existing).with_meta(Some(meta));
+            files::atomic_write(target, &files::document(slot, &skin)?)?;
+            files::save(folder, slot, &skin)?;
+            return Ok(Done::Exported(Some(Arc::new(skin))));
         }
         Action::Import => files::read_pack(path()?, slot)?,
-        Action::Image => Skin::new(
-            slot,
-            BTreeMap::from([("idle".into(), files::read_image(path()?)?)]),
-            Layout::default(),
-        )?,
+        Action::Image => {
+            let idle = BTreeMap::from([("idle".into(), files::read_image(path()?)?)]);
+            let meta = existing.and_then(|skin| skin.meta.clone());
+            let skin = Skin::new(slot, idle, Layout::default())?.with_meta(meta);
+            (skin, Vec::new())
+        }
         Action::Pose(pose) => {
-            let existing =
-                existing.ok_or_else(|| anyhow::anyhow!("skin: import a character first"))?;
+            let existing = existing.ok_or_else(first)?;
             let mut images = existing.bytes.clone();
             images.insert(pose, files::read_image(path()?)?);
-            Skin::new(slot, images, existing.layout)?
+            let skin = Skin::new(slot, images, existing.layout)?.with_meta(existing.meta.clone());
+            (skin, Vec::new())
         }
-        Action::Layout(layout) => existing
-            .ok_or_else(|| anyhow::anyhow!("skin: import a character first"))?
-            .with_layout(layout)?,
+        Action::Layout(layout) => (existing.ok_or_else(first)?.with_layout(layout)?, Vec::new()),
     };
     skins::room(&active, slot, &skin)?;
     files::save(folder, slot, &skin)?;
-    Ok(Done::Applied(Arc::new(skin)))
+    Ok(Done::Applied(Arc::new(skin), skipped))
 }
 
 fn finish(slot: Slot, result: anyhow::Result<Done>, cx: &mut App) {
@@ -154,15 +162,21 @@ fn finish(slot: Slot, result: anyhow::Result<Done>, cx: &mut App) {
         match result {
             Ok(done) => {
                 library.notice = Some(match done {
-                    Done::Applied(skin) => {
+                    Done::Applied(skin, skipped) => {
                         library.active.insert(slot, skin);
+                        library.skipped = skipped;
                         "et.characters.applied"
                     }
                     Done::Reset => {
                         library.active.remove(&slot);
                         "et.characters.restored"
                     }
-                    Done::Exported => "et.characters.exported",
+                    Done::Exported(skin) => {
+                        if let Some(skin) = skin {
+                            library.active.insert(slot, skin);
+                        }
+                        "et.characters.exported"
+                    }
                 });
                 log::info!("characters: operation completed for {}", slot.id());
             }
@@ -198,7 +212,7 @@ mod tests {
             active.clone(),
         )
         .unwrap();
-        let Done::Applied(skin) = applied else {
+        let Done::Applied(skin, _) = applied else {
             panic!("applied skin")
         };
         active.insert(Slot::Claude, skin);
@@ -210,24 +224,48 @@ mod tests {
             active.clone(),
         )
         .unwrap();
-        let Done::Applied(skin) = applied else {
+        let Done::Applied(skin, _) = applied else {
             panic!("applied pose")
         };
         assert!(skin.bytes.contains_key("thinking"));
         active.insert(Slot::Claude, skin);
         std::fs::remove_file(source).unwrap();
         let share = root.join("share.elyskin");
-        assert!(matches!(
+        let meta = Meta {
+            id: Some("tester.orange".into()),
+            name: "Orange".into(),
+            author: "Tester".into(),
+            description: None,
+            license: Some("CC-BY-4.0".into()),
+            homepage: None,
+        };
+        let unnamed = Meta {
+            author: " ".into(),
+            ..meta.clone()
+        };
+        assert!(
             execute(
                 &root,
                 Slot::Claude,
-                Action::Export,
+                Action::Export(unnamed),
                 Some(share.clone()),
                 active.clone()
             )
-            .unwrap(),
-            Done::Exported
-        ));
+            .is_err()
+        );
+        let exported = execute(
+            &root,
+            Slot::Claude,
+            Action::Export(meta.clone()),
+            Some(share.clone()),
+            active.clone(),
+        )
+        .unwrap();
+        let Done::Exported(Some(skin)) = exported else {
+            panic!("exported with credits")
+        };
+        assert_eq!(skin.meta.as_ref(), Some(&meta));
+        active.insert(Slot::Claude, skin);
         let applied = execute(
             &root,
             Slot::Gpt,
@@ -236,10 +274,11 @@ mod tests {
             active.clone(),
         )
         .unwrap();
-        let Done::Applied(skin) = applied else {
+        let Done::Applied(skin, _) = applied else {
             panic!("imported skin")
         };
         assert_eq!(skin.bytes, active[&Slot::Claude].bytes);
+        assert_eq!(skin.meta.as_ref(), Some(&meta));
         active.insert(Slot::Gpt, skin);
         let saved = std::fs::read(files::path(&root, Slot::Gpt)).unwrap();
         std::fs::write(&share, b"broken pack").unwrap();

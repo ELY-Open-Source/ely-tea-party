@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://elyteaparty.com/schemas/elyskin-2.json",
+  "title": "Ely Tea Party character pack, version 2",
+  "description": "Structural rules for a .elyskin a writer emits; docs/elyskin.md holds the rules a schema cannot state. Readers are more lenient: they ignore unknown fields and skip unknown actions.",
+  "type": "object",
+  "required": ["format", "version", "target", "meta", "images"],
+  "properties": {
+    "format": { "const": "elyskin" },
+    "version": { "const": 2 },
+    "target": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$" },
+    "meta": { "$ref": "#/$defs/meta" },
+    "layout": { "$ref": "#/$defs/layout" },
+    "images": { "$ref": "#/$defs/images" }
+  },
+  "patternProperties": { "^x-": true },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "target": { "const": "whale" } } },
+      "then": {
+        "properties": {
+          "images": {
+            "propertyNames": {
+              "enum": ["idle", "calm", "working", "working-special", "working-slack", "thinking", "needs_input", "sleeping", "walking", "walking-left", "puzzled-up", "puzzled-down"]
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "images": {
+            "propertyNames": {
+              "enum": ["idle", "working", "working-research", "working-special", "working-slack", "thinking", "needs_input", "sleeping"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
+    },
+    "meta": {
+      "type": "object",
+      "required": ["name", "author"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 64, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$" },
+        "name": { "$ref": "#/$defs/line" },
+        "author": { "$ref": "#/$defs/line" },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^[^\\u0000-\\u0009\\u000B-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*$"
+        },
+        "license": { "allOf": [{ "$ref": "#/$defs/line" }, { "pattern": "^[A-Za-z0-9 .+()-]+$" }] },
+        "homepage": { "type": "string", "maxLength": 200, "pattern": "^https://[^\\s\\u0000-\\u001F\\u007F-\\u009F]+$" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "scale": { "type": "number", "minimum": 0.5, "maximum": 1 },
+        "x": { "type": "number", "minimum": -30, "maximum": 30 },
+        "y": { "type": "number", "minimum": -30, "maximum": 30 }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "images": {
+      "type": "object",
+      "required": ["idle"],
+      "maxProperties": 64,
+      "propertyNames": { "pattern": "^[a-z0-9_-]{1,32}$" },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 4,
+        "maxLength": 11184812,
+        "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+      }
+    }
+  }
+}

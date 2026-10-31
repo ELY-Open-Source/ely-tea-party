@@ -8,23 +8,12 @@ use std::{
 
 use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::{Deserialize, Serialize};
 
-use super::{Layout, Skin, Slot};
+use super::{Skin, Slot, pack};
 
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PACK_BYTES: usize = 32 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 44 * 1024 * 1024;
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Pack {
-    version: u32,
-    target: Slot,
-    #[serde(default)]
-    layout: Layout,
-    images: BTreeMap<String, String>,
-}
 
 pub fn path(folder: &Path, slot: Slot) -> PathBuf {
     folder.join(format!("{}.elyskin", slot.id()))
@@ -49,29 +38,11 @@ fn read_limited(path: &Path, limit: usize) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub fn read_pack(path: &Path, slot: Slot) -> anyhow::Result<Skin> {
-    let pack: Pack = serde_json::from_slice(&read_limited(path, MAX_DOCUMENT_BYTES)?)
-        .context("skin: invalid character pack")?;
-    anyhow::ensure!(
-        pack.version == 1,
-        "skin: unsupported pack version {}",
-        pack.version
-    );
-    anyhow::ensure!(
-        (pack.target == Slot::Whale) == (slot == Slot::Whale),
-        "skin: this pack is for {}, select that character first",
-        pack.target.id()
-    );
-    anyhow::ensure!(
-        pack.images.len() <= slot.poses().len(),
-        "skin: too many actions"
-    );
+/// Reads the pack at `path` for `slot`; the actions this build skipped come back beside it.
+pub fn read_pack(path: &Path, slot: Slot) -> anyhow::Result<(Skin, Vec<String>)> {
+    let read = pack::read(&read_limited(path, MAX_DOCUMENT_BYTES)?, slot)?;
     let mut images = BTreeMap::new();
-    for (pose, encoded) in pack.images {
-        anyhow::ensure!(
-            slot.poses().contains(&pose.as_str()),
-            "skin: unknown action {pose}"
-        );
+    for (pose, encoded) in read.images {
         anyhow::ensure!(
             encoded.len() <= MAX_IMAGE_BYTES.div_ceil(3) * 4,
             "skin: {pose} exceeds 8 MiB"
@@ -84,31 +55,23 @@ pub fn read_pack(path: &Path, slot: Slot) -> anyhow::Result<Skin> {
                 .into(),
         );
     }
-    Skin::new(slot, images, pack.layout)
+    let skin = Skin::new(slot, images, read.layout)?.with_meta(read.meta);
+    Ok((skin, read.skipped))
 }
 
-pub fn document(
-    slot: Slot,
-    images: &BTreeMap<String, Arc<[u8]>>,
-    layout: Layout,
-) -> anyhow::Result<Vec<u8>> {
-    Ok(serde_json::to_vec(&Pack {
-        version: 1,
-        target: slot,
-        layout,
-        images: images
-            .iter()
-            .map(|(name, bytes)| (name.clone(), STANDARD.encode(bytes)))
-            .collect(),
-    })?)
+/// `skin`'s images, layout and credits as a pack for `slot`.
+pub fn document(slot: Slot, skin: &Skin) -> anyhow::Result<Vec<u8>> {
+    let images = skin
+        .bytes
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), STANDARD.encode(bytes)))
+        .collect();
+    pack::write(slot, skin.meta.as_ref(), skin.layout, images)
 }
 
 pub fn save(folder: &Path, slot: Slot, skin: &Skin) -> anyhow::Result<()> {
     fs::create_dir_all(folder).context("skin: cannot create character folder")?;
-    atomic_write(
-        &path(folder, slot),
-        &document(slot, &skin.bytes, skin.layout)?,
-    )
+    atomic_write(&path(folder, slot), &document(slot, skin)?)
 }
 
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
