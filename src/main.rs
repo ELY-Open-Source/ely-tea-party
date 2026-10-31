@@ -2,10 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use ely_tea_party::{
-    app,
+    app, handoff,
     settings::{self, SettingsStore, StartIn},
+    skins,
     term::shell::{ShellIntegration, Start, launch},
 };
+use futures::{StreamExt, channel::mpsc::unbounded};
 use gpui::App;
 
 /// A Linux app with no display server fails at start instead of running headless.
@@ -58,17 +60,40 @@ fn main() {
     if let Some(code) = command() {
         std::process::exit(code);
     }
+    let links = handoff::links();
+    #[cfg(not(target_os = "macos"))]
+    if !links.is_empty() && handoff::forward(&links) {
+        return;
+    }
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("ely_tea_party=info,ely_gpui_component=info"),
     )
     .init();
-    application()
-        .with_assets(ely_gpui_component::Assets)
-        .run(|cx: &mut App| {
-            ely_gpui_component::init(cx).expect("Ely failed to start");
-            if let Err(error) = run(cx) {
-                log::error!("{error:#}");
-                std::process::exit(1);
+    let (sender, mut received) = unbounded();
+    for link in links {
+        sender.unbounded_send(link).expect("the receiver is held");
+    }
+    let application = application().with_assets(ely_gpui_component::Assets);
+    let opened = sender.clone();
+    application.on_open_urls(move |urls| {
+        for url in urls {
+            if opened.unbounded_send(url).is_err() {
+                log::error!("handoff: a link came after the app stopped hearing them");
             }
-        });
+        }
+    });
+    application.run(move |cx: &mut App| {
+        ely_gpui_component::init(cx).expect("Ely failed to start");
+        if let Err(error) = run(cx) {
+            log::error!("{error:#}");
+            std::process::exit(1);
+        }
+        handoff::listen(sender);
+        cx.spawn(async move |cx| {
+            while let Some(link) = received.next().await {
+                cx.update(|cx| skins::market::open(&link, cx));
+            }
+        })
+        .detach();
+    });
 }

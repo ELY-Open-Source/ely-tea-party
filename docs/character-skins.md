@@ -12,6 +12,12 @@ Changes apply immediately. Imported files are copied into the app's configuratio
 
 Custom agent skins hide the built-in character's accessory overlay. The app icon and Dock artwork remain application branding.
 
+## Skin market
+
+[elyteaparty.com/skins](https://elyteaparty.com/skins/) lists packs people share. **Install in Ely Tea Party** on a skin's page opens the app (0.3.18 or later) on **Settings → Characters**, downloads the pack, checks it against the market's SHA-256 and decodes it, then offers it for the character it was made for; choose another agent above if you like, and press **Install**. Nothing changes until you do. A mascot pack fits only the whale girl. On Linux the link needs the DEB or RPM's desktop entry; on Windows the app registers the link for your account each time it starts.
+
+To share a skin, fill in **Pack info**, export it, and upload the `.elyskin` on the market's upload page.
+
 ## Mascot placement
 
 The mascot keeps its existing walking, dragging, waiting and sleeping behavior. A missing walking or looking animation uses the custom idle image.

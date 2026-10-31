@@ -13,8 +13,8 @@ use ely_gpui_component::{
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Task, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
-    actions, div, prelude::FluentBuilder, px, size,
+    Subscription, Task, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowHandle,
+    WindowOptions, actions, div, prelude::FluentBuilder, px, size,
 };
 
 use super::{Settings, SettingsStore};
@@ -23,6 +23,7 @@ use crate::{app::APP_ID, menus, term::BLINK, update::Updates};
 mod appearance;
 mod butler;
 mod characters;
+pub use characters::open_characters;
 #[cfg(unix)]
 mod hooks;
 mod terminal;
@@ -51,11 +52,11 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new(open, OpenSettings, None),
         KeyBinding::new(close, CloseSettings, Some(CONTEXT)),
     ]);
-    cx.on_action(|_: &OpenSettings, cx| open_window(cx));
+    cx.on_action(|_: &OpenSettings, cx| _ = open_window(cx));
 }
 
 /// Opens the settings window, or brings the open one forward.
-fn open_window(cx: &mut App) {
+fn open_window(cx: &mut App) -> Option<WindowHandle<SettingsWindow>> {
     let open = cx
         .windows()
         .into_iter()
@@ -66,7 +67,7 @@ fn open_window(cx: &mut App) {
         if let Err(error) = forward {
             log::error!("settings: the window did not come forward: {error:#}");
         }
-        return;
+        return Some(window);
     }
     let bounds = Bounds::centered(None, size(px(900.0), px(640.0)), cx);
     let options = WindowOptions {
@@ -84,8 +85,14 @@ fn open_window(cx: &mut App) {
         window.set_app_id(APP_ID);
         cx.new(|cx| SettingsWindow::new(window, cx))
     }) {
-        Ok(_) => log::info!("settings: the window opens"),
-        Err(error) => log::error!("settings: the window did not open: {error:#}"),
+        Ok(window) => {
+            log::info!("settings: the window opens");
+            Some(window)
+        }
+        Err(error) => {
+            log::error!("settings: the window did not open: {error:#}");
+            None
+        }
     }
 }
 
@@ -131,6 +138,7 @@ pub struct SettingsWindow {
     _hooks: Subscription,
     _blink: Task<()>,
     _characters: Subscription,
+    _market: Subscription,
     _preview: Task<()>,
 }
 
@@ -217,6 +225,7 @@ impl SettingsWindow {
             _hooks: cx.observe_global::<hooks::Installation>(|_, cx| cx.notify()),
             _blink: Self::blink(cx),
             _characters: cx.observe_global::<crate::skins::Library>(|_, cx| cx.notify()),
+            _market: cx.observe_global::<crate::skins::market::Market>(|_, cx| cx.notify()),
             _preview: characters::animate(cx),
         }
     }

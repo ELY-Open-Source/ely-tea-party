@@ -2,8 +2,9 @@
 Type=Application
 Name=Ely Tea Party
 Comment=A terminal on GPUI and Ely
-Exec=ely-tea-party
+Exec=ely-tea-party %u
 Icon=net.toddzheng.ely-tea-party
 Terminal=false
 Categories=System;TerminalEmulator;
+MimeType=x-scheme-handler/elyteaparty;
 StartupWMClass=net.toddzheng.ely-tea-party

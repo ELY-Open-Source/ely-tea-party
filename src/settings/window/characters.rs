@@ -18,6 +18,7 @@ use super::SettingsWindow;
 use crate::skins::{self, Layout, Library, Meta, Slot};
 
 mod jobs;
+mod offer;
 use jobs::Action;
 
 pub(super) struct Fields {
@@ -42,6 +43,31 @@ impl Default for Fields {
             pose: "idle".into(),
             credits: None,
         }
+    }
+}
+
+impl Fields {
+    pub(super) fn show(&mut self, slot: Slot) {
+        self.slot = slot;
+        self.pose = "idle".into();
+    }
+}
+
+/// Opens the settings on the Characters page, showing `slot` when given: where a market link's pack lands.
+pub fn open_characters(slot: Option<Slot>, cx: &mut App) {
+    cx.activate(true);
+    let Some(window) = super::open_window(cx) else {
+        return;
+    };
+    let shown = window.update(cx, |this, _, cx| {
+        this.section = "characters".into();
+        if let Some(slot) = slot {
+            this.characters.show(slot);
+        }
+        cx.notify();
+    });
+    if let Err(error) = shown {
+        log::error!("settings: the Characters page did not open: {error:#}");
     }
 }
 
@@ -163,6 +189,7 @@ impl SettingsWindow {
                     .text_color(cx.theme().colors.fg_muted)
                     .child(word("et.characters.hint")),
             )
+            .children(offer::section(slot, cx))
             .child(
                 SettingsSection::new(word("et.characters.title")).row(
                     SettingsRow::new(word("et.characters.choose"))

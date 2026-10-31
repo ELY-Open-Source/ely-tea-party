@@ -99,3 +99,5 @@ A writer MUST emit only the fields of the version it writes, plus extension fiel
 ## For the market
 
 The market SHOULD accept only version 2 uploads that pass `docs/elyskin.schema.json` and every rule above that a schema cannot state: decoded image formats and limits, the 32 MiB total, repeated keys and the 44 MiB document size. It SHOULD record each pack's SHA-256, serve the uploaded bytes unchanged, and state that version 2 packs need Ely Tea Party 0.3.17 or later. A pack is data: it holds no scripts or file paths, and the app never runs or follows anything in it.
+
+A market page MAY link `elyteaparty://skin/<id>`, where `<id>` follows `meta.id`'s rule. Ely Tea Party 0.3.18 and later answer it by fetching `https://elyteaparty.com/api/skins/<id>`, a JSON object whose `skin` holds `id`, `name`, `author`, `target`, `sha256` and `size`, then the pack from `/api/skins/<id>/pack`, and install it only after its SHA-256 matches and the user confirms.
