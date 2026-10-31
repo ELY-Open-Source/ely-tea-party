@@ -414,7 +414,7 @@ impl Render for SettingsWindow {
                 self.appearance(window, cx).into_any_element()
             }
             "terminal" => self.terminal(cx).into_any_element(),
-            "characters" => self.characters_page(cx).into_any_element(),
+            "characters" => self.characters_page(window, cx).into_any_element(),
             "butler" => self.butler_page(window, cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };

@@ -26,6 +26,22 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "Skin exported. Share the .elyskin file to share this character.",
     ),
     (
+        "et.characters.skipped",
+        "Skipped actions this version doesn't know: {actions}. Update Ely Tea Party to use them.",
+    ),
+    ("et.characters.credits", "Pack info"),
+    ("et.characters.name", "Name"),
+    (
+        "et.characters.credits_hint",
+        "Written into exported .elyskin files and shown when others import them",
+    ),
+    ("et.characters.author", "Author"),
+    ("et.characters.license", "License"),
+    (
+        "et.characters.license_hint",
+        "Optional SPDX identifier, for example CC-BY-4.0",
+    ),
+    (
         "et.characters.fallback",
         "This action uses your custom idle image.",
     ),

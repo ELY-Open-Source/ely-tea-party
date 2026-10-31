@@ -37,20 +37,12 @@ The preview shows the image inside a 112-point square. Size ranges from 50% to 1
 
 Validation and decoding run in the background when importing. Files are replaced atomically after validation. On startup, damaged saved packs are reported in logs and on the Characters page, and the affected slot shows its built-in character until repaired or reset.
 
+## Pack info
+
+Before exporting, fill in **Pack info**: a name and an author, and optionally an SPDX license such as `CC-BY-4.0`. They are written into the exported file and kept with your custom skin. Importing a pack fills them from the pack. Built-in characters start with their own name and "Ely Tea Party" as author.
+
 ## Pack format
 
-A `.elyskin` is a UTF-8 JSON file. It embeds image bytes directly, so it contains no executable scripts or filesystem references. Exporting an existing character is the easiest way to create a template; individual actions can then be replaced in the settings UI.
+A `.elyskin` is a UTF-8 JSON file that embeds its images, so it contains no executable scripts or filesystem references. The full specification, with its compatibility rules, is [elyskin.md](elyskin.md); [elyskin.schema.json](elyskin.schema.json) validates a pack's structure.
 
-```json
-{
-  "version": 1,
-  "target": "claude",
-  "layout": { "scale": 1.0, "x": 0.0, "y": 0.0 },
-  "images": {
-    "idle": "BASE64_ENCODED_IMAGE_BYTES",
-    "working": "BASE64_ENCODED_IMAGE_BYTES"
-  }
-}
-```
-
-`layout` is optional and defaults to the values above. It affects the whale mascot. Unknown fields, unsupported versions, unknown actions and malformed images are rejected. Exported packs retain the original image bytes; resizing is only applied to the display cache.
+Exports are version 2 and need Ely Tea Party 0.3.17 or later. Version 1 packs from 0.3.12 to 0.3.16 still import. A pack made by a later version imports too: fields and actions this version does not know are skipped, and the Characters page lists the skipped actions.

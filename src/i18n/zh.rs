@@ -25,6 +25,22 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.characters.exported",
         "角色包已导出，分享 .elyskin 文件即可分享这套角色。",
     ),
+    (
+        "et.characters.skipped",
+        "已跳过此版本不认识的动作：{actions}。升级 Ely Tea Party 后即可使用。",
+    ),
+    ("et.characters.credits", "角色包信息"),
+    ("et.characters.name", "名称"),
+    (
+        "et.characters.credits_hint",
+        "会写入导出的 .elyskin 文件，别人导入时能看到",
+    ),
+    ("et.characters.author", "作者"),
+    ("et.characters.license", "许可证"),
+    (
+        "et.characters.license_hint",
+        "可选，填 SPDX 标识，例如 CC-BY-4.0",
+    ),
     ("et.characters.fallback", "当前动作使用你的自定义待机素材。"),
     (
         "et.characters.pose_hint",

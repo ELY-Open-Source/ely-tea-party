@@ -9,10 +9,12 @@ use crate::agents::{Kind, Pose};
 
 mod decode;
 pub mod files;
+pub mod pack;
 #[cfg(test)]
 mod tests;
 
 pub use decode::Clip;
+pub use pack::Meta;
 
 pub const MASCOT_POSES: &[&str] = &[
     "calm",
@@ -136,8 +138,11 @@ impl Layout {
     }
 }
 
+#[derive(Clone)]
 pub struct Skin {
     pub layout: Layout,
+    /// The credits a v2 pack carried, or the user gave.
+    pub meta: Option<Meta>,
     pub bytes: BTreeMap<String, Arc<[u8]>>,
     clips: BTreeMap<String, Arc<Clip>>,
     pub memory: usize,
@@ -183,6 +188,7 @@ impl Skin {
         Ok(Self {
             bytes,
             layout,
+            meta: None,
             clips,
             memory,
             start: Instant::now(),
@@ -194,10 +200,15 @@ impl Skin {
         clip.at(now.saturating_duration_since(self.start), seed)
     }
 
+    pub fn with_meta(self, meta: Option<Meta>) -> Self {
+        Self { meta, ..self }
+    }
+
     pub fn with_layout(&self, layout: Layout) -> anyhow::Result<Self> {
         layout.validate()?;
         Ok(Self {
             layout,
+            meta: self.meta.clone(),
             bytes: self.bytes.clone(),
             clips: self.clips.clone(),
             memory: self.memory,
@@ -212,6 +223,8 @@ pub struct Library {
     pub busy: bool,
     pub error: Option<String>,
     pub notice: Option<&'static str>,
+    /// Actions the last import held that this build does not know.
+    pub skipped: Vec<String>,
 }
 
 impl Global for Library {}
@@ -246,7 +259,7 @@ fn load(folder: &std::path::Path) -> Library {
         if !path.exists() {
             continue;
         }
-        let loaded = files::read_pack(&path, slot).and_then(|skin| {
+        let loaded = files::read_pack(&path, slot).and_then(|(skin, _)| {
             room(&library.active, slot, &skin)?;
             Ok(skin)
         });
