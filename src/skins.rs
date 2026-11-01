@@ -9,6 +9,7 @@ use crate::agents::{Kind, Pose};
 
 mod decode;
 pub mod files;
+pub mod market;
 pub mod pack;
 #[cfg(test)]
 mod tests;
@@ -235,6 +236,7 @@ pub fn folder() -> anyhow::Result<PathBuf> {
 
 pub fn init(cx: &mut App) -> anyhow::Result<()> {
     let folder = folder()?;
+    cx.set_global(market::Market::default());
     cx.set_global(Library {
         busy: true,
         ..Library::default()

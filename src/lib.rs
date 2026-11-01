@@ -7,6 +7,7 @@ pub mod curl;
 pub mod dock;
 pub mod files;
 pub mod git;
+pub mod handoff;
 pub mod i18n;
 pub mod memory;
 pub mod menus;

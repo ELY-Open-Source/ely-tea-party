@@ -483,4 +483,13 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.clipboard.deny", "Deny"),
     ("et.clipboard.always", "Allow for this session"),
     ("et.clipboard.allow", "Allow"),
+    ("et.market.title", "Skin market"),
+    ("et.market.fetching", "Fetching {id}…"),
+    ("et.market.offer", "{name} by {author}"),
+    ("et.market.to", "Goes to {character}, chosen above."),
+    ("et.market.whale_only", "Fits the whale girl alone."),
+    ("et.market.agent_only", "Fits agents, not the whale."),
+    ("et.market.install", "Install"),
+    ("et.market.dismiss", "Dismiss"),
+    ("et.market.failed", "Skin market: {error}"),
 ];

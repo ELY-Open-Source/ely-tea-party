@@ -14,6 +14,8 @@ pub(super) enum Action {
     Image,
     Pose(String),
     Import,
+    /// A pack the skin market sent, already fetched and checked.
+    Install(PathBuf),
     Export(Meta),
     Reset,
     Layout(Layout),
@@ -136,6 +138,13 @@ fn execute(
             return Ok(Done::Exported(Some(Arc::new(skin))));
         }
         Action::Import => files::read_pack(path()?, slot)?,
+        Action::Install(fetched) => {
+            let read = files::read_pack(&fetched, slot)?;
+            if let Err(error) = std::fs::remove_file(&fetched) {
+                log::error!("market: cannot remove {}: {error}", fetched.display());
+            }
+            read
+        }
         Action::Image => {
             let idle = BTreeMap::from([("idle".into(), files::read_image(path()?)?)]);
             let meta = existing.and_then(|skin| skin.meta.clone());
@@ -280,6 +289,12 @@ mod tests {
         assert_eq!(skin.bytes, active[&Slot::Claude].bytes);
         assert_eq!(skin.meta.as_ref(), Some(&meta));
         active.insert(Slot::Gpt, skin);
+        let fetched = root.join("fetched.elyskin");
+        std::fs::copy(&share, &fetched).unwrap();
+        let install = Action::Install(fetched.clone());
+        let installed = execute(&root, Slot::Kimi, install, None, active.clone()).unwrap();
+        assert!(matches!(installed, Done::Applied(..)));
+        assert!(!fetched.exists(), "a market pack is removed once installed");
         let saved = std::fs::read(files::path(&root, Slot::Gpt)).unwrap();
         std::fs::write(&share, b"broken pack").unwrap();
         assert!(

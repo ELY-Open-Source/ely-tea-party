@@ -438,4 +438,13 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.clipboard.deny", "拒绝"),
     ("et.clipboard.always", "本会话内允许"),
     ("et.clipboard.allow", "允许"),
+    ("et.market.title", "皮肤市场"),
+    ("et.market.fetching", "正在下载 {id}…"),
+    ("et.market.offer", "「{name}」，作者 {author}"),
+    ("et.market.to", "装到上面选中的 {character}。"),
+    ("et.market.whale_only", "只适用于鲸鱼娘。"),
+    ("et.market.agent_only", "适用于 Agent，不适用于鲸鱼娘。"),
+    ("et.market.install", "安装"),
+    ("et.market.dismiss", "取消"),
+    ("et.market.failed", "皮肤市场：{error}"),
 ];
