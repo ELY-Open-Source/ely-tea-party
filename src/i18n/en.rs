@@ -432,6 +432,8 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.files.open", "Open"),
     ("et.files.new_session", "New session here"),
     ("et.files.copy_path", "Copy path"),
+    ("et.files.reveal_finder", "Open in Finder"),
+    ("et.files.reveal", "Open in File Manager"),
     ("et.panel.no_folder", "This shell reports no folder."),
     ("et.status.line", "{state}: {said}"),
     ("et.status.idle", "Idle"),

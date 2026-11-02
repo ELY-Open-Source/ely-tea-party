@@ -18,6 +18,7 @@ mod links;
 #[cfg(target_os = "macos")]
 pub mod mac;
 mod marks;
+mod menu;
 pub mod mouse;
 mod notify;
 mod paint;

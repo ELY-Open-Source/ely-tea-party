@@ -14,6 +14,7 @@ use alacritty_terminal::{
 };
 use ely_gpui_component::{
     forms::{Copy, Paste, SelectAll},
+    menus::ContextMenu,
     theme::ActiveTheme,
 };
 use futures::StreamExt;
@@ -32,6 +33,7 @@ use super::{
     ink::Ink,
     input::{self, Find, Held, NextPrompt, PreviousPrompt, Went},
     marks::Mark,
+    menu::FileMenu,
     mouse::MouseMode,
     paint,
     pointer::Pointer,
@@ -71,6 +73,7 @@ pub struct TerminalView {
     /// The cursor's cell in the window, from the last layout.
     pub(super) caret: Bounds<Pixels>,
     pub(super) pointer: Pointer,
+    pub(super) menu: FileMenu,
     /// The mouse mode, as the tap follows it.
     pub(super) mouse: MouseMode,
     /// The background picture that last failed, logged once.
@@ -166,6 +169,7 @@ impl TerminalView {
             marked: None,
             caret: Bounds::default(),
             pointer: Pointer::default(),
+            menu: FileMenu::default(),
             mouse: MouseMode::default(),
             backdrop_failed: None,
             pictures: Pictures::default(),
@@ -287,6 +291,9 @@ impl TerminalView {
     /// Tells a program that asked, by mode 1004, when the terminal gains or loses focus.
     fn refocus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.active = window.is_window_active();
+        if self.focus.is_focused(window) {
+            self.menu.forget();
+        }
         let focused = self.focus.is_focused(window) && window.is_window_active();
         if focused != self.focused {
             self.focused = focused;
@@ -377,7 +384,7 @@ impl Render for TerminalView {
                 cx.listener(|view, _: &PreviousPrompt, _, cx| view.scroll_to_prompt(true, cx)),
             )
             .on_action(cx.listener(|view, _: &NextPrompt, _, cx| view.scroll_to_prompt(false, cx)))
-            .on_any_mouse_down(cx.listener(Self::mouse_down))
+            .on_any_mouse_down(cx.listener(Self::press))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
             .when(self.pointer.on_link, |root| {
@@ -432,11 +439,18 @@ impl Render for TerminalView {
         };
         let rail = self.rail(scrollback, settings.padding_y, window, cx);
         let backdrop = self.backdrop(&settings, window, cx);
+        let request = self.menu.request();
+        let menu = self.menu.items(cx);
         div()
             .relative()
             .size_full()
             .children(backdrop)
-            .child(root)
+            .child(
+                ContextMenu::new(("terminal-menu", cx.entity_id()), menu)
+                    .manual(request)
+                    .size_full()
+                    .child(root),
+            )
             .children(scrollbar::bar(span, window, cx))
             .children(rail)
             .children(

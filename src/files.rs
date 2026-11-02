@@ -107,6 +107,13 @@ pub(super) fn here_folder(path: &Path, folder: bool) -> PathBuf {
 /// New session here: the folder it starts in.
 pub struct Here(pub PathBuf);
 
+/// The words for showing a path in the system's file manager.
+pub const REVEAL: &str = if cfg!(target_os = "macos") {
+    "et.files.reveal_finder"
+} else {
+    "et.files.reveal"
+};
+
 /// A right press waiting to open Files' menu.
 struct MenuAsk {
     n: u64,

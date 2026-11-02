@@ -396,6 +396,8 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.files.open", "打开"),
     ("et.files.new_session", "在此新建会话"),
     ("et.files.copy_path", "复制路径"),
+    ("et.files.reveal_finder", "在 Finder 中打开"),
+    ("et.files.reveal", "在文件管理器中打开"),
     ("et.panel.no_folder", "此 shell 不报告文件夹。"),
     ("et.status.line", "{state}：{said}"),
     ("et.status.idle", "空闲"),
