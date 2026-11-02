@@ -1,6 +1,6 @@
 name: Release
 
-# This version's draft, with the Linux tarball, the Windows zip and the signed, notarized disk image.
+# This version's draft, with the Linux tarball, the Windows zip, the signed, notarized disk image and their SHA256SUMS.
 on:
   workflow_dispatch:
 
@@ -75,3 +75,13 @@ jobs:
         run: |
           version=$(cargo pkgid)
           scripts/release-asset.sh "target/release/ely-tea-party-${version##*[#@]}.dmg"
+
+  checksums:
+    needs: [build, macos]
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install --no-self-update
+      - run: scripts/release-sums.sh
