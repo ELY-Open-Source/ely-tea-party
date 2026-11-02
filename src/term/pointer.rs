@@ -60,7 +60,7 @@ fn button(button: MouseButton) -> Option<Button> {
 
 impl TerminalView {
     /// The screen cell under a window position, clamped to the grid; its grid point; its half.
-    fn cell_at(&self, position: Point<Pixels>) -> ((usize, usize), Cell, Side) {
+    pub(super) fn cell_at(&self, position: Point<Pixels>) -> ((usize, usize), Cell, Side) {
         let Pointer { origin, cell, .. } = self.pointer;
         let x = ((position.x - origin.x) / cell.width).max(0.);
         let y = ((position.y - origin.y) / cell.height).max(0.);
@@ -77,7 +77,7 @@ impl TerminalView {
     }
 
     /// What the program tracks; none while Shift holds the mouse for selecting.
-    fn tracking(&self, modifiers: &Modifiers) -> Tracking {
+    pub(super) fn tracking(&self, modifiers: &Modifiers) -> Tracking {
         if modifiers.shift {
             Tracking::Off
         } else {

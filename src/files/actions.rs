@@ -63,17 +63,14 @@ impl Files {
             );
         }
         let (reveal, copy) = (path.clone(), path.clone());
-        let label = if cfg!(target_os = "macos") {
-            "Open in Finder"
-        } else {
-            "Open in File Manager"
-        };
         menu = menu
             .separator()
-            .item(MenuItem::new(label).on_click(move |_, cx| {
-                log::info!("files: revealing {}", reveal.display());
-                cx.reveal_path(&reveal);
-            }))
+            .item(
+                MenuItem::new(text(cx, super::REVEAL, &[])).on_click(move |_, cx| {
+                    log::info!("files: revealing {}", reveal.display());
+                    cx.reveal_path(&reveal);
+                }),
+            )
             .item(
                 MenuItem::new(text(cx, "et.files.copy_path", &[])).on_click(
                     move |_, cx| match copy.to_str() {
