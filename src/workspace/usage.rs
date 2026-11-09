@@ -5,14 +5,18 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-use ely_gpui_component::{data_display::Meter, theme::ActiveTheme, typography::Caption};
+use ely_gpui_component::{
+    data_display::Meter,
+    theme::{ActiveTheme, TextSize},
+    typography::Caption,
+};
 use gpui::{AnyElement, App, Context, IntoElement, ParentElement, Styled, Task, div};
 
 use super::Workspace;
 use crate::{
     sessions::Session,
     settings::SettingsStore,
-    usage::{self, Plan, Usage},
+    usage::{self, Nearness, Plan, Usage},
 };
 
 /// The readings the right column shows, by plan.
@@ -25,7 +29,8 @@ pub(super) struct Meters {
 
 /// The plan the session's agent runs on.
 fn plan(session: Option<&Session>) -> Option<Plan> {
-    Plan::of(session?.agent.as_ref()?.kind)
+    let agent = session?.agent.as_ref()?;
+    Plan::of(agent.kind, agent.program.as_deref())
 }
 
 impl Workspace {
@@ -107,6 +112,21 @@ impl Workspace {
             };
             Meter::new(("usage", index), limit.label.clone(), limit.percent / 100.).detail(detail)
         });
+        // Yellow within three days of expiring, red within one.
+        let banked = usage::expiring_banked(usage, now).map(|(near, count, soonest)| {
+            let left = usage::time_left(soonest, now);
+            let said = match count {
+                1 => format!("banked reset {left}后过期"),
+                n => format!("{n} 个 banked reset 将过期，最近的 {left}后"),
+            };
+            div()
+                .text_size(theme.text_size(TextSize::Xs))
+                .text_color(match near {
+                    Nearness::Soon => theme.colors.warning,
+                    Nearness::VerySoon => theme.colors.danger,
+                })
+                .child(said)
+        });
         let credits = usage
             .credits
             .as_ref()
@@ -114,11 +134,12 @@ impl Workspace {
         Some(
             foot.child(
                 div()
-                    .text_size(theme.text_size(ely_gpui_component::theme::TextSize::Sm))
+                    .text_size(theme.text_size(TextSize::Sm))
                     .text_color(theme.colors.fg_muted)
                     .child(title),
             )
             .children(meters)
+            .children(banked)
             .children(credits)
             .children(usage.note.as_ref().map(|note| Caption::new(note.clone())))
             .into_any_element(),
