@@ -7,7 +7,7 @@ use ely_gpui_component::{
 use gpui::{App, ClipboardItem, Context, MouseButton, MouseDownEvent, Pixels, Point, Window};
 
 use super::{mouse::Tracking, view::TerminalView};
-use crate::files;
+use crate::{files, settings::SettingsStore};
 
 /// The menu a right press on a file opens.
 #[derive(Default)]
@@ -82,7 +82,9 @@ impl TerminalView {
         // The open menu holds the focus, and gives it back as it closes.
         let open = self.menu.path.is_some() && !self.focus.is_focused(window);
         let (_, point, _) = self.cell_at(event.position);
-        let free = self.tracking(&event.modifiers) == Tracking::Off;
+        // Right click pastes, when on, takes every right press.
+        let free = self.tracking(&event.modifiers) == Tracking::Off
+            && !SettingsStore::get(cx).right_click_paste;
         let file = (event.button == MouseButton::Right && free)
             .then(|| self.file_at(point))
             .flatten();

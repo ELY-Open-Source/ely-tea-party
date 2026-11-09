@@ -106,7 +106,7 @@ fn follow(agent: &mut Option<Agent>, held: Foreground, drew: Instant, now: Insta
             true
         }
         // Hooks name agents the foreground does not show.
-        (Foreground::Other, Some(found)) if found.hooked => false,
+        (Foreground::Other, Some(found)) if found.hooked => found.guess(drew, now),
         (Foreground::Other, _) => agent.take().is_some(),
     }
 }
@@ -131,6 +131,16 @@ impl Workspace {
                     "agents: session {} went from {had:?} to {has:?}",
                     session.id
                 );
+            }
+            // Hooks name their program; an unhooked Antigravity is known by its command.
+            if let Some(agent) = session.agent.as_mut()
+                && agent.kind == crate::agents::Kind::Gemini
+                && agent.program.is_none()
+                && view
+                    .foreground()
+                    .is_some_and(crate::agents::detect::antigravity)
+            {
+                agent.program = Some("agy".into());
             }
             if let Some(agent) = session.agent.as_mut()
                 && agent.kind == crate::agents::Kind::Gpt
@@ -163,6 +173,11 @@ impl Workspace {
                     }
                 }
             }
+            if let Some(drawer) = session.drawer.as_mut() {
+                let view = drawer.terminal.read(cx);
+                let held = foreground(view.pid(), view.foreground());
+                follow(&mut drawer.agent, held, view.drew(), now);
+            }
             if let Some(drawer) = session.drawer.as_mut()
                 && drawer.check(cx)
             {
@@ -176,6 +191,7 @@ impl Workspace {
         }
         self.type_pending(now, cx);
         self.keep();
+        self.keep_steps(now, cx);
         self.meter(now, cx);
         // Poses turn and times count up, so rows with agents redraw each tick.
         if shown {
@@ -195,6 +211,9 @@ impl Workspace {
             log::debug!("agents: {} means nothing to a character", report.event);
             return;
         };
+        if report.drawer {
+            return self.hear_drawer(index, report, change, cx);
+        }
         let session = &mut self.sessions[index];
         let now = Instant::now();
         if change == Change::Speed {
@@ -268,7 +287,8 @@ impl Workspace {
             }
         }
         let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
-        agent.note(&report.event, (tool, detail), &mut session.log, now);
+        let said = (tool, detail, report.tool_id.as_deref());
+        agent.note(&report.event, said, &mut session.log, now);
         if let Some(said) = report.detail.clone() {
             match report.event.as_str() {
                 "UserPromptSubmit" => session
@@ -286,6 +306,51 @@ impl Workspace {
                 session.bell = true;
             }
         }
+        cx.notify();
+    }
+
+    /// What an agent in session `index`'s drawer did: its Activity, leaving the session's character alone.
+    #[cfg(unix)]
+    fn hear_drawer(
+        &mut self,
+        index: usize,
+        report: crate::agents::hooks::Report,
+        change: crate::agents::hooks::Change,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::agents::hooks::Change;
+
+        let Some(drawer) = self.sessions[index].drawer.as_mut() else {
+            log::debug!("agents: a report for a closed drawer");
+            return;
+        };
+        let status = match change {
+            Change::Speed => return,
+            Change::Ended => {
+                drawer.agent = None;
+                cx.notify();
+                return;
+            }
+            Change::To(status) => status,
+        };
+        let Some(kind) = report.kind() else {
+            log::error!("agents: no character for agent {:?}", report.agent);
+            return;
+        };
+        let now = Instant::now();
+        let agent = match drawer.agent.take() {
+            Some(agent) if agent.kind == kind => agent,
+            _ => Agent::new(kind, now),
+        };
+        let agent = drawer.agent.insert(agent);
+        agent.hooked = true;
+        let said = (
+            report.tool.as_deref(),
+            report.detail.as_deref(),
+            report.tool_id.as_deref(),
+        );
+        agent.note(&report.event, said, &mut drawer.log, now);
+        agent.set(status, now);
         cx.notify();
     }
 

@@ -14,6 +14,8 @@ use serde::Deserialize;
 use super::{Limit, Usage, window};
 
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/wham/usage";
+/// The banked resets Codex lists; this reading only looks, and never redeems one.
+const BANKED: &str = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 
 #[derive(Deserialize)]
 struct Auth {
@@ -62,6 +64,18 @@ struct Credits {
     approx_local_messages: Option<[u64; 2]>,
 }
 
+#[derive(Deserialize)]
+struct BankedList {
+    #[serde(default)]
+    credits: Vec<BankedReset>,
+}
+
+#[derive(Deserialize)]
+struct BankedReset {
+    status: String,
+    expires_at: Option<String>,
+}
+
 pub fn read() -> anyhow::Result<Usage> {
     let home = match std::env::var_os("CODEX_HOME") {
         Some(home) => PathBuf::from(home),
@@ -102,7 +116,32 @@ fn ask(home: &Path) -> anyhow::Result<Usage> {
     }
     let answer: Answer = serde_json::from_slice(&crate::curl::get("usage", ENDPOINT, &headers)?)
         .context("usage: Codex's answer does not parse")?;
-    Ok(usage(answer))
+    let mut usage = usage(answer);
+    // The limits stand without them.
+    usage.banked = banked(&headers).unwrap_or_else(|error| {
+        log::info!("{error:#}; no banked resets are noted");
+        Vec::new()
+    });
+    Ok(usage)
+}
+
+fn banked(headers: &str) -> anyhow::Result<Vec<SystemTime>> {
+    let answer = crate::curl::get("usage", BANKED, headers)?;
+    expiries(&answer)
+}
+
+/// When each banked reset still to be used expires, for those that do.
+fn expiries(answer: &[u8]) -> anyhow::Result<Vec<SystemTime>> {
+    let list: BankedList =
+        serde_json::from_slice(answer).context("usage: Codex's banked resets do not parse")?;
+    let expiry = |reset: BankedReset| {
+        let at = chrono::DateTime::parse_from_rfc3339(&reset.expires_at?).ok()?;
+        Some(SystemTime::UNIX_EPOCH + Duration::from_secs(u64::try_from(at.timestamp()).ok()?))
+    };
+    Ok((list.credits.into_iter())
+        .filter(|reset| reset.status == "available")
+        .filter_map(expiry)
+        .collect())
 }
 
 /// Whether the access token's expiry has passed at `now`; a token that does not read is left to the endpoint to judge.
@@ -134,6 +173,7 @@ fn usage(answer: Answer) -> Usage {
         limits: windows.into_iter().flatten().flatten().map(limit).collect(),
         credits: answer.credits.and_then(credits),
         note: None,
+        banked: Vec::new(),
     }
 }
 
@@ -175,6 +215,23 @@ fn ago(at: SystemTime, now: SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_banked_resets_still_to_use_with_an_expiry_count() {
+        let expiries = expiries(
+            br#"{"credits":[
+                {"id":"a","reset_type":"codex_rate_limits","status":"available","granted_at":"2026-06-17T00:00:00Z","expires_at":"2026-07-17T00:00:00Z","title":"Full reset"},
+                {"id":"b","reset_type":"codex_rate_limits","status":"available","granted_at":"2026-06-18T00:00:00Z","expires_at":null},
+                {"id":"c","reset_type":"codex_rate_limits","status":"redeemed","granted_at":"2026-06-18T00:00:00Z","expires_at":"2026-07-18T00:00:00Z"}
+            ],"available_count":2}"#,
+        )
+        .expect("parses");
+        let secs = |at: SystemTime| at.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        assert_eq!(
+            expiries.iter().map(|at| secs(*at)).collect::<Vec<_>>(),
+            [1_784_246_400]
+        );
+    }
 
     #[test]
     fn the_endpoint_s_answer_reads_as_windows_credits_and_messages() {

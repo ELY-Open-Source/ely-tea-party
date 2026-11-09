@@ -18,6 +18,8 @@ use crate::{
     workspace::{self, TITLE, Workspace},
 };
 
+pub mod args;
+
 /// How long the window's size holds before it is kept, so a drag saves once.
 const SETTLE: Duration = Duration::from_millis(500);
 
@@ -50,6 +52,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     crate::memory::Service::init(cx)?;
     crate::skins::init(cx)?;
     i18n::init(cx);
+    crate::interface::init(cx);
     ShellIntegration::init(cx)?;
     #[cfg(unix)]
     {
@@ -106,6 +109,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
             theme,
             settings.custom_themes.clone(),
             settings.background_opacity,
+            !settings.background_image.is_empty(),
         )
     };
     let mut image = SettingsStore::get(cx).background_image.clone();
@@ -132,19 +136,31 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What the main window does with the sessions saved at the last quit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Restore {
+    Off,
+    /// The first saved session takes the window's first.
+    First,
+    /// The window's first session stays, shown, and the saved ones follow it: a folder was named.
+    Behind,
+}
+
 /// Opens the main window running `launch`, or, with `restore`, the sessions saved last time.
 pub fn open(
     mut launch: Launch,
-    restore: bool,
+    restore: Restore,
     cx: &mut App,
 ) -> anyhow::Result<WindowHandle<Workspace>> {
-    let saved = (restore && SettingsStore::get(cx).restore_sessions)
+    let saved = (restore != Restore::Off && SettingsStore::get(cx).restore_sessions)
         .then(workspace::restore::load)
         .flatten()
         .filter(|saved| !saved.sessions.is_empty());
-    if let Some(folder) = saved.as_ref().and_then(workspace::restore::first_folder) {
+    let first = saved.as_ref().filter(|_| restore == Restore::First);
+    if let Some(folder) = first.and_then(workspace::restore::first_folder) {
         launch = crate::term::shell::launch(
             &SettingsStore::get(cx).shell,
+            &[],
             folder.to_path_buf(),
             &cx.global::<ShellIntegration>().0,
         )?;
@@ -168,7 +184,7 @@ pub fn open(
         ..Default::default()
     };
     let id = agents::next_session();
-    launch.env.extend(agents::env(id)?);
+    launch.env.extend(agents::env(id, false)?);
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
     // Windows' wheel settings, read where gpui reads its own.
     #[cfg(windows)]
@@ -182,7 +198,7 @@ pub fn open(
             keep_bounds(window, cx);
             let mut workspace = Workspace::new((id, pty, events), launch, window, cx);
             if let Some(saved) = saved {
-                workspace.restore(saved, window, cx);
+                workspace.restore(saved, restore == Restore::Behind, window, cx);
             }
             workspace
         })

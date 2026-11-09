@@ -11,12 +11,12 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ControlSize, Mix, Palette, Radius, TextSize},
 };
 use gpui::{
-    Animation, AnimationExt, App, Bounds, Div, Hsla, InteractiveElement, MouseButton,
+    Animation, AnimationExt, App, Bounds, Div, Entity, Hsla, InteractiveElement, MouseButton,
     ParentElement, Pixels, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px,
 };
 
-use super::super::header::show_tab;
-use crate::settings::PanelTab;
+use super::super::{Workspace, header::show_tab};
+use crate::settings::{PanelTab, SettingsStore};
 
 const TABS: [(PanelTab, &str, &str); 3] = [
     (PanelTab::Git, "git", "et.panel.git"),
@@ -56,7 +56,12 @@ fn hue(tab: PanelTab, colors: &Palette) -> Hsla {
 }
 
 /// The tabs, the shown one's name in its color over a wash of it, which glides from the tab shown before.
-pub fn tabs((shown, turn): (PanelTab, usize), glide: &Glide, cx: &App) -> Div {
+pub fn tabs(
+    (shown, turn): (PanelTab, usize),
+    glide: &Glide,
+    workspace: &Entity<Workspace>,
+    cx: &App,
+) -> Div {
     let theme = cx.theme();
     let colors = &theme.colors;
     let places = glide.places.borrow().clone();
@@ -64,6 +69,7 @@ pub fn tabs((shown, turn): (PanelTab, usize), glide: &Glide, cx: &App) -> Div {
     let tab = |(tab, value, label): (PanelTab, &'static str, &'static str)| {
         let on = tab == shown;
         let color = hue(tab, colors);
+        let host = workspace.clone();
         div()
             .id(("panel-tab", tab as usize))
             .flex()
@@ -84,6 +90,14 @@ pub fn tabs((shown, turn): (PanelTab, usize), glide: &Glide, cx: &App) -> Div {
             // A press here is the tab's, not the title bar's drag.
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .on_click(move |_, _, cx| show_tab(&value.into(), cx))
+            // A right press on Files shows or hides its folder row.
+            .when(tab == PanelTab::Files, |files| {
+                files.on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                    if SettingsStore::get(cx).files_menu {
+                        host.update(cx, |this, cx| this.flip_folder_actions(cx));
+                    }
+                })
+            })
             .child(text(cx, label, &[]))
     };
     let index = |tab: PanelTab| TABS.iter().position(|(each, ..)| *each == tab);

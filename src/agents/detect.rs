@@ -38,6 +38,16 @@ pub fn foreground(shell: u32, group: Option<u32>) -> Foreground {
     }
 }
 
+/// Whether job `group` is Antigravity's `agy`, which shares Gemini's character.
+pub fn antigravity(group: u32) -> bool {
+    command(group).is_some_and(|argv| names_antigravity(&argv))
+}
+
+fn names_antigravity(argv: &[String]) -> bool {
+    let program = argv.first().map(|program| stem(program));
+    matches!(program.as_deref(), Some("agy" | "antigravity"))
+}
+
 /// The command line starts a shell, `-zsh` as a login shell too.
 fn is_shell(argv: &[String]) -> bool {
     let program = argv.first().map(|program| stem(program));
@@ -120,6 +130,13 @@ fn command(pid: u32) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn antigravity_is_told_from_gemini_s_own_cli() {
+        let named = |program: &str| names_antigravity(&[program.to_string()]);
+        assert!(named("agy") && named("/Users/a/.local/bin/agy"));
+        assert!(!named("gemini"));
+    }
 
     fn kind(line: &str) -> Option<Kind> {
         let argv: Vec<String> = line.split(' ').map(Into::into).collect();

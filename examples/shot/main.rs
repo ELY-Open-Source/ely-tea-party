@@ -48,10 +48,16 @@ fn main() {
         .run(move |cx: &mut gpui::App| {
             ely_gpui_component::init(cx).expect("Ely starts");
             app::start(cx).expect("the app starts");
-            let main: AnyWindowHandle =
-                app::open(launch, std::env::var_os("SHOT_RESTORE").is_some(), cx)
-                    .expect("the window opens")
-                    .into();
+            let main: AnyWindowHandle = app::open(
+                launch,
+                match std::env::var_os("SHOT_RESTORE") {
+                    Some(_) => app::Restore::First,
+                    None => app::Restore::Off,
+                },
+                cx,
+            )
+            .expect("the window opens")
+            .into();
             cx.spawn(async move |cx| {
                 let number = |aim: AnyWindowHandle, cx: &mut gpui::AsyncApp| {
                     let number = aim.update(cx, |_, window, _| capture::number(window));
@@ -144,6 +150,12 @@ fn main() {
                             })
                             .expect("the window lives");
                             log::info!("shot: {name}");
+                        }
+                        "close" => {
+                            aim.update(cx, |_, window, _| window.remove_window())
+                                .expect("the window lives");
+                            log::info!("shot: closed the window");
+                            aim = main;
                         }
                         spec if spec.starts_with("drop@") => {
                             let paths =

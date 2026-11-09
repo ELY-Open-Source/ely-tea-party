@@ -199,6 +199,6 @@ MIT, in [`LICENSE`](LICENSE), as upstream ELYTerminal; the fork keeps its copyri
 
 ### Upstream synchronization
 
-The fork includes ELYTerminal through `cf0211b` (2026-10-25), including v0.1.9. Settings now offer English or Simplified Chinese, a custom start folder, and switches for session dragging and context menus. The fork retains its characters, drawers, session restoration, Files actions and automatic installer. Some fork-specific labels remain in their original language.
+The fork includes ELYTerminal through `fdca49a` (2026-11-05), including v0.2.3. Settings now offer English or Simplified Chinese, a custom start folder, and switches for session dragging and context menus. The fork retains its characters, drawers, session restoration, Files actions and automatic installer. Some fork-specific labels remain in their original language.
 
 Linux packaging supports tar.gz, DEB, RPM and AppImage; see [packaging instructions](packaging/linux/README.md). Package generation and platform validation are separate from publishing a release.

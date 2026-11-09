@@ -126,6 +126,7 @@ fn usage(answer: Answer, plan: Option<String>) -> Usage {
         limits: answer.limits.into_iter().map(limit).collect(),
         credits: None,
         note: None,
+        banked: Vec::new(),
     }
 }
 

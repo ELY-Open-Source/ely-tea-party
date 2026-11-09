@@ -2,6 +2,8 @@ mod glyphs;
 
 use std::{rc::Rc, sync::Arc};
 
+use unicode_segmentation::UnicodeSegmentation;
+
 use glyphs::draw;
 
 use alacritty_terminal::vte::ansi::CursorShape;
@@ -25,6 +27,8 @@ pub struct Look {
     pub font_id: FontId,
     /// Draws icons the font lacks.
     pub icons: Font,
+    /// Draws CJK characters; none leaves them to `font`.
+    pub cjk: Option<Font>,
     pub size: Pixels,
     pub cell: Size<Pixels>,
     /// From a cell's top to the text's baseline.
@@ -56,6 +60,8 @@ pub fn grid(
             let lines = (bounds.size.height / cell.height).floor() as usize;
             let origin = snapped(bounds.origin, window);
             fit.update(cx, |view, cx| {
+                let moved = view.pointer.hover.is_some()
+                    && (view.pointer.origin != origin || view.pointer.cell != cell);
                 (view.pointer.origin, view.pointer.cell) = (origin, cell);
                 if let Some((row, column)) = at {
                     let corner =
@@ -66,7 +72,7 @@ pub fn grid(
                         view.caret = caret;
                     }
                 }
-                if view.fit(columns, lines, cx) {
+                if view.fit(columns, lines, cx) || moved {
                     cx.notify();
                     window.request_animation_frame();
                 }
@@ -95,7 +101,12 @@ pub fn grid(
             match (&preedit, at, &cursor) {
                 (Some(text), Some(at), _) => paint_preedit(text, at, origin, &look, window),
                 (None, _, Some((cursor, shape))) => {
-                    paint_cursor(cursor, *shape, origin, &look, window)
+                    let at = input.read(cx).glide_position((cursor.row, cursor.column));
+                    // Until it lands, the cursor draws again.
+                    if at != (cursor.row as f32, cursor.column as f32) {
+                        window.request_animation_frame();
+                    }
+                    paint_cursor(cursor, *shape, at, origin, &look, window)
                 }
                 _ => {}
             }
@@ -146,9 +157,9 @@ fn paint_preedit(
 fn face(style: &Style, base: &Font) -> Font {
     Font {
         weight: if style.bold {
-            FontWeight::BOLD
+            FontWeight((base.weight.0 + 300.).min(900.))
         } else {
-            FontWeight::NORMAL
+            base.weight
         },
         style: if style.italic {
             FontStyle::Italic
@@ -254,27 +265,44 @@ fn paint_text(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: 
     }
 }
 
-/// Text runs for `text` in `style` and `color`: icons the font lacks take the icon font.
+/// Text runs for `text` in `style` and `color`: a CJK cluster takes the CJK font, an icon the font lacks the icon font.
 fn runs(text: &str, style: &Style, color: Hsla, look: &Look, window: &Window) -> Vec<TextRun> {
     let base = face(style, &look.font);
+    let cjk = look.cjk.as_ref().map(|cjk| face(style, cjk));
     let system = window.text_system();
     let mut runs: Vec<TextRun> = Vec::new();
-    for ch in text.chars() {
-        let missing = private(ch) && system.advance(look.font_id, look.size, ch).is_err();
-        let font = if missing { &look.icons } else { &base };
-        match runs.last_mut() {
-            Some(last) if last.font == *font => last.len += ch.len_utf8(),
-            _ => runs.push(TextRun {
-                len: ch.len_utf8(),
-                font: font.clone(),
+    for cluster in text.graphemes(true) {
+        let first = cluster.chars().next().expect("a cluster holds a character");
+        if let Some(cjk) = cjk.as_ref().filter(|_| super::fonts::cjk(first)) {
+            extend(&mut runs, cluster.len(), cjk, color);
+            continue;
+        }
+        for ch in cluster.chars() {
+            let missing = private(ch) && system.advance(look.font_id, look.size, ch).is_err();
+            extend(
+                &mut runs,
+                ch.len_utf8(),
+                if missing { &look.icons } else { &base },
                 color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            }),
+            );
         }
     }
     runs
+}
+
+/// Adds `len` bytes in `font` to the last run, or starts one.
+fn extend(runs: &mut Vec<TextRun>, len: usize, font: &Font, color: Hsla) {
+    match runs.last_mut() {
+        Some(last) if last.font == *font => last.len += len,
+        _ => runs.push(TextRun {
+            len,
+            font: font.clone(),
+            color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }),
+    }
 }
 
 /// Unicode's private use areas, where Nerd Font icons live.
@@ -417,29 +445,29 @@ fn decorate(origin: Point<Pixels>, width: Pixels, style: &Style, look: &Look, wi
 fn paint_cursor(
     cursor: &Cursor,
     shape: CursorShape,
+    at: (f32, f32),
     origin: Point<Pixels>,
     look: &Look,
     window: &mut Window,
 ) {
     let cell = look.cell;
-    let corner = origin
-        + point(
-            cell.width * cursor.column as f32,
-            cell.height * cursor.row as f32,
-        );
+    let corner = origin + point(cell.width * at.1, cell.height * at.0);
     let width = cell.width * if cursor.wide { 2. } else { 1. };
     let whole = Bounds::new(corner, size(width, cell.height));
     match shape {
         CursorShape::Block => {
             window.paint_quad(fill(whole, look.cursor));
-            paint_alone(
-                &cursor.text,
-                look.cursor_text,
-                &cursor.style,
-                corner,
-                look,
-                window,
-            );
+            // The character inverts once the block lands on it.
+            if at == (cursor.row as f32, cursor.column as f32) {
+                paint_alone(
+                    &cursor.text,
+                    look.cursor_text,
+                    &cursor.style,
+                    corner,
+                    look,
+                    window,
+                );
+            }
         }
         CursorShape::HollowBlock => {
             window.paint_quad(outline(whole, look.cursor, gpui::BorderStyle::Solid));

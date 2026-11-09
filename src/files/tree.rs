@@ -1,19 +1,24 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use ely_gpui_component::{
+    i18n::text,
     lists::GitStatus,
     menus::ContextMenu,
-    primitives::Disclosure,
+    primitives::{Disclosure, DragGhost},
     theme::{ActiveTheme, ControlSize, Radius, TextSize},
     typography::Ellipsis,
 };
 use gpui::{
     Context, FocusHandle, IntoElement, MouseButton, ParentElement, Pixels, Point, Render, Role,
-    ScrollStrategy, Styled, UniformListScrollHandle, Window, div, prelude::*, uniform_list,
+    ScrollStrategy, SharedString, Styled, UniformListScrollHandle, Window, div, prelude::*,
+    uniform_list,
 };
 
 use super::{Files, MenuAsk, key, mark_key};
 use crate::{sessions, settings::SettingsStore};
+
+/// A folder that could not be read, as a row notes it.
+const UNREADABLE: &str = "et.files.unreadable";
 
 pub(super) struct State {
     pub open: HashSet<PathBuf>,
@@ -37,6 +42,13 @@ impl State {
     }
 }
 
+/// A Files row on its way to the terminal, which types its path.
+pub struct FileDrag {
+    /// The row's tree key, which `Files::path` reads.
+    pub key: SharedString,
+    label: SharedString,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Row {
     pub path: PathBuf,
@@ -45,6 +57,7 @@ pub(super) struct Row {
     pub depth: usize,
     pub mark: Option<GitStatus>,
     pub dirty: bool,
+    /// A catalog key, said in place of Git's mark.
     pub note: Option<&'static str>,
 }
 
@@ -79,8 +92,8 @@ impl Files {
         let listing = self.listings.get(&path);
         let note = if folder {
             match listing {
-                Some(Err(_)) => Some("unreadable"),
-                None if self.tree.open.contains(&path) => Some("loading…"),
+                Some(Err(_)) => Some(UNREADABLE),
+                None if self.tree.open.contains(&path) => Some("et.files.loading"),
                 _ => None,
             }
         } else {
@@ -237,12 +250,22 @@ impl Files {
                 div()
                     .flex_none()
                     .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(if row.note == Some("unreadable") {
+                    .text_color(if row.note == Some(UNREADABLE) {
                         colors.danger
                     } else {
                         ink
                     })
-                    .child(row.note.unwrap_or(note)),
+                    .child(match row.note {
+                        Some(key) => text(cx, key, &[]),
+                        None => note.into(),
+                    }),
+            )
+            .on_drag(
+                FileDrag {
+                    key: key(&row.path),
+                    label: row.label.clone().into(),
+                },
+                |drag, _, _, cx| DragGhost::new(drag.label.clone(), None, cx),
             )
             .on_click(
                 cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {

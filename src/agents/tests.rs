@@ -96,3 +96,20 @@ fn elapsed_time_reads_short() {
     assert_eq!(ago(secs(3 * 3600)), "3h");
     assert_eq!(ago(secs(2 * 86400)), "2d");
 }
+
+#[test]
+fn a_hooked_agent_gone_quiet_was_interrupted_and_its_next_hook_wakes_it() {
+    let start = Instant::now();
+    let later = |n: u64| start + Duration::from_secs(n);
+    let mut agent = Agent::new(Kind::Claude, start);
+    agent.hooked = true;
+    agent.set(Status::Working, start);
+    assert!(!agent.guess(later(25), later(30)), "it still draws");
+    assert_eq!(agent.status, Status::Working);
+    assert!(agent.guess(later(19), later(30)));
+    assert_eq!(agent.status, Status::Idle);
+    agent.set(Status::Working, later(40));
+    assert_eq!(agent.status, Status::Working);
+    agent.set(Status::NeedsInput, later(50));
+    assert!(!agent.guess(later(50), later(500)), "a question waits");
+}

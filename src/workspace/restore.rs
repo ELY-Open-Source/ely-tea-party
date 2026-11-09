@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use super::{Workspace, start};
 use crate::agents;
 
+pub mod steps;
+
 /// A shell this quiet has drawn its prompt.
 const SETTLED: Duration = Duration::from_secs(2);
 
@@ -39,14 +41,19 @@ pub struct Place {
     pub trinket: Option<usize>,
 }
 
-/// The saved sessions' file, beside the settings; a dev build keeps its own, so it never takes a release's sessions.
+/// The saved sessions' file.
 fn path() -> anyhow::Result<PathBuf> {
+    file("sessions")
+}
+
+/// File `stem`, beside the settings; a dev build keeps its own, so it never takes a release's.
+fn file(stem: &str) -> anyhow::Result<PathBuf> {
     let folder = crate::settings::folder()?;
     let dev = cfg!(debug_assertions) || option_env!("ELY_DEV").is_some();
     let name = if dev {
-        "sessions-dev.json"
+        format!("{stem}-dev.json")
     } else {
-        "sessions.json"
+        format!("{stem}.json")
     };
     Ok(folder.join(name))
 }
@@ -82,14 +89,18 @@ pub fn load() -> Option<Saved> {
 }
 
 fn save(saved: &Saved) -> anyhow::Result<()> {
-    let path = path()?;
+    replace(&path()?, serde_json::to_string_pretty(saved)? + "\n")
+}
+
+/// Writes `text` over `path` whole, through a file beside it.
+fn replace(path: &Path, text: String) -> anyhow::Result<()> {
     let folder = path.parent().context("restore: the file has no folder")?;
     std::fs::create_dir_all(folder)
         .with_context(|| format!("restore: cannot make {}", folder.display()))?;
     let temp = path.with_extension("json.tmp");
-    std::fs::write(&temp, serde_json::to_string_pretty(saved)? + "\n")
+    std::fs::write(&temp, text)
         .with_context(|| format!("restore: cannot write {}", temp.display()))?;
-    std::fs::rename(&temp, &path)
+    std::fs::rename(&temp, path)
         .with_context(|| format!("restore: cannot replace {}", path.display()))?;
     Ok(())
 }
@@ -143,6 +154,13 @@ impl Workspace {
         self.saved = Some(now);
     }
 
+    /// Saves what the sessions' agents did, when the settings bring sessions back.
+    pub(super) fn keep_steps(&mut self, now: Instant, cx: &Context<Self>) {
+        if crate::settings::SettingsStore::get(cx).restore_sessions {
+            self.steps.keep(&self.sessions, now);
+        }
+    }
+
     /// Types each restored resume whose shell has been quiet a while, for shells that report no folder.
     pub(super) fn type_pending(&mut self, now: Instant, cx: &mut Context<Self>) {
         for session in &mut self.sessions {
@@ -160,16 +178,24 @@ impl Workspace {
         }
     }
 
-    /// Brings `saved` back: the first session runs already in its folder; the rest start, and each agent resumes.
-    pub fn restore(&mut self, mut saved: Saved, window: &mut Window, cx: &mut Context<Self>) {
+    /// Brings `saved` back: the first session runs already in its folder; the rest start, and each agent resumes. `behind` starts them all after the session shown, which stays shown.
+    pub fn restore(
+        &mut self,
+        mut saved: Saved,
+        behind: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let mut links = std::collections::HashSet::new();
         for place in &mut saved.sessions {
             place.link_id.ensure_unique(&mut links);
         }
+        let mut kept = steps::load();
         let mut places = saved.sessions.into_iter();
-        if let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut()) {
+        if !behind && let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut())
+        {
             session.pending = first.resume.clone();
-            dress(session, first);
+            dress(session, first, &mut kept);
         }
         let shell = crate::settings::SettingsStore::get(cx).shell.clone();
         for place in places {
@@ -181,12 +207,12 @@ impl Workspace {
                 continue;
             }
             let id = agents::next_session();
-            match start(&shell, place.folder.clone(), Some(id), cx) {
+            match start(&shell, &[], place.folder.clone(), (id, false), cx) {
                 Ok(((pty, events), launch)) => {
-                    self.add((id, pty, events), launch, window, cx);
+                    self.add((id, pty, events), launch, Vec::new(), window, cx);
                     if let Some(session) = self.sessions.last_mut() {
                         session.pending = place.resume.clone();
-                        dress(session, place);
+                        dress(session, place, &mut kept);
                         // Out of view until shown, so it posts notifications.
                         session
                             .terminal
@@ -196,14 +222,20 @@ impl Workspace {
                 Err(error) => log::error!("restore: a session did not start: {error:#}"),
             }
         }
-        let active = saved.active.min(self.sessions.len().saturating_sub(1));
+        let active = match behind {
+            true => 0,
+            false => saved.active.min(self.sessions.len().saturating_sub(1)),
+        };
         log::info!("restore: {} sessions back", self.sessions.len());
         self.select(active, window, cx);
     }
 }
 
-/// Gives a restored session the name and trinket `place` kept.
-fn dress(session: &mut crate::sessions::Session, place: Place) {
+/// Gives a restored session the name and trinket `place` kept, and the steps `kept` for it.
+fn dress(session: &mut crate::sessions::Session, place: Place, kept: &mut steps::Kept) {
+    if let Some(log) = steps::take(kept, place.link_id) {
+        session.log = log;
+    }
     session.link_id = place.link_id;
     session.name = place.name;
     if let Some(trinket) = place.trinket {

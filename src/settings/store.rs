@@ -42,9 +42,18 @@ impl SettingsStore {
             return Ok(());
         }
         next.validate()?;
-        if (&next.font_family, &next.font_fallbacks)
-            != (&store.settings.font_family, &store.settings.font_fallbacks)
-        {
+        let (was, now) = (&store.settings, &next);
+        if (
+            &now.font_family,
+            &now.font_fallbacks,
+            &now.cjk_font,
+            &now.interface_font,
+        ) != (
+            &was.font_family,
+            &was.font_fallbacks,
+            &was.cjk_font,
+            &was.interface_font,
+        ) {
             fonts(&next, cx)?;
         }
         save(&store.path, &next)?;
@@ -75,8 +84,11 @@ fn fonts(settings: &Settings, cx: &App) -> anyhow::Result<()> {
         .font_fallbacks
         .iter()
         .map(|family| ("font_fallbacks", family));
-    for (field, family) in std::iter::once(("font_family", &settings.font_family)).chain(fallbacks)
-    {
+    let interface = (!settings.interface_font.is_empty())
+        .then_some(("interface_font", &settings.interface_font));
+    let cjk = (!settings.cjk_font.is_empty()).then_some(("cjk_font", &settings.cjk_font));
+    let first = std::iter::once(("font_family", &settings.font_family));
+    for (field, family) in first.chain(fallbacks).chain(cjk).chain(interface) {
         crate::term::load_font(&gpui::font(family.clone()), cx.text_system())
             .with_context(|| field.to_string())?;
     }
@@ -279,9 +291,9 @@ mod tests {
         let folder = folder("range");
         let path = folder.join("settings.json");
         fs::create_dir_all(&folder).expect("folder");
-        fs::write(&path, r#"{ "background_opacity": 0.1 }"#).expect("write");
-        let error = load(&path).expect_err("too clear");
-        assert!(format!("{error:#}").contains("background_opacity is 0.1"));
+        fs::write(&path, r#"{ "background_opacity": -0.1 }"#).expect("write");
+        let error = load(&path).expect_err("past clear");
+        assert!(format!("{error:#}").contains("background_opacity is -0.1"));
         fs::remove_dir_all(folder).expect("cleanup");
     }
 }

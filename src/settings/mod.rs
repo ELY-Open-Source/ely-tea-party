@@ -1,3 +1,5 @@
+mod picture;
+mod profiles;
 mod store;
 pub mod window;
 
@@ -13,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::themes;
 
+pub use picture::{PictureAxis, PictureLength, PicturePosition, PictureRepeat, PictureSize};
+pub use profiles::{Profile, command_line, words};
 pub use store::{SettingsStore, folder, load, save};
 
 /// Who peeks over the main window.
@@ -65,6 +69,15 @@ pub enum Backdrop {
     MicaAlt,
 }
 
+/// How glyphs antialias: grayscale, as Windows Terminal draws, or by subpixel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Antialias {
+    #[default]
+    Grayscale,
+    Subpixel,
+}
+
 /// The interface's language, by the tag Ely's `I18n` names it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Language {
@@ -95,17 +108,32 @@ pub enum PanelTab {
     Activity,
 }
 
+/// Where the background picture paints: the terminal's column or the window below the title bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundScope {
+    #[default]
+    Terminal,
+    Window,
+}
+
 /// Everything the settings window edits. A field the file leaves out takes its default.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub language: Language,
     pub butler: crate::butler::Config,
+    /// The interface's family; empty for the system's.
+    pub interface_font: String,
+    /// The interface's base text, in pixels.
+    pub interface_size: u8,
     /// A program path; empty runs the login shell.
     pub shell: String,
     pub start_in: StartIn,
     /// Start in's Folder; empty until one is chosen.
     pub start_folder: String,
+    /// What the new-session menu offers before the detected shells.
+    pub profiles: Vec<Profile>,
     pub theme: String,
     /// The theme while the system is dark; none keeps `theme`.
     pub dark_theme: Option<String>,
@@ -113,16 +141,32 @@ pub struct Settings {
     pub custom_themes: Vec<themes::CustomTheme>,
     /// A picture under the terminal; empty for none.
     pub background_image: String,
+    /// Where the picture paints: the terminal's column or the window below the title bar.
+    pub background_scope: BackgroundScope,
+    /// How the picture fills its box, as CSS's `background-size`.
+    pub background_size: PictureSize,
+    /// Where the picture sits in its box, as CSS's `background-position`.
+    pub background_position: PicturePosition,
+    /// Whether the picture tiles to fill its box.
+    pub background_repeat: PictureRepeat,
     pub font_family: String,
     /// Families tried in order for a character Font family lacks.
     pub font_fallbacks: Vec<String>,
+    /// Draws CJK characters; empty leaves them to the family.
+    pub cjk_font: String,
     pub font_size: f32,
     /// Saved zoom offset in points; zero uses the base font size.
     pub font_zoom: f32,
+    /// Normal text's weight; bold sits 300 above it.
+    pub font_weight: f32,
     pub line_height: f32,
+    /// Subpixel draws only on an opaque window, and never on macOS.
+    pub text_antialias: Antialias,
     pub ligatures: bool,
     pub cursor_style: CursorStyle,
     pub cursor_blink: bool,
+    /// The cursor glides to its new cell.
+    pub cursor_smooth: bool,
     pub background_opacity: f32,
     pub background_blur: bool,
     /// Windows 11's backdrop while blurred.
@@ -136,6 +180,8 @@ pub struct Settings {
     pub copy_on_select: bool,
     /// Sessions, and their agents' conversations, come back at the next start.
     pub restore_sessions: bool,
+    /// A right press copies a selection, else pastes, as Windows Terminal does.
+    pub right_click_paste: bool,
     /// Ely peeks over the main window's top edge.
     pub ely: bool,
     pub mascot: Mascot,
@@ -178,21 +224,32 @@ impl Default for Settings {
         Self {
             language: Language::English,
             butler: crate::butler::Config::default(),
+            interface_font: String::new(),
+            interface_size: 13,
             shell: String::new(),
             start_in: StartIn::Home,
             start_folder: String::new(),
+            profiles: Vec::new(),
             theme: themes::default_id().into(),
             dark_theme: None,
             custom_themes: Vec::new(),
             background_image: String::new(),
+            background_scope: BackgroundScope::Terminal,
+            background_size: PictureSize::Cover,
+            background_position: PicturePosition::default(),
+            background_repeat: PictureRepeat::NoRepeat,
             font_family: "JetBrains Mono".into(),
             font_fallbacks: Vec::new(),
+            cjk_font: String::new(),
             font_size: 13.0,
             font_zoom: 0.0,
+            font_weight: 400.0,
             line_height: 1.2,
+            text_antialias: Antialias::Grayscale,
             ligatures: true,
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
+            cursor_smooth: true,
             background_opacity: 0.88,
             background_blur: true,
             backdrop: Backdrop::Acrylic,
@@ -203,6 +260,7 @@ impl Default for Settings {
             natural_text_editing: false,
             copy_on_select: false,
             restore_sessions: true,
+            right_click_paste: cfg!(windows),
             ely: true,
             mascot: Mascot::Whale,
             ely_left: 140.0,
@@ -223,9 +281,11 @@ impl Default for Settings {
     }
 }
 
+pub const INTERFACE_SIZE: RangeInclusive<u8> = 12..=16;
 pub const FONT_SIZE: RangeInclusive<f32> = 6.0..=72.0;
+pub const FONT_WEIGHT: RangeInclusive<f32> = 100.0..=900.0;
 pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
-pub const OPACITY: RangeInclusive<f32> = 0.3..=1.0;
+pub const OPACITY: RangeInclusive<f32> = 0.0..=1.0;
 pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
 pub const COLUMN: RangeInclusive<f32> = 160.0..=960.0;
@@ -238,9 +298,11 @@ impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
     pub fn validate(&self) -> anyhow::Result<()> {
         self.butler.validate()?;
+        within("interface_size", self.interface_size, &INTERFACE_SIZE)?;
         within("font_size", self.font_size, &FONT_SIZE)?;
         let zoom_span = FONT_SIZE.end() - FONT_SIZE.start();
         within("font_zoom", self.font_zoom, &(-zoom_span..=zoom_span))?;
+        within("font_weight", self.font_weight, &FONT_WEIGHT)?;
         within("line_height", self.line_height, &LINE_HEIGHT)?;
         within("background_opacity", self.background_opacity, &OPACITY)?;
         within("padding_x", self.padding_x, &PADDING)?;
@@ -292,6 +354,16 @@ impl Settings {
         }
         if !self.start_folder.is_empty() {
             start_folder(&self.start_folder)?;
+        }
+        for (at, profile) in self.profiles.iter().enumerate() {
+            profile.check()?;
+            anyhow::ensure!(
+                !self.profiles[..at]
+                    .iter()
+                    .any(|other| other.name == profile.name),
+                "profiles holds {} twice",
+                profile.name
+            );
         }
         anyhow::ensure!(
             self.start_in != StartIn::Folder || !self.start_folder.is_empty(),

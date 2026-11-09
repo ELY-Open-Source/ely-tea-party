@@ -252,3 +252,58 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T128 Issue #39: on Windows, PowerShell's `cd` takes Git Bash's drive paths, `/e` as `E:\` and `/e/x` as `E:\x`, where no such path lies on the current drive, through ELYTerminal's PowerShell integration; every other `cd` as before.
 - [x] T127 Release 0.2.0: the version raised, the builds for macOS, Windows and Linux on the release, the notes in English and Chinese, the website's links following. v0.2.0 at 0cef65d, published with the signed and notarized disk image, the Windows zip and the four Linux packages, each with its version-less alias, which the website's links follow; the notes reviewed in three rounds.
 - [x] T129 Mica draws no caption buttons of DWM's behind Ely's: the Windows fork stops extending the frame, the backdrop drawn behind the clear client area; 0.2.0's Windows zip rebuilt and replaced on its release.
+
+## 42. 0.2.1
+
+- [x] T130 PR #48: zsh's prompt drawn again on a resize leaves no copy in the history; the PR checked on macOS and Linux, its cause confirmed, merged with its author or fixed at the cause.
+- [x] T131 Issues #44 and #45: kitty graphics on Windows draw at the image's own resolution, sharp, and yazi's preview keeps its aspect: the cell size in pixels that programs ask for (CSI 14 t, 16 t, 18 t) answered on every system, reproduced first on the owner's PC.
+- [x] T132 Issue #47: Files shows a file another program creates, renames or deletes in an open folder within a second, without a prompt, on macOS, Windows and Linux; Git's marks follow.
+- [x] T133 Issue #46: a command's start clears the last command's failure, so the row and Ely are calm while ssh, cmd or a nested shell runs, and its exit code shows when it ends; a nested cmd on Windows marks its prompts and reports its folder.
+- [x] T134 Issue #41: the interface's font family and size, as ely-mark sets them: a family picker with a sample and a size from 12 to 16 px in Settings › Appearance, saved, applied to every window at once.
+- [x] T135 Issue #40: on Windows, Settings › Terminal adds or removes "Open in ELYTerminal" on a folder's and a folder background's right-click menu, for the current user, the folder passed to a new window as it starts.
+- [x] T136 Issues #42 and #50: a Homebrew tap, `ELY-Open-Source/homebrew-tap`, with a cask, and a winget manifest for the portable zip, each refreshed by a script at a release; the install guides tell SmartScreen's prompt from a Defender detection and say how to report a false positive.
+- [x] T137 The README, its Chinese twin and the guides say what 0.2.1 does; PRD, AGENTS.md and the acceptance table hold T130 to T136.
+- [x] T138 Release 0.2.1: the version raised, every build on the release, the notes in English and Chinese, the cask and the winget PR following, each issue answered.
+
+## 43. 0.2.2
+
+- [x] T139 Issue #52: closing a window on a Mac with a Touch Bar does not abort. The macOS fork's AccessKit `SubclassingAdapter` restores the content view's class at close and drops the KVO AppKit's Touch Bar finder set on it; the fork hosts AccessKit's plain `Adapter` on GPUIView, as zed#65186 does. Reproduced first under a TouchBarServer.
+- [x] T140 Issue #60: a font weight for normal text, 100 to 900, in Settings › Appearance; bold text stays bolder.
+- [x] T141 Issue #60: a CJK font, tried for CJK characters before the fallbacks; empty keeps today's behaviour.
+- [x] T142 Issue #60: on Windows, CJK text as clear as in Windows Terminal; gpui's DirectWrite path compared with Windows Terminal's on the owner's PC, fixed in the Windows fork where a cause shows.
+- [x] T143 PR #54: the cursor glides to its new cell; the PR checked, fixed where needed, merged with its author.
+- [x] T144 PR #56: a Files row dragged onto the terminal types its path; Ely's `TreeDrag` made public in Ely first; the PR checked, merged with its author.
+- [x] T145 PR #53: the first session starts in a folder named by `--working-directory`, `--startingDirectory` or `-d`, and under Windows Terminal's Open in Terminal; the PR checked against T135's folder argument, merged with its author.
+- [x] T146 Issue #59: answered; Ely cannot be replaced.
+- [x] T147 Issue #55: profiles, Windows Terminal's way: profiles of the user's own, each a name, a command line and a start folder, and detected ones, WSL distributions, Git Bash, PowerShell and cmd on Windows, the system's shells elsewhere; the + button's menu opens one.
+- [x] T148 PR #57: a right press on the Files tab opens a folder picker that starts a session there; Ely's `SegmentedControl::on_context` in Ely first; the PR checked, merged with its author.
+- [x] T149 PR #58: its author asked to cut the change smaller and drop the old keys' shim; left open.
+- [x] T150 The README, its Chinese twin and the guides say what 0.2.2 does; PRD, AGENTS.md and the acceptance table hold T139 to T149; each issue answered.
+- [x] T151 Release 0.2.2, which the owner asked for once the fixes are in: the version raised, every build on the release, the notes in English and Chinese, the cask and winget following, each issue answered.
+- [x] T152 Ely main's CI green, which the owner asked for so Ely PR #11 merges: the `ely-core` API snapshot `d6334fc` left stale, `ely-editor`'s version past its release for `Metrics.wheel`, deny's yanked `async-executor` and markdown advisory, and the gate's GPUI Kit compat step; then Ely PR #11 merged. Ely PR #11 merged; the gate's last red was Kit 0.9.0's move to gpui-pre 0.3.11, so Ely moved to it at 105e2620, every published crate's minor raised, tests advancing the executor's clock that gpui's animations now read; the gate passed on this Mac; CI run 42095343061 checked again before T168.
+
+## 44. Issues and PRs after 0.2.2
+
+In PRD order. Reviews by Claude Code on Kimi K3.1 Pro High, in a herdr pane.
+
+- [x] T153 Issue #73: Background opacity runs down to 0%, which zcg's full-acrylic look needs, as Windows Terminal's and Ghostty's do; the theme itself waits for zcg's PR, as the owner offered; answered.
+- [x] T154 PR #79, issue #78: the rule's width checked against Ghostty's at equal sizes; the PR merged with its author if it holds, else answered with the numbers. Not merged: at equal sizes today's rounding matches Ghostty's ceil of JetBrains Mono's 0.05 em, and ceil would add a pixel on Retina; the report compared 16 px with 16 pt. Asked for the sizes; #78 and #79 stay open.
+- [x] T155 Issue #66: on Windows a typed space draws a black block that stays; reproduced on the owner's PC first, the cause fixed, logged. Unreproduced: under the bundled ConPTY, PowerShell 5.1 and pwsh 7 typed `a b` with no cell holding a ground, so the block is drawn; a composition paints the theme's ground solid over the glass, and the Windows fork hears no `WM_IME_ENDCOMPOSITION`, so a composition an input method ends in silence would stay. No guessed fix: the reporter was asked for the version, the input method, a run without it, a screenshot, the settings and a log, which a release build writes through `Start-Process -RedirectStandardError`; #66 stays open.
+- [x] T156 Issue #77: Shift+Enter makes a new line in Grok Build on macOS; how Grok detects the kitty keyboard protocol found, fixed at the cause. Grok 1.0.77 names a terminal from `TERM_PROGRAM` and `WT_SESSION` and by design asks no unnamed one for the protocol; a pty probe saw `CSI ? u` only under `TERM_PROGRAM=ghostty` or `GROK_KITTY_KEYBOARD=query`, never under `TERM_PROGRAM=ELYTerminal` or any XTVERSION answer. No change short of posing as another terminal; the reply gives Grok's `kitty_keyboard = "query"`; #77 closed as not planned.
+- [x] T157 PR #69, issue #68: on Windows a wheel notch sends one report to a program that tracks the mouse; the PR checked, merged with its author. Cherry-picked with its author as cae1833; only a wheel's line deltas count as notches, so a touchpad's pixels keep the history's remainder; 418 tests on the owner's PC.
+- [x] T158 PR #71, issue #70: a paste with no text sends an empty bracketed paste, so OpenCode reads the image itself; the PR checked, merged with its author. Cherry-picked with its author as d21c4fa; Windows alone, under mode 2004; 418 tests on the owner's PC.
+- [x] T159 Issue #67: typing hides the mouse pointer over the terminal until it moves, as Windows Terminal does; the Windows fork showed it again at the move Windows sends on a repaint.
+- [x] T160 Issue #75: a right press on the terminal may paste, or copy a selection, as Windows' QuickEdit does; a setting.
+- [x] T161 PR #61: links underline under the pointer; the PR checked, merged with its author. Cherry-picked with its author as c9d21d2; copy and paste moved to `pointer/copy.rs` to keep `pointer.rs` under 500 lines; documented.
+- [x] T162 Issue #76: on Plasma's Wayland a window moves without jitter while Ely shows; reproduced under KWin first, the cause fixed, logged. Unreproduced: no Plasma Wayland machine at hand, and a nested headless KWin shows no interactive move's judder. No guessed fix; her height, 123.4 points, makes 154.25 device pixels at 125%, a lead the reply names; the log already writes each close and reopen of her popup with its reason. The reporter was asked for a run with Ely off, a debug log during a drag, 60 Hz and the version; #76 stays open.
+- [x] T163 PR #62: the background picture's scope, the terminal or the window; the PR checked, merged with its author. Cherry-picked with its author as c6b8ca1; the picture lies in the box it paints in, so Linux's resize margin offsets it no more, proven floating under Hyprland; the sessions' rows moved to `workspace/reorder.rs`.
+- [x] T164 PR #65: the picture's size, position and repeat; the PR checked, merged with its author. Cherry-picked with its author as 3100fe8, on T163's measured box; the box clips the picture, the tile cap counts each side, positions follow CSS's one- and two-value rules of any sign, and the guides name the file's repeat spellings.
+- [x] T165 PR #58: answered once its pieces landed, closed or left open for the rest. #62 and #65 landed; the gradient, and the opacity and mask, remain; #58 stays open as the reference.
+- [x] T166 PR #64: zcg's font-weight reference; answered, closed as not for merge, as its author asked. A family's real faces in the picker need gpui's platform layer on all three systems first; the reply says so.
+- [x] T167 PR #72, issue #63: a Windows ARM64 build in CI, and on the release; the PR checked, merged with its author. Cherry-picked with its author as 231527f; CI run 42126749944 passed all four jobs, ARM64's 446 tests and its zip, AArch64 binaries; the release takes the zip by hand at the next version.
+- [x] T168 PRD, AGENTS.md, the guides and the acceptance table hold T152 to T167; each issue answered. PRD's mouse, clipboard, pointer and release lines; both READMEs; acceptance rows for T153, T157 to T161, T163, T164 and T167, a settings row for Right click pastes, and the settings count at 41 of 50 fields.
+
+## 45. 0.2.3
+
+- [x] T169 PR #79, issue #78: its author measured both terminals at 16 px, Windows Terminal's `┃` 4 device pixels at 125% against ELYTerminal's 2; the rule rounds up to a device pixel, the PR merged with its author. Cherry-picked with its author as bf10492; 13 px on Retina keeps its 4-pixel heavy line.
+- [x] T170 Release 0.2.3, which the owner asked for: the version raised, every build on the release, Windows ARM64's zip among them, the notes in English and Chinese, the cask and winget following, each issue answered. Published at c82e206, thirteen assets, Windows ARM64 the new one; #78 and #79 closed; the tap holds 0.2.3; winget: microsoft/winget-pkgs#471905.

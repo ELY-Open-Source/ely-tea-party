@@ -1,0 +1,26 @@
+//! Simplified Chinese, the Files panel's words.
+
+pub const MESSAGES: &[(&str, &str)] = &[
+    ("et.files.open", "打开"),
+    ("et.files.new_session", "在此新建会话"),
+    ("et.files.choose_folder", "选择文件夹新建会话…"),
+    ("et.files.folder_failed", "无法在所选文件夹新建会话"),
+    ("et.files.dismiss", "关闭"),
+    ("et.files.copy_path", "复制路径"),
+    ("et.files.reveal_finder", "在 Finder 中打开"),
+    ("et.files.reveal", "在文件管理器中打开"),
+    ("et.files.refresh", "刷新"),
+    ("et.files.new_file", "新建文件"),
+    ("et.files.new_folder", "新建文件夹"),
+    ("et.files.trash", "移到废纸篓"),
+    ("et.files.name_in", "名称（位于 {folder}）"),
+    ("et.files.create", "创建"),
+    ("et.files.failed", "文件操作失败"),
+    ("et.files.unreadable", "无法读取"),
+    ("et.files.loading", "加载中…"),
+    ("et.files.name_empty", "请输入名称。"),
+    ("et.files.name_dots", "请使用文件或文件夹名称。"),
+    ("et.files.name_chars", "名称不能包含斜杠或控制字符。"),
+    ("et.files.name_windows", "Windows 不支持此名称。"),
+    ("et.files.name_reserved", "此名称被 Windows 保留。"),
+];

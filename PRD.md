@@ -57,20 +57,23 @@ Ghostty is the bar for what the terminal does, 1.4's kitty graphics, clipboard, 
 - Cursor: block, bar, underline, hollow block; blinking per setting and per DECSCUSR; hollow when the window is not focused.
 - Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, with an input method selected too, and natural text editing there when the setting is on: Option-Left and Option-Right go as ESC b and ESC f, Option-Backspace and Option-Delete as ESC DEL and ESC d, Command-Left and Command-Right as Ctrl-A and Ctrl-E, Command-Backspace and Command-Delete as Ctrl-U and Ctrl-K, as iTerm2's preset; the kitty keyboard protocol as the program sets its flags, so Shift+Enter makes a new line in codex and Claude Code on macOS, Windows and Linux; a key Shift makes a symbol of goes as its own key with Shift, the symbol its alternate, as Ghostty sends it, on macOS and Windows. On Windows keys go as win32-input-mode records while ConPTY asks, as Windows Terminal sends them. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
 - IME: marked text drawn at the cursor, on one line, a control in it as its picture; committed text sent to the program. A dead key waits for the key after it, as the keyboard layout asks and as Windows' console waits: under US-International a quote then `a` types `á`. On X11 the input method's compound text composes and commits in every set libX11 writes, Simplified and Traditional Chinese among them. On Wayland a modifier's key an input method forwards without its mask still counts, so Shift and Ctrl+Shift bindings hold under fcitx5.
-- Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen; on Windows a notch moves the lines Windows sets, a screen under one screen at a time, and elsewhere 3; with Shift, which takes the wheel back from a program that tracks the mouse, a notch does what it does where nothing tracks it.
+- Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen; on Windows a notch moves the lines Windows sets, a screen under one screen at a time, and elsewhere 3, while a program that tracks the mouse on Windows hears one report a notch; with Shift, which takes the wheel back from a program that tracks the mouse, a notch does what it does where nothing tracks it.
 - Click to move: while the shell reads a line, as its OSC 133 marks say, a plain click on that line, past its prompt, moves the shell's cursor there, as Ghostty's `cursor-click-to-move`: a shell that takes clicks, as fish does, hears the click; others get arrow keys.
-- Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.
+- Clipboard: copy, paste (bracketed when asked; on Windows a clipboard with no text sends an empty bracketed paste, so a program reads an image itself), copy on select per setting, a right press that copies or pastes per setting, OSC 52 writes.
 - Kitty's clipboard protocol, OSC 5522, as Ghostty 1.4 takes it: writes up to 64 MiB allowed; each read asks first, showing what it would read, with a choice to allow a program's password for the session; text, images and file lists, written and read alike on every system; under mode 5522 a paste lists the clipboard's types with a password for one read.
 - Kitty graphics, as Ghostty 1.4 takes them: images sent direct, from a file, a temporary file or shared memory, RGB, RGBA or PNG, zlib, in chunks, within a session's quota; placed at the cursor under the ground, between it and the text or over the text, cut and sized as asked, moving with scrolls, clears and resizes; Unicode placeholders and relative placements; animation, its frames composed and played on their clock, paused while its session is hidden. Payloads decode through SIMD. A hidden session gives its images' GPU textures back.
-- Drop: files dropped on the terminal type their paths at the cursor, as macOS Terminal does, each kept literal for the session's shell and followed by a space.
-- Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees. A path counts wherever it names something on disk, a bare name or a folder too.
-- File menu: a right press on a path, or in a selection that names one, opens a menu: Open, Open in Finder (Open in File Manager off macOS), Copy path. While a program tracks the mouse the press stays the program's, and Shift takes it back.
+- Drop: files dropped on the terminal type their paths at the cursor, as macOS Terminal does, each kept literal for the session's shell and followed by a space; a file or folder dragged from Files types its path the same way.
+- Links: OSC 8 and plain URLs; the one under the pointer is underlined, unless its cells carry an underline of their own; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees. A path counts wherever it names something on disk, a bare name or a folder too.
+- File menu: a right press on a path, or in a selection that names one, opens a menu: Open, Open in Finder (Open in File Manager off macOS), Copy path. While a program tracks the mouse the press stays the program's, and Shift takes it back. Right click pastes, when on, takes the press instead.
 - Focus reporting, title (OSC 0/2), scrollback limit per setting, find in scrollback (Ely's `FindWidget`).
 - Idle history packed small, unpacked as it is read, on every system, as Ghostty 1.4 compresses its scrollback.
 - Plain text passes the pty's scanners and the parser in runs, not a byte at a time.
 - On Linux, through gpui's wgpu, text draws on whole device pixels at fractional scales and nothing tears, on Vulkan and on GL.
 - A scrollbar over the history, along the terminal's right edge: a drag on its thumb scrolls, whatever the program does with the wheel.
 - Bell: no sound. The session row marks it until the session is shown.
+- A cell's size in pixels, CSI 16 t, is answered, as 14 t and 18 t are, so image tools size images where the pty carries no pixel size, as on Windows.
+- A prompt zsh draws again on a resize keeps its rows unreflowed, as kitty keeps them, so no copy of it goes into the history.
+- A command's start clears the last command's failure, so the row and Ely are calm while ssh, cmd or a nested shell runs; a cmd session, and a bare `cmd` typed in PowerShell, mark their prompts and report their folder.
 
 ## 6. Main window and layout
 
@@ -82,18 +85,20 @@ Ghostty is the bar for what the terminal does, 1.4's kitty graphics, clipboard, 
 - A session's row drags up or down to reorder the sessions; the shown session stays shown.
 - The tea party (Cmd-Shift-O) shows every session's character at one table with what she does; characters speak at the moments that matter; the right column's Activity tab lists the shown agent's steps; sessions and their agents' conversations come back at the next start.
 - The whale girl peeks over the main window's top edge in Ely's place, her animation following the sessions: at rest she stands still; after a minute with nothing happening she snacks and slacks off by turns, and after 5 minutes she falls asleep; Settings can bring Ely back or hide her.
-- The right column's foot shows how much of the shown agent's subscription is used, for Claude Code and Codex: each window's share, when it resets, and Codex's credits.
+- The right column's foot shows how much of the shown agent's subscription is used, for Claude Code, Codex and Antigravity: each window's share, when it resets, and Codex's credits.
 - Each session has a drawer: Cmd-J opens the user's own shell under the session's terminal, in its folder, and hides it again; it keeps running while hidden, and a job left running there marks the session's row.
 - The title shows the active session's title, and no other text.
-- The pointer over the terminal is the arrow.
+- The pointer over the terminal is the arrow; on Windows typing hides it until the mouse moves.
 - Ely, the icon's girl, peeks over the window's top edge from behind it, on macOS, Windows and Linux; where no room lies above the window, at the screen's top or full screen, she stands inside it at its bottom left. She moves all the time, as she does in the films: she breathes, sways and blinks, and how the sessions are doing, waiting, an error, work, a finish or calm, moves her. Nothing but her shows: no frame, line or shadow around her. A hop lifts more of her from behind the edge, never her body off it. A press pets her, and wakes her from a doze. A drag moves her along the edge she stands on, and she stays where she is let go. She goes and comes with the window: hidden with it, and on Wayland, whose compositor may lay her over other windows, shown only while it is active; a window kept above it there may still lie under her, as under any popup. A switch in Settings, Terminal, turns her off.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.
 - Every control in the title bar takes its own press on every platform, the window buttons Ely draws on Windows and Linux too.
+- Given a folder on the command line, `elyterminal [FOLDER]`, or after `--working-directory`, `-d` or `--startingDirectory`, the first session starts there; a `wsl` session in a distribution's share starts that distribution there. cmd refuses a share as its folder, says so, and starts in the Windows folder.
 
 ## 7. Sessions panel
 
 - A list of sessions. Each row: title, then the working directory, home as `~`.
 - New session (+ and Cmd-T), close (row's ×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab and Ctrl-Shift-Tab).
+- Profiles, as Windows Terminal's: the arrow beside + opens a menu of the user's profiles, each a name, a command line and a folder, kept in Settings › Terminal › Profiles, then the shells this system holds: on Windows pwsh, powershell, cmd, Git Bash and each WSL distribution, elsewhere each shell `/etc/shells` lists. A command line that names a program alone, or wsl with `-d` alone, runs with the shell's integration; any other arguments run as written, and the session reports no folder.
 - A right press on a row opens a menu at the pointer, while Session menu in Settings › Terminal is on: Duplicate session opens a session of the shell that row runs, in the folder it last reported, right after it and shown; Close session closes the row. A shell that reports no folder, as cmd does, duplicates into the folder it started in.
 - A drag on a row moves it to another place in the list, and the session shown stays shown; Drag sessions to reorder in Settings › Terminal turns the drag off.
 - Rename: a double press on a row's title opens a field in its place; Enter keeps the name, Escape drops it. The name shows in the row, the terminal's header and the window's title over the program's own until renamed again; an empty name gives the title back to the program.
@@ -108,8 +113,8 @@ Ghostty is the bar for what the terminal does, 1.4's kitty graphics, clipboard, 
 - A switch at the top, centered below the title bar: Git, Files.
 - Files shows the active session's working directory as a tree, folders first, Git status colors on names.
 - Double press: a folder opens, a file opens in the system's default app.
-- A right press on a name opens a menu, while Files menu in Settings › Terminal is on: Open opens it in the system's default app; New session here starts the shown shell in that folder, or a file's parent, right after the shown session and shown; Copy path puts the path on the clipboard. Off by default; off, a right press opens nothing.
-- It reloads when the session reports a new directory and at each prompt.
+- A right press on a name opens a menu, while Files menu in Settings › Terminal is on: Open opens it in the system's default app; New session here starts the shown shell in that folder, or a file's parent, right after the shown session and shown; Copy path puts the path on the clipboard. A right press on the Files tab reveals a row between the tabs and the tree, pushing the tree down, to choose one folder through the system dialog and start a session there. A second right press, choosing the action, switching to Git, hiding the panel or disabling Files menu closes the row. Blank space opens no menu; cancellation changes nothing and a failure is shown. Off by default; off, a right press opens nothing.
+- It reloads when the session reports a new directory and at each prompt, and reads its open folders again each second while it shows, so a file another program makes, renames or deletes shows within a second, Git's marks with it.
 
 ## 9. Right panel: Git
 
@@ -122,15 +127,16 @@ Ghostty is the bar for what the terminal does, 1.4's kitty graphics, clipboard, 
 
 ## 10. Settings window
 
-Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, each side scrolling on its own, Ely's components. Changes apply at once to every session and save.
+Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, each side scrolling on its own, Ely's components. Changes apply at once to every session and save. Closing it, or any window, on a Mac with a Touch Bar aborts nothing; the last terminal window's close still quits the app.
 
 - Appearance
   - Language: English or 简体中文, for every window and the menu bar, applied at once; what programs, git and the system say stays as it comes.
+  - Interface font and Interface size: a family picker with a sample line, the system's font by default, and 12 to 16 px, 13 by default, for the chrome of every window; the terminal keeps its own font.
   - Theme: a grid of previews; on Omarchy, the Omarchy theme first; the user's themes after the built-in ones, then New theme, which makes one from Ely Dark and wears it. While a theme of the user's is worn, its name, its 21 colors (background, foreground, cursor, cursor text, selection and the 16 ANSI colors), each picked as a swatch and set in a color picker, and Delete, after which Ely Dark takes its place.
   - Separate dark theme: a switch; when on, a second grid for dark mode.
-  - Font family: a list of installed fonts. Fallbacks: installed families tried in order for a character the family lacks, each added, changed or removed in a list of pickers. Font size. Line height. Ligatures.
-  - Cursor: style (block, bar, underline, hollow), blink, with a live preview.
-  - Background opacity: a slider. Background image: a picture under the terminal, at that opacity, chosen as a file. Background blur: a switch. Backdrop, on Windows 11 from build 22621: Acrylic, Mica or Mica Alt.
+  - Font family: a list of installed fonts. Fallbacks: installed families tried in order for a character the family lacks, each added, changed or removed in a list of pickers. CJK font: a family Chinese, Japanese and Korean characters draw in, with their marks and variation selectors, before Family, empty by default, cleared by Clear. Font size. Weight, 100 to 900, 400 by default, normal text's; bold sits 300 above it, up to 900. Line height. Ligatures. Antialiasing, on Windows and Linux: Grayscale, as Windows Terminal draws, by default, or Subpixel, which gpui draws only on an opaque window.
+  - Cursor: style (block, bar, underline, hollow), blink, glide, on by default, which slides the cursor to its new cell in 90 ms, with a live preview.
+  - Background opacity: a slider, 0 to 100%. Background image: a picture under the terminal or the window, at that opacity, chosen as a file. Picture scope: the terminal's column, or the window below the title bar. Picture size: cover, contain, fill, auto, or a width and a height such as `51% auto`. Picture position: a place such as `right top` or `125% 100%`. Picture repeat: no repeat, across, down or both. Background blur: a switch. Backdrop, on Windows 11 from build 22621: Acrylic, Mica or Mica Alt.
   - Padding: horizontal and vertical.
 - Terminal
   - Shell: a path; empty runs the login shell, on Windows `pwsh`, else `powershell`, else `cmd`. On Windows a session takes the registry's environment as it starts.
@@ -139,12 +145,14 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Option as Alt: off, left, right, both (macOS only).
   - Natural text editing: a switch, off by default (macOS only); Option and Command edit by word and line, as the shell expects.
   - Copy on select.
+  - Right click pastes: a right press copies and clears the selection, or pastes when none, as Windows Terminal does; on by default on Windows.
   - Drag sessions to reorder: a switch, on by default; off, a drag on a session's row moves nothing.
   - Session menu: a switch, on by default; off, a right press on a session's row opens nothing.
   - Files menu: a switch, off by default; off, a right press on a Files name opens nothing.
   - Ely: a switch.
   - Check for updates automatically: a switch, on by default, which checks at start and once a day.
   - Updates: what the last check found, and Check now; a newer release brings Download, which opens its page, and one an automatic check finds posts a notification.
+  - Explorer menu (Windows only): adds or removes Open in ELYTerminal on a folder's and a folder background's right-click menu, for the current user, and says which copy it opens.
   - Shortcuts: every shortcut, as this platform's keys, with a search.
 
 ## 11. Background blur
@@ -174,9 +182,10 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 ## 15. Release
 
-- A release on GitHub, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon, signed with Developer ID and notarized), a Windows zip (x86_64) and a Linux tarball (x86_64). The Linux tarball's binary also comes as a DEB, an RPM and an AppImage, which a maintainer adds to the release.
+- A release on GitHub, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon, signed with Developer ID and notarized), a Windows zip (x86_64, and ARM64, which CI builds and keeps at each push) and a Linux tarball (x86_64). The Linux tarball's binary also comes as a DEB, an RPM and an AppImage, which a maintainer adds to the release.
 - The Windows executable carries the icon. The Linux tarball carries the icon and a desktop entry, and the window names itself after it, `com.zacharyzhang.elyterminal`, as the macOS bundle does.
 - Each build comes from its platform's script: `scripts/mac-app.sh`, `scripts/windows-zip.ps1`, `scripts/linux-packages.sh`, which builds once on Ubuntu 22.04, glibc 2.35, and packs the tarball and the three packages. The macOS one runs on the signing runner, through the Release workflow.
+- Homebrew installs the disk image from the org's tap, `ely-open-source/tap/elyterminal`, and winget the zip as `ELYOpenSource.ELYTerminal` once Microsoft's catalog takes the manifest, both filled from each release's digests by `scripts/package-managers.sh`. The install guide tells SmartScreen's warning from a Defender detection and says how to report a false positive.
 
 ## Deferred
 

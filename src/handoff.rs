@@ -8,8 +8,13 @@ use crate::skins::market::SCHEME;
 pub fn links() -> Vec<String> {
     std::env::args()
         .skip(1)
-        .filter(|arg| arg.starts_with(&format!("{SCHEME}://")))
+        .filter(|arg| is_link(arg))
         .collect()
+}
+
+/// Whether a command-line argument is one of the app's links.
+pub fn is_link(arg: &str) -> bool {
+    arg.starts_with(&format!("{SCHEME}://"))
 }
 
 #[cfg(target_os = "linux")]

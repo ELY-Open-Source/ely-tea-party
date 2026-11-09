@@ -21,6 +21,8 @@ pub const SESSION: &str = "ELY_SESSION";
 pub const SOCKET: &str = "ELY_SOCKET";
 /// This executable, which hooks run as `$ELY_HOOK hook AGENT`.
 pub const HOOK: &str = "ELY_HOOK";
+/// Not empty in a session's drawer, whose agents are not the session's own.
+pub const DRAWER: &str = "ELY_DRAWER";
 
 static SOCKET_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -41,6 +43,12 @@ pub struct Report {
     pub conversation: Option<String>,
     #[serde(default)]
     pub speed: Option<super::speed::Speed>,
+    /// The tool call's own id, which its result names too.
+    #[serde(default)]
+    pub tool_id: Option<String>,
+    /// It comes from the session's drawer.
+    #[serde(default)]
+    pub drawer: bool,
 }
 
 /// What an event means for the agent it comes from.
@@ -130,8 +138,8 @@ pub fn close() {
     }
 }
 
-/// The variables that let session `id`'s hooks find the app.
-pub fn env(id: u64) -> anyhow::Result<Vec<(String, String)>> {
+/// The variables that let session `id`'s hooks find the app, from its terminal or its `drawer`.
+pub fn env(id: u64, drawer: bool) -> anyhow::Result<Vec<(String, String)>> {
     let socket = SOCKET_PATH
         .get()
         .ok_or_else(|| anyhow::anyhow!("hooks: a session started before the socket opened"))?;
@@ -141,6 +149,8 @@ pub fn env(id: u64) -> anyhow::Result<Vec<(String, String)>> {
         (SESSION.into(), id.to_string()),
         (SOCKET.into(), socket.display().to_string()),
         (HOOK.into(), exe.display().to_string()),
+        // Written always, so a terminal never inherits a drawer's.
+        (DRAWER.into(), if drawer { "1" } else { "" }.into()),
     ])
 }
 
@@ -189,6 +199,8 @@ fn send(args: &[String]) -> anyhow::Result<()> {
         detail: said.detail,
         conversation: said.conversation,
         speed: super::speed::Speed::read(agent, &payload),
+        tool_id: said.tool_id,
+        drawer: std::env::var_os(DRAWER).is_some_and(|drawer| !drawer.is_empty()),
     };
     let mut stream = UnixStream::connect(socket)?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
@@ -209,6 +221,8 @@ mod tests {
             detail: None,
             conversation: None,
             speed: None,
+            tool_id: None,
+            drawer: false,
         };
         report.change()
     }
@@ -229,7 +243,7 @@ mod tests {
     #[test]
     fn a_report_crosses_the_socket() {
         let reports = listen().expect("a socket");
-        let env = env(7).expect("its variables");
+        let env = env(7, false).expect("its variables");
         let socket = &env
             .iter()
             .find(|(name, _)| name == SOCKET)

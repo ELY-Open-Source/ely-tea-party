@@ -28,6 +28,8 @@ const SLEEPING_AFTER: Duration = Duration::from_secs(10 * 60);
 const STALE_AFTER: Duration = Duration::from_secs(15 * 60);
 /// Output this recent means an unhooked agent is working.
 const BUSY_WITHIN: Duration = Duration::from_secs(2);
+/// A hooked agent this quiet, on its screen and in its hooks, was interrupted: no hook says so.
+const SETTLED_AFTER: Duration = Duration::from_secs(10);
 /// While working, the pose turns every this long.
 const ROTATE: Duration = Duration::from_secs(15);
 /// An unhooked agent's working poses in turn; the main one twice, so it shows most.
@@ -265,12 +267,12 @@ pub fn next_session() -> u64 {
 
 /// The variables a session starts with so its agents' hooks reach the app.
 #[cfg(unix)]
-pub fn env(id: u64) -> anyhow::Result<Vec<(String, String)>> {
-    hooks::env(id)
+pub fn env(id: u64, drawer: bool) -> anyhow::Result<Vec<(String, String)>> {
+    hooks::env(id, drawer)
 }
 
 #[cfg(windows)]
-pub fn env(_: u64) -> anyhow::Result<Vec<(String, String)>> {
+pub fn env(_: u64, _: bool) -> anyhow::Result<Vec<(String, String)>> {
     Ok(Vec::new())
 }
 
@@ -345,7 +347,15 @@ impl Agent {
     /// An unhooked agent works while it draws; a bell asks for input until it draws again.
     pub fn guess(&mut self, drew: Instant, now: Instant) -> bool {
         if self.hooked {
-            return false;
+            // Its next hook sets it working again, should it only have been thinking quietly.
+            let quiet = |since: Instant| now.saturating_duration_since(since) >= SETTLED_AFTER;
+            let settled = self.status == Status::Working && quiet(drew) && quiet(self.active);
+            if settled {
+                self.status = Status::Idle;
+                self.since = now;
+                self.activity = None;
+            }
+            return settled;
         }
         let busy = now.saturating_duration_since(drew) < BUSY_WITHIN;
         match self.status {

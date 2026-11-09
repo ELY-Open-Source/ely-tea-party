@@ -1,10 +1,9 @@
-mod backdrop;
 mod boxes;
 mod click;
 mod clipboard;
 mod drop;
 #[cfg(windows)]
-mod env;
+pub(crate) mod env;
 mod find;
 mod fonts;
 pub mod frame;

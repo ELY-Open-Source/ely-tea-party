@@ -22,15 +22,30 @@ fn application() -> gpui::Application {
 }
 
 fn run(cx: &mut App) -> anyhow::Result<()> {
+    // A link goes to the market once the app runs; only a folder picks the first session's start.
+    let folders = std::env::args_os()
+        .skip(1)
+        .filter(|arg| !arg.to_str().is_some_and(handoff::is_link));
+    let named = app::args::folder(folders)?;
     app::start(cx)?;
+    let restore = match named {
+        Some(_) => app::Restore::Behind,
+        None => app::Restore::First,
+    };
     let settings = SettingsStore::get(cx);
     // No session shows yet, so Session's folder means home.
-    let start = match settings.start_in {
-        StartIn::Folder => Start::In(settings::start_folder(&settings.start_folder)?),
-        StartIn::Home | StartIn::Session => Start::Home,
+    let start = match (named, settings.start_in) {
+        (Some(folder), _) => Start::In(folder),
+        (None, StartIn::Folder) => Start::In(settings::start_folder(&settings.start_folder)?),
+        (None, StartIn::Home | StartIn::Session) => Start::Home,
     };
-    let launch = launch(&settings.shell, start, &cx.global::<ShellIntegration>().0)?;
-    app::open(launch, true, cx)?;
+    let launch = launch(
+        &settings.shell,
+        &[],
+        start,
+        &cx.global::<ShellIntegration>().0,
+    )?;
+    app::open(launch, restore, cx)?;
     cx.activate(true);
     Ok(())
 }
