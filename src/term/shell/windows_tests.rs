@@ -333,7 +333,7 @@ fn a_bare_cmd_typed_in_powershell_marks_its_prompts() {
         assert_eq!(prompt, inherited, "an existing prompt's marks stay");
     } else {
         assert!(
-            prompt.contains("aid=ely-tea-party"),
+            prompt.contains("aid=elyterminal"),
             "a cmd session's is the shell's"
         );
     }
