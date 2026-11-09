@@ -30,7 +30,7 @@ impl Operation {
                 name,
                 folder,
             } => {
-                validate_name(name)?;
+                ensure!(name_problem(name).is_none(), "{name:?} is no usable name");
                 let path = parent.join(name);
                 if *folder {
                     fs::create_dir(&path)
@@ -55,31 +55,42 @@ impl Operation {
     }
 }
 
-pub(super) fn validate_name(name: &str) -> anyhow::Result<()> {
-    ensure!(!name.trim().is_empty(), "Enter a name.");
-    ensure!(name != "." && name != "..", "Use a file or folder name.");
-    ensure!(
-        !name
-            .chars()
-            .any(|c| c.is_control() || matches!(c, '/' | '\\')),
-        "The name cannot contain a slash or control character."
-    );
+/// Every word `name_problem` can give.
+pub(super) const NAME_PROBLEMS: [&str; 5] = [
+    "et.files.name_empty",
+    "et.files.name_dots",
+    "et.files.name_chars",
+    "et.files.name_windows",
+    "et.files.name_reserved",
+];
+
+/// What is wrong with `name`, as its catalog key; none when it can be created.
+pub(super) fn name_problem(name: &str) -> Option<&'static str> {
+    if name.trim().is_empty() {
+        return Some("et.files.name_empty");
+    }
+    if name == "." || name == ".." {
+        return Some("et.files.name_dots");
+    }
+    let bad = |c: char| c.is_control() || matches!(c, '/' | '\\');
+    if name.chars().any(bad) {
+        return Some("et.files.name_chars");
+    }
     #[cfg(windows)]
     {
-        ensure!(
-            !name.contains(['<', '>', ':', '"', '|', '?', '*']) && !name.ends_with(['.', ' ']),
-            "This name is not supported by Windows."
-        );
+        if name.contains(['<', '>', ':', '"', '|', '?', '*']) || name.ends_with(['.', ' ']) {
+            return Some("et.files.name_windows");
+        }
         let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
-        ensure!(
-            !matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-                && !(stem.len() == 4
-                    && (stem.starts_with("COM") || stem.starts_with("LPT"))
-                    && matches!(stem.as_bytes()[3], b'1'..=b'9')),
-            "This name is reserved by Windows."
-        );
+        if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || (stem.len() == 4
+                && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+        {
+            return Some("et.files.name_reserved");
+        }
     }
-    Ok(())
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -197,7 +208,7 @@ mod tests {
             "bad\0name",
             "two\nlines",
         ] {
-            assert!(validate_name(name).is_err(), "{name:?}");
+            assert!(name_problem(name).is_some(), "{name:?}");
         }
         let create = |name: &str, folder| {
             Operation::Create {

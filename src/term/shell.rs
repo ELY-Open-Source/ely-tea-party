@@ -9,6 +9,9 @@ use gpui::{App, Global};
 
 use super::{drop::Quote, pty::Launch};
 
+#[cfg(any(windows, test))]
+pub(super) mod cmd;
+
 /// Each script, by its path under the integration folder.
 const SCRIPTS: [(&str, &str); 5] = [
     (
@@ -95,8 +98,25 @@ fn name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// How to start `shell`, or the login shell, at `start`.
-pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Result<Launch> {
+/// Whether `folder` lies on a share, `\\server\share`.
+#[cfg(windows)]
+fn unc(folder: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    let first = folder.components().next();
+    matches!(first, Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::UNC(..)))
+}
+
+/// How to start `shell` with `args`, or the login shell, at `start`; arguments other than wsl's `-d` run as written.
+pub fn launch(
+    shell: &str,
+    args: &[String],
+    start: impl Into<Start>,
+    dir: &Path,
+) -> anyhow::Result<Launch> {
+    anyhow::ensure!(
+        !shell.is_empty() || args.is_empty(),
+        "shell integration: arguments without a program"
+    );
     let start = start.into();
     let cwd = match &start {
         Start::Home => dirs::home_dir().context("shell integration: no home folder")?,
@@ -116,8 +136,14 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
     } else {
         name
     };
+    let distro = match args {
+        [flag, distro] if name == "wsl" && (flag == "-d" || flag == "--distribution") => {
+            Some(distro.clone())
+        }
+        _ => None,
+    };
     let mut launch = Launch {
-        program: (!shell.is_empty()).then(|| (path.clone(), Vec::new())),
+        program: (!shell.is_empty()).then(|| (path.clone(), args.to_vec())),
         cwd,
         env: Vec::new(),
         reports: true,
@@ -127,6 +153,11 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
             _ => Quote::Posix,
         },
     };
+    if !args.is_empty() && (distro.is_none() || !cfg!(windows)) {
+        launch.reports = false;
+        log::info!("shell integration: none for {path} with its arguments, which run as written");
+        return Ok(launch);
+    }
     let script = |name: &str| dir.join(name).display().to_string();
     match name.as_str() {
         "zsh" => {
@@ -168,16 +199,51 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
                     ),
                 ],
             ));
+            // A bare cmd typed there takes this prompt.
+            #[cfg(windows)]
+            {
+                let prompt = cmd::prompt(super::env::fresh()?.get("PROMPT"), false);
+                launch.env.push(("ELY_CMD_PROMPT".into(), prompt));
+            }
         }
         // WSL starts the distribution's login shell through the launcher, which loads its integration.
         #[cfg(windows)]
         "wsl" => {
             let launcher = r#"exec /bin/sh "$ELY_WSL/wsl/ely-tea-party.sh""#;
             let mut args: Vec<String> = ["-e", "/bin/sh", "-c", launcher].map(String::from).into();
-            // Home is the distribution's own, which WSL resolves, not Windows'.
-            if matches!(start, Start::Home) {
-                args.splice(0..0, ["--cd".to_string(), "~".to_string()]);
-                log::info!("shell integration: wsl starts in its distribution's home");
+            let shared = match &start {
+                Start::In(folder) => crate::git::wsl::split(folder),
+                Start::Home => None,
+            };
+            let shared = shared.map(|(share, inside)| (crate::git::wsl::distro(share), inside));
+            // The profile's distribution, else a share's own.
+            let own = distro
+                .as_deref()
+                .or(shared.as_ref().map(|(share, _)| *share));
+            let cd = match (&start, shared) {
+                // Home is the distribution's own, which WSL resolves, not Windows'.
+                (Start::Home, _) => Some("~".to_string()),
+                (Start::In(_), Some((share, inside))) if Some(share) == own => Some(inside),
+                (Start::In(folder), Some(_)) => {
+                    log::warn!(
+                        "shell integration: {} lies in another distribution",
+                        folder.display()
+                    );
+                    Some("~".to_string())
+                }
+                // A Windows folder, which WSL maps under /mnt.
+                (Start::In(_), None) => None,
+            };
+            log::info!(
+                "shell integration: wsl starts {} in {}",
+                own.unwrap_or("its default"),
+                cd.as_deref().unwrap_or("the Windows folder")
+            );
+            if let Some(cd) = cd {
+                args.splice(0..0, ["--cd".to_string(), cd]);
+            }
+            if let Some(own) = own {
+                args.splice(0..0, ["-d".to_string(), own.to_string()]);
             }
             launch.program = Some((path.clone(), args));
             let shared = super::env::fresh()?.get("WSLENV").map(str::to_string);
@@ -186,6 +252,22 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
                 .env
                 .push(("ELY_WSL".into(), dir.display().to_string()));
             launch.env.push(("WSLENV".into(), shared));
+        }
+        // Only cmd's own environment: there a batch's cd is cmd's.
+        #[cfg(windows)]
+        "cmd" => {
+            // cmd refuses a share as its folder, saying so.
+            if let Start::In(folder) = &start
+                && unc(folder)
+            {
+                log::warn!(
+                    "shell integration: cmd starts in Windows' folder, not {}",
+                    folder.display()
+                );
+            }
+            launch.program = Some((path.clone(), Vec::new()));
+            let prompt = cmd::prompt(super::env::fresh()?.get("PROMPT"), true);
+            launch.env.push(("PROMPT".into(), prompt));
         }
         _ => {
             launch.reports = false;
@@ -202,13 +284,13 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
 }
 
 #[cfg(unix)]
-pub(crate) fn default_shell() -> anyhow::Result<String> {
+pub fn default_shell() -> anyhow::Result<String> {
     Ok(super::unix::login_shell_path()?)
 }
 
 /// `pwsh`, as Windows Terminal takes it, else the Windows PowerShell the system ships, else `cmd`.
 #[cfg(windows)]
-fn default_shell() -> anyhow::Result<String> {
+pub fn default_shell() -> anyhow::Result<String> {
     // The registry's PATH, so a shell in a folder added since this process opened is found.
     first_shell(&super::env::path()?)
 }
@@ -216,24 +298,31 @@ fn default_shell() -> anyhow::Result<String> {
 /// The first of `pwsh`, `powershell` and `cmd` that `folders` hold outside `WindowsApps`.
 #[cfg(windows)]
 fn first_shell(folders: &str) -> anyhow::Result<String> {
-    for name in ["pwsh", "powershell", "cmd"] {
-        for folder in env::split_paths(folders) {
-            // One folder as a PATH of its own, so a `;` inside its name stays.
-            let Ok(one) = env::join_paths([&folder]) else {
-                continue;
-            };
-            match crate::settings::program_path_in(name, &one) {
-                // An App Execution Alias is a stub that starts only while its package is installed.
-                Ok(found) if alias(&found) => {
-                    log::info!("shell integration: {found} is an alias, so passed by")
-                }
-                Ok(found) => return Ok(found),
-                Err(_) => {}
+    ["pwsh", "powershell", "cmd"]
+        .into_iter()
+        .find_map(|name| found(name, folders))
+        .context("shell integration: neither pwsh, powershell nor cmd lies on PATH")
+}
+
+/// Program `name` in the first of `folders` that holds it outside `WindowsApps`.
+#[cfg(windows)]
+pub fn found(name: &str, folders: &str) -> Option<String> {
+    for folder in env::split_paths(folders) {
+        // One folder as a PATH of its own, so a `;` inside its name stays.
+        let Ok(one) = env::join_paths([&folder]) else {
+            continue;
+        };
+        match crate::settings::program_path_in(name, &one) {
+            // An App Execution Alias is a stub that starts only while its package is installed.
+            Ok(found) if alias(&found) => {
+                log::info!("shell integration: {found} is an alias, so passed by")
             }
+            Ok(found) => return Some(found),
+            Err(_) => {}
         }
-        log::info!("shell integration: no {name} on PATH");
     }
-    anyhow::bail!("shell integration: neither pwsh, powershell nor cmd lies on PATH")
+    log::info!("shell integration: no {name} on PATH");
+    None
 }
 
 /// Whether `sh` is Git for Windows' `bin\sh.exe`, a bash launcher.
@@ -268,221 +357,4 @@ pub(super) use options::relays;
 mod tests;
 
 #[cfg(all(test, windows))]
-mod windows_tests {
-    use std::time::{Duration, Instant};
-
-    use alacritty_terminal::event::Event;
-    use futures::channel::mpsc::TryRecvError;
-
-    use super::{SCRIPTS, Start, alias, first_shell, git_bash, install, launch};
-    use crate::{
-        settings::Settings,
-        term::{Events, PtyEvent, config, spawn},
-    };
-
-    #[test]
-    fn the_scripts_wsl_runs_end_lines_as_unix_shells_read_them() {
-        // PowerShell reads a carriage return; WSL's shells do not.
-        for (name, text) in SCRIPTS
-            .iter()
-            .filter(|(name, _)| !name.starts_with("pwsh/"))
-        {
-            assert!(!text.contains('\r'), "{name} holds a carriage return");
-        }
-    }
-
-    #[test]
-    fn wsl_starts_in_its_own_home_or_in_the_windows_folder_given() {
-        let dir = std::env::temp_dir().join("elyterminal-wsl-launch");
-        let home = launch("wsl", Start::Home, &dir).expect("a launch");
-        let (_, args) = home.program.expect("wsl");
-        assert_eq!(args[..3], ["--cd", "~", "-e"]);
-        let folder = std::path::PathBuf::from(r"C:\Windows");
-        let there = launch("wsl", Start::In(folder.clone()), &dir).expect("a launch");
-        assert_eq!(there.cwd, folder);
-        assert_eq!(there.program.expect("wsl").1[0], "-e");
-    }
-
-    #[test]
-    fn cd_takes_git_bash_s_drive_paths() {
-        let (_, text) = SCRIPTS
-            .iter()
-            .find(|(name, _)| *name == "pwsh/ely-tea-party.ps1")
-            .expect("the PowerShell script");
-        let script =
-            std::env::temp_dir().join(format!("ely-tea-party-cd-{}.ps1", std::process::id()));
-        std::fs::write(&script, text).expect("the script");
-        // Only a whole `cd /x` line naming nothing here changes.
-        let body = format!(
-            "Import-Module PSReadLine; . '{}'; \
-             ElyDrivePath 'cd /c/Windows/System32'; ElyDrivePath 'cd /C'; ElyDrivePath 'cd /c/Windows; ls'; \
-             $free = [char[]](70..89) | Where-Object {{ -not (Test-Path \"$($_):\\\") }} | Select-Object -First 1; \
-             if ((ElyDrivePath \"cd /$free\") -eq \"cd /$free\") {{ 'no drive: kept' }}; \
-             $root = New-Item -ItemType Directory -Force \"$env:TEMP\\ely-cd-$PID\\c\\project\"; \
-             New-PSDrive -Name ElyCd -PSProvider FileSystem -Root $root.Parent.Parent.FullName | Out-Null; \
-             Set-Location ElyCd:\\; ElyDrivePath 'cd /c/proj*'; Set-Location C:\\; \
-             Remove-Item -Recurse -Force $root.Parent.Parent.FullName; \
-             Set-Alias -Name cd -Value Push-Location -Option AllScope -Scope Global -Force; \
-             ElyDrivePath 'cd /c/Windows'; \
-             Set-Alias -Name cd -Value Set-Location -Option AllScope -Scope Global -Force; \
-             ElyDrivePath \"cd`n/c/Windows\"; $q = 'cd /c/\u{201c}Windows\u{201d}'; if ((ElyDrivePath $q) -eq $q) {{ 'curly: kept' }}; \
-             function global:Set-Location {{ }}; ElyDrivePath 'cd /c/Windows'; Remove-Item function:Set-Location; \
-             New-PSDrive -Name I -PSProvider FileSystem -Root $env:TEMP | Out-Null; \
-             [Threading.Thread]::CurrentThread.CurrentCulture = 'tr-TR'; ElyDrivePath 'cd /i'; \
-             $global:ElyReadLine = {{ 'cd /c/Windows' }}; $typed = PSConsoleHostReadLine; \"run: $typed\"",
-            script.display()
-        );
-        let out = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &body])
-            .output()
-            .expect("powershell runs");
-        std::fs::remove_file(&script).expect("cleanup");
-        let text = String::from_utf8_lossy(&out.stdout);
-        let lines: Vec<_> = text.lines().collect();
-        assert_eq!(
-            lines,
-            [
-                r"cd C:\Windows\System32",
-                r"cd C:\",
-                "cd /c/Windows; ls",
-                "no drive: kept",
-                "cd /c/proj*",
-                "cd /c/Windows",
-                "cd",
-                "/c/Windows",
-                "curly: kept",
-                "cd /c/Windows",
-                r"cd I:\",
-                // The hook marks the command's start first.
-                "\u{1b}]133;C\u{7}run: cd C:\\Windows",
-            ],
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    #[test]
-    fn an_alias_hides_no_pwsh_later_on_path() {
-        let root =
-            std::env::temp_dir().join(format!("ely-tea-party-shells-{}", std::process::id()));
-        let folders = ["WindowsApps", "Tools;PS7", "System32"].map(|name| root.join(name));
-        for (folder, file) in folders
-            .iter()
-            .zip(["pwsh.exe", "pwsh.exe", "powershell.exe"])
-        {
-            std::fs::create_dir_all(folder).expect("a folder");
-            std::fs::write(folder.join(file), "").expect("a program");
-        }
-        let path = std::env::join_paths(&folders).expect("a PATH");
-        let found = first_shell(path.to_str().expect("text"));
-        std::fs::remove_dir_all(&root).expect("cleanup");
-        assert_eq!(
-            found.expect("a shell"),
-            folders[1].join("pwsh.exe").display().to_string()
-        );
-    }
-
-    #[test]
-    fn an_app_execution_alias_is_recognised_by_its_folder() {
-        assert!(alias(
-            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe"
-        ));
-        assert!(alias(
-            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WINDOWSAPPS\\pwsh.exe"
-        ));
-        assert!(!alias("C:\\Program Files\\PowerShell\\7\\pwsh.exe"));
-        assert!(!alias(
-            "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-        ));
-        assert!(!alias("pwsh.exe"));
-    }
-
-    #[test]
-    fn git_bash_is_known_by_its_sh_in_bin_beside_usr_bin_bash() {
-        let root = std::env::temp_dir().join(format!("elyterminal-git-{}", std::process::id()));
-        let file = |path: &str| {
-            let path = root.join(path);
-            std::fs::create_dir_all(path.parent().expect("a folder")).expect("a folder");
-            std::fs::write(&path, "").expect("a program");
-            path
-        };
-        let git = file("Git\\bin\\sh.exe");
-        file("Git\\usr\\bin\\bash.exe");
-        // MSYS2's sh, bash in POSIX mode, reads no --rcfile.
-        let msys = file("msys64\\usr\\bin\\sh.exe");
-        file("msys64\\usr\\bin\\bash.exe");
-        let alone = file("Tools\\bin\\sh.exe");
-        let found = [&git, &msys, &alone].map(|sh| git_bash(sh));
-        std::fs::remove_dir_all(&root).expect("cleanup");
-        assert_eq!(found, [true, false, false]);
-    }
-
-    /// The next folder the session reports, within 30 seconds.
-    fn next_folder(events: &mut Events) -> std::path::PathBuf {
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            match events.try_recv() {
-                Ok(PtyEvent::Folder(folder)) => return folder,
-                Ok(_) => {}
-                Err(TryRecvError::Closed) => {
-                    panic!("the session ended before it reported a folder")
-                }
-                Err(TryRecvError::Empty) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(50))
-                }
-                Err(TryRecvError::Empty) => panic!("no folder within 30 seconds"),
-            }
-        }
-    }
-
-    #[test]
-    fn git_bash_s_sh_reports_its_folder_as_windows_names_it() {
-        let found = std::process::Command::new("git")
-            .arg("--exec-path")
-            .output()
-            .expect("git runs");
-        let exec = String::from_utf8(found.stdout).expect("utf-8");
-        // ROOT/mingw64/libexec/git-core, or ucrt64.
-        let git = std::path::Path::new(exec.trim())
-            .ancestors()
-            .nth(3)
-            .expect("Git's folder");
-        let root = std::env::temp_dir().join(format!("elyterminal-gitbash-{}", std::process::id()));
-        let (dir, start) = (root.join("integration"), root.join("start here"));
-        std::fs::create_dir_all(start.join("in ner")).expect("the folders");
-        install(&dir).expect("the scripts");
-        let sh = git.join("bin").join("sh.exe");
-        let launch = launch(sh.to_str().expect("text"), start.clone(), &dir).expect("a launch");
-        let args = launch.program.as_ref().map(|(_, args)| args.clone());
-        assert_eq!(args.expect("arguments")[0], "--rcfile");
-        let (pty, mut events) = spawn(&launch, (80, 24), (8, 16), config(&Settings::default()))
-            .expect("Git Bash starts");
-        let first = next_folder(&mut events);
-        pty.write(&b"cd 'in ner'\r"[..]);
-        let second = next_folder(&mut events);
-        // Controls and colons sit at U+F000 up; nl\n beside nl.
-        pty.write(&b"mkdir $'bell\\adir' re:po $'nl\\n' nl && cd $'bell\\adir'\r"[..]);
-        let bell = next_folder(&mut events);
-        pty.write(&b"cd ../re:po\r"[..]);
-        let colon = next_folder(&mut events);
-        pty.write(&b"cd $'../nl\\n'\r"[..]);
-        let newline = next_folder(&mut events);
-        pty.write(&b"exit\r"[..]);
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while !matches!(
-            events.try_recv(),
-            Ok(PtyEvent::Term(Event::Exit)) | Err(TryRecvError::Closed)
-        ) {
-            assert!(Instant::now() < deadline, "Git Bash did not exit");
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        let real = |path: &std::path::Path| path.canonicalize().expect("a real folder");
-        assert_eq!(real(&first), real(&start));
-        let inner = start.join("in ner");
-        assert_eq!(real(&second), real(&inner));
-        assert_eq!(real(&bell), real(&inner.join("bell\u{f007}dir")));
-        assert_eq!(real(&colon), real(&inner.join("re\u{f03a}po")));
-        assert_eq!(real(&newline), real(&inner.join("nl\u{f00a}")));
-        std::fs::remove_dir_all(&root).expect("cleanup");
-    }
-}
+mod windows_tests;

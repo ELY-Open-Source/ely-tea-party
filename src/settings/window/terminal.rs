@@ -25,12 +25,15 @@ use crate::{
     },
 };
 
-/// Each way Option types Alt, its key and its name.
+pub(super) mod profiles;
+
+/// Each mascot, its key and its name's key.
 const MASCOTS: [(Mascot, &str, &str); 2] = [
     (Mascot::Whale, "whale", "et.mascot.whale"),
     (Mascot::Ely, "ely", "et.mascot.ely"),
 ];
 
+/// Each way Option types Alt, its key and name's key.
 const OPTIONS: [(OptionAsAlt, &str, &str); 4] = [
     (OptionAsAlt::Off, "off", "et.option.off"),
     (OptionAsAlt::Left, "left", "et.option.left"),
@@ -125,6 +128,12 @@ impl SettingsWindow {
             settings.restore_sessions,
             |settings, on| settings.restore_sessions = on,
         );
+        let right = switch(
+            &this,
+            "right_click_paste",
+            settings.right_click_paste,
+            |settings, on| settings.right_click_paste = on,
+        );
         let ely = switch(&this, "ely", settings.ely, |settings, on| settings.ely = on);
         let mascot = choice(
             &this,
@@ -153,6 +162,11 @@ impl SettingsWindow {
             .row(SettingsRow::new(word("et.terminal.copy_on_select")).control(copy))
             .row(SettingsRow::new(word("et.terminal.restore")).control(restore))
             .row(
+                SettingsRow::new(word("et.terminal.right_click_paste"))
+                    .description(word("et.terminal.right_click_paste_hint"))
+                    .control(right),
+            )
+            .row(
                 SettingsRow::new(word("et.terminal.drag_sessions"))
                     .description(word("et.terminal.drag_sessions_hint"))
                     .control(drag),
@@ -179,12 +193,15 @@ impl SettingsWindow {
                     .control(auto_check(&this, settings.check_updates)),
             )
             .row(updates_row(cx));
+        #[cfg(windows)]
+        let section = section.row(super::explorer::row(&cx.entity(), cx));
         let keys = SettingsSection::new(word("et.terminal.shortcuts"))
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
+        let profiles = self.profiles_section(cx);
         let page = div().flex().flex_col().gap_6();
         #[cfg(unix)]
         let page = page.child(super::hooks::section(cx));
-        page.child(section).child(keys)
+        page.child(section).child(profiles).child(keys)
     }
 }
 

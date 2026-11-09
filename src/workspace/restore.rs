@@ -160,14 +160,21 @@ impl Workspace {
         }
     }
 
-    /// Brings `saved` back: the first session runs already in its folder; the rest start, and each agent resumes.
-    pub fn restore(&mut self, mut saved: Saved, window: &mut Window, cx: &mut Context<Self>) {
+    /// Brings `saved` back: the first session runs already in its folder; the rest start, and each agent resumes. `behind` starts them all after the session shown, which stays shown.
+    pub fn restore(
+        &mut self,
+        mut saved: Saved,
+        behind: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let mut links = std::collections::HashSet::new();
         for place in &mut saved.sessions {
             place.link_id.ensure_unique(&mut links);
         }
         let mut places = saved.sessions.into_iter();
-        if let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut()) {
+        if !behind && let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut())
+        {
             session.pending = first.resume.clone();
             dress(session, first);
         }
@@ -181,9 +188,9 @@ impl Workspace {
                 continue;
             }
             let id = agents::next_session();
-            match start(&shell, place.folder.clone(), Some(id), cx) {
+            match start(&shell, &[], place.folder.clone(), Some(id), cx) {
                 Ok(((pty, events), launch)) => {
-                    self.add((id, pty, events), launch, window, cx);
+                    self.add((id, pty, events), launch, Vec::new(), window, cx);
                     if let Some(session) = self.sessions.last_mut() {
                         session.pending = place.resume.clone();
                         dress(session, place);
@@ -196,7 +203,10 @@ impl Workspace {
                 Err(error) => log::error!("restore: a session did not start: {error:#}"),
             }
         }
-        let active = saved.active.min(self.sessions.len().saturating_sub(1));
+        let active = match behind {
+            true => 0,
+            false => saved.active.min(self.sessions.len().saturating_sub(1)),
+        };
         log::info!("restore: {} sessions back", self.sessions.len());
         self.select(active, window, cx);
     }

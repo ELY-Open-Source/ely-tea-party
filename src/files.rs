@@ -1,26 +1,35 @@
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     ffi::OsString,
     fs, io,
     path::{Path, PathBuf},
+    sync::Arc,
+    time::{Duration, SystemTime},
 };
 
 use ely_gpui_component::lists::GitStatus;
 use gpui::{AppContext, Context, EventEmitter, Pixels, Point, SharedString, Task};
 
-use crate::git;
+use crate::settings::{PanelTab, SettingsStore};
 
 mod actions;
 mod icons;
+mod marks;
 mod ops;
 mod tree;
 
-/// A folder's entry: its name, and whether it is a folder, links followed.
+use marks::{Marked, mark_key, remark};
+pub use tree::FileDrag;
+
+/// How often Files reads its open folders again.
+const POLL: Duration = Duration::from_secs(1);
+
+/// A folder's entry: name, whether a folder, and modified time.
 #[derive(Debug, PartialEq)]
 struct Entry {
     name: OsString,
     folder: bool,
+    modified: SystemTime,
 }
 
 /// A folder's entries, or why it could not be read.
@@ -29,16 +38,22 @@ type Listing = Result<Vec<Entry>, String>;
 /// Reads `folder`: folders first, then files, each by name ignoring case.
 fn list(folder: &Path) -> Listing {
     let read = || -> io::Result<Vec<Entry>> {
-        fs::read_dir(folder)?
-            .map(|entry| {
-                let entry = entry?;
-                let kind = entry.file_type()?;
-                Ok(Entry {
-                    folder: kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()),
-                    name: entry.file_name(),
-                })
-            })
-            .collect()
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(folder)? {
+            let entry = entry?;
+            // An entry gone since the folder listed it is gone.
+            let meta = match entry.metadata() {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                meta => meta?,
+            };
+            let kind = meta.file_type();
+            entries.push(Entry {
+                folder: kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()),
+                name: entry.file_name(),
+                modified: meta.modified()?,
+            });
+        }
+        Ok(entries)
     };
     let mut entries = read().map_err(|error| error.to_string())?;
     entries.sort_by_cached_key(|entry| {
@@ -46,39 +61,6 @@ fn list(folder: &Path) -> Listing {
         (!entry.folder, name, entry.name.clone())
     });
     Ok(entries)
-}
-
-/// `path` as marks are keyed: on macOS, whose file systems ignore Unicode forms, composed as Git writes it.
-fn mark_key(path: &Path) -> Cow<'_, Path> {
-    #[cfg(target_os = "macos")]
-    if let Some(text) = path.to_str()
-        && !unicode_normalization::is_nfc(text)
-    {
-        use unicode_normalization::UnicodeNormalization;
-        return Cow::Owned(text.nfc().collect::<String>().into());
-    }
-    Cow::Borrowed(path)
-}
-
-/// Changes by their keys, and the folders from `root` down that hold one.
-fn marks(
-    root: &Path,
-    changes: Vec<(PathBuf, GitStatus)>,
-) -> (HashMap<PathBuf, GitStatus>, HashSet<PathBuf>) {
-    let root = mark_key(root);
-    let marks: HashMap<PathBuf, GitStatus> = changes
-        .into_iter()
-        .map(|(path, status)| (mark_key(&path).into_owned(), status))
-        .collect();
-    let dirty = marks
-        .keys()
-        .flat_map(|path| {
-            let up = path.ancestors().skip(1);
-            up.take_while(|folder| folder.starts_with(&root))
-        })
-        .map(Path::to_path_buf)
-        .collect();
-    (marks, dirty)
 }
 
 /// `path`'s tree key, one to a path: a path not in UTF-8 adds its bytes after a NUL, which no path holds.
@@ -129,17 +111,25 @@ pub struct Files {
     /// Counts roots, so each root starts a fresh tree.
     generation: usize,
     listings: HashMap<PathBuf, Listing>,
-    /// The root and the folders the tree opened.
-    wanted: HashSet<PathBuf>,
     marks: HashMap<PathBuf, GitStatus>,
     /// Folders holding a mark.
     dirty: HashSet<PathBuf>,
+    /// Git's changes as last marked, by path.
+    changes: Arc<Vec<(PathBuf, GitStatus)>>,
+    /// Why Git last failed, while it fails.
+    failing: Option<String>,
     reading: Task<()>,
+    /// A read under way, so a poll waits for it.
+    loading: bool,
     checking: Task<()>,
     tree: tree::State,
     creating: Option<actions::Creation>,
+    /// A create or a trash under way.
     busy: bool,
     error: Option<String>,
+    /// A Git check running, and whether another follows it.
+    marking: (bool, bool),
+    polling: Task<()>,
 }
 
 impl EventEmitter<Here> for Files {}
@@ -147,7 +137,6 @@ impl EventEmitter<Here> for Files {}
 impl Files {
     pub fn new(root: PathBuf) -> Self {
         Self {
-            wanted: HashSet::from([root.clone()]),
             tree: tree::State::new(root.clone()),
             creating: None,
             busy: false,
@@ -157,66 +146,141 @@ impl Files {
             listings: HashMap::new(),
             marks: HashMap::new(),
             dirty: HashSet::new(),
+            changes: Arc::default(),
+            failing: None,
             reading: Task::ready(()),
+            loading: false,
             checking: Task::ready(()),
+            marking: (false, false),
+            polling: Task::ready(()),
         }
+    }
+
+    /// Reads open folders and Git's marks each second, shown.
+    pub fn poll(&mut self, cx: &mut Context<Self>) {
+        self.polling = cx.spawn(async move |files, cx| {
+            loop {
+                cx.background_executor().timer(POLL).await;
+                if files.update(cx, |files, cx| files.tick(cx)).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    fn tick(&mut self, cx: &mut Context<Self>) {
+        let settings = SettingsStore::get(cx);
+        let showing = settings.show_panel && settings.panel == PanelTab::Files;
+        if !showing {
+            return;
+        }
+        if !self.loading {
+            self.read(cx);
+        }
+        // A change deep in a closed folder moves no listing.
+        if !self.marking.0 {
+            self.check(cx);
+        }
+    }
+
+    /// Open folders whose folders above are open too.
+    fn shown(&self) -> Vec<PathBuf> {
+        let within = |folder: &&PathBuf| {
+            let up = folder.ancestors().skip(1);
+            up.take_while(|above| above.starts_with(&self.root))
+                .all(|above| self.tree.open.contains(above))
+        };
+        let shown = self.tree.open.iter().filter(within).cloned();
+        // The root, closed too, so one gone and back shows.
+        let root = std::iter::once(self.root.clone());
+        root.chain(shown.filter(|folder| *folder != self.root))
+            .collect()
     }
 
     /// Shows `folder`, read afresh with its marks; a new folder starts a new tree.
     pub fn show(&mut self, folder: &Path, cx: &mut Context<Self>) {
         if folder != self.root {
             log::info!("files: the tree shows {}", folder.display());
+            let polling = std::mem::replace(&mut self.polling, Task::ready(()));
             *self = Self {
                 generation: self.generation + 1,
+                polling,
                 ..Self::new(folder.to_path_buf())
             };
         }
         self.read(cx);
-        let root = self.root.clone();
-        let changes = cx.background_spawn(async move { git::changes(&root) });
+        self.check(cx);
+    }
+
+    /// Reads Git's marks in the background, one at a time.
+    fn check(&mut self, cx: &mut Context<Self>) {
+        if self.marking.0 {
+            self.marking.1 = true;
+            return;
+        }
+        self.marking = (true, false);
+        let (root, last) = (self.root.clone(), self.changes.clone());
+        let marked = cx.background_spawn(async move { remark(&root, &last) });
         self.checking = cx.spawn(async move |files, cx| {
-            let changes = changes.await;
-            files.update(cx, |files, cx| files.mark(changes, cx)).ok();
+            let marked = marked.await;
+            files.update(cx, |files, cx| files.mark(marked, cx)).ok();
         });
     }
 
-    fn mark(
-        &mut self,
-        changes: anyhow::Result<Option<Vec<(PathBuf, GitStatus)>>>,
-        cx: &mut Context<Self>,
-    ) {
-        let changes = match changes {
-            Ok(changes) => changes.unwrap_or_default(),
-            Err(error) => {
-                log::error!("files: no Git marks in {}: {error:#}", self.root.display());
-                Vec::new()
+    /// Wears new marks, then runs a check asked meanwhile.
+    fn mark(&mut self, marked: Result<Option<Marked>, String>, cx: &mut Context<Self>) {
+        let root = self.root.display();
+        // A failure keeps the last marks, logged once.
+        let marked = match marked {
+            Err(why) => {
+                if self.failing.as_ref() != Some(&why) {
+                    log::error!("files: no Git marks in {root}, the last kept: {why}");
+                }
+                self.failing = Some(why);
+                None
+            }
+            Ok(marked) => {
+                if self.failing.take().is_some() {
+                    log::info!("files: Git marks {root} again");
+                }
+                marked
             }
         };
-        let (marks, dirty) = marks(&self.root, changes);
-        if marks != self.marks {
+        if let Some((changes, marks, dirty)) = marked {
             log::debug!(
                 "files: {} Git marks in {}",
                 marks.len(),
                 self.root.display()
             );
+            (self.changes, self.marks, self.dirty) = (changes, marks, dirty);
+            cx.notify();
         }
-        (self.marks, self.dirty) = (marks, dirty);
-        cx.notify();
+        let (_, again) = std::mem::take(&mut self.marking);
+        if again {
+            self.check(cx);
+        }
     }
 
-    /// Reads the root and every folder the tree opened, off the main thread.
+    /// Reads the root and open folders off the main thread.
     fn read(&mut self, cx: &mut Context<Self>) {
-        let folders: Vec<PathBuf> = self.wanted.iter().cloned().collect();
+        let folders = self.shown();
         let read = cx.background_spawn(async move {
             let read = folders.into_iter().map(|folder| (list(&folder), folder));
             read.collect::<Vec<_>>()
         });
+        self.loading = true;
         self.reading = cx.spawn(async move |files, cx| {
             let read = read.await;
-            files.update(cx, |files, cx| files.store(read, cx)).ok();
+            files
+                .update(cx, |files, cx| {
+                    files.loading = false;
+                    files.store(read, cx);
+                })
+                .ok();
         });
     }
 
+    /// Keeps what was read.
     fn store(&mut self, read: Vec<(Listing, PathBuf)>, cx: &mut Context<Self>) {
         let mut changed = false;
         for (listing, folder) in read {
@@ -233,21 +297,70 @@ impl Files {
             changed = true;
         }
         if changed {
+            self.prune();
             cx.notify();
         }
     }
 
+    /// Drops each folder, open or read before, that is gone.
+    fn prune(&mut self) {
+        let mut gone: Vec<PathBuf> = (self.tree.open.iter().chain(self.listings.keys()))
+            .filter(|folder| self.gone(folder))
+            .cloned()
+            .collect();
+        gone.sort();
+        gone.dedup();
+        for folder in &gone {
+            log::debug!("files: {} is gone", folder.display());
+            self.tree.open.remove(folder);
+            self.listings.remove(folder);
+        }
+    }
+
+    /// Whether a listing no longer names `folder` or one above.
+    fn gone(&self, folder: &Path) -> bool {
+        let mut up = folder.ancestors().take_while(|path| *path != self.root);
+        up.any(|path| {
+            let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+                return false;
+            };
+            match self.listings.get(parent) {
+                Some(Ok(entries)) => !entries.iter().any(|e| e.folder && e.name == name),
+                // An unreadable folder, a deleted root too, shows nothing.
+                Some(Err(_)) => true,
+                None => false,
+            }
+        })
+    }
+
     /// The tree opened `folder`, unread so far.
     fn load(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
-        if self.wanted.insert(folder) {
-            self.read(cx);
-        }
+        self.tree.open.insert(folder);
+        self.read(cx);
     }
 
     /// The menu's request, once: a remounted menu would replay it.
     fn request(&mut self) -> Option<(u64, Point<Pixels>)> {
         let ask = self.tree.menu.as_mut()?;
         Some((ask.n, ask.at.take()?))
+    }
+
+    /// The path a tree key stands for: the root, or an entry read.
+    pub fn path(&self, of: &str) -> Option<PathBuf> {
+        self.named(of).map(|(path, _)| path)
+    }
+
+    /// A tree key's path, and whether it is a folder.
+    fn named(&self, of: &str) -> Option<(PathBuf, bool)> {
+        if key(&self.root).as_ref() == of {
+            return Some((self.root.clone(), true));
+        }
+        self.listings.iter().find_map(|(folder, listing)| {
+            listing.iter().flatten().find_map(|entry| {
+                let path = folder.join(&entry.name);
+                (key(&path).as_ref() == of).then_some((path, entry.folder))
+            })
+        })
     }
 }
 

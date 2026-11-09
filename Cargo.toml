@@ -15,7 +15,7 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 base64 = "0.22"
 base64-simd = "0.8"
 dirs = "7"
-ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "494c17d6e631e9e3948f26ff9306ba9c3c8ae47a" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "294a8323c08a06bd8e7782d16acee43b6bb0c5eb" }
 env_logger = "0.11"
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 futures = "0.3"
@@ -46,6 +46,7 @@ resvg = { version = "0.46", default-features = false, features = ["raster-images
 libc = "0.2"
 rustix-openpty = "0.2"
 signal-hook = "0.4"
+shlex = "1.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 raw-window-handle = "0.6"
@@ -73,15 +74,15 @@ foreign-types = "0.5"
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
-windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 
 [patch.crates-io]
-alacritty_terminal = { git = "https://github.com/ELY-Open-Source/alacritty.git", rev = "10d36c1c8873eddc0b3b3b07dd0fe09f5f8c5157" }
-vte = { git = "https://github.com/ELY-Open-Source/vte.git", rev = "5142c08caf49148ece94d4ce418e54da8b9eab90" }
+alacritty_terminal = { git = "https://github.com/ELY-Open-Source/alacritty.git", rev = "d2781caf4908e58404a31efa0bbac03c562380bc" }
+vte = { git = "https://github.com/ELY-Open-Source/vte.git", rev = "8fa83a9b51cadcad3269e1ef3ab059672d875983" }
 xim-ctext = { path = "vendor/xim-ctext" }
-gpui-pre-windows = { git = "https://github.com/ELY-Open-Source/gpui-pre-windows.git", rev = "8b9ce598956472934fcd54a060a9153575877475" }
-gpui-pre-macos = { git = "https://github.com/ELY-Open-Source/gpui-pre-macos.git", rev = "bf1ce7c431459d23522884d7e668183bd5fb9555" }
+gpui-pre-windows = { git = "https://github.com/ELY-Open-Source/gpui-pre-windows.git", rev = "0b74ab730f360e83b0aa914c25d95a088e24da4f" }
+gpui-pre-macos = { git = "https://github.com/ELY-Open-Source/gpui-pre-macos.git", rev = "b3e25d5c00b0e97c5c8f2e3fe0c22da16aa293bb" }
 gpui-pre-linux = { git = "https://github.com/ELY-Open-Source/gpui-pre-linux.git", rev = "db0ff3c44e3fb1a3ee6ba6a06a44d94bf5d1ff32" }
 
 [lints.rust]

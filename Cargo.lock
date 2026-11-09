@@ -150,7 +150,7 @@ dependencies = [
 [[package]]
 name = "alacritty_terminal"
 version = "0.26.0"
-source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=10d36c1c8873eddc0b3b3b07dd0fe09f5f8c5157#10d36c1c8873eddc0b3b3b07dd0fe09f5f8c5157"
+source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=d2781caf4908e58404a31efa0bbac03c562380bc#d2781caf4908e58404a31efa0bbac03c562380bc"
 dependencies = [
  "base64",
  "bitflags 2.13.2",
@@ -1704,7 +1704,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 [[package]]
 name = "ely-gpui-component"
 version = "0.1.1"
-source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components.git?rev=494c17d6e631e9e3948f26ff9306ba9c3c8ae47a#494c17d6e631e9e3948f26ff9306ba9c3c8ae47a"
+source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components.git?rev=294a8323c08a06bd8e7782d16acee43b6bb0c5eb#294a8323c08a06bd8e7782d16acee43b6bb0c5eb"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1785,6 +1785,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "sha2 0.10.9",
+ "shlex 1.3.0",
  "signal-hook",
  "sysinfo 0.39.6",
  "toml_edit 0.22.27",
@@ -2463,7 +2464,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.62.2",
+ "windows 0.57.0",
 ]
 
 [[package]]
@@ -2677,7 +2678,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macos"
 version = "0.3.8"
-source = "git+https://github.com/ELY-Open-Source/gpui-pre-macos.git?rev=bf1ce7c431459d23522884d7e668183bd5fb9555#bf1ce7c431459d23522884d7e668183bd5fb9555"
+source = "git+https://github.com/ELY-Open-Source/gpui-pre-macos.git?rev=b3e25d5c00b0e97c5c8f2e3fe0c22da16aa293bb#b3e25d5c00b0e97c5c8f2e3fe0c22da16aa293bb"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -2889,7 +2890,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-windows"
 version = "0.3.8"
-source = "git+https://github.com/ELY-Open-Source/gpui-pre-windows.git?rev=8b9ce598956472934fcd54a060a9153575877475#8b9ce598956472934fcd54a060a9153575877475"
+source = "git+https://github.com/ELY-Open-Source/gpui-pre-windows.git?rev=0b74ab730f360e83b0aa914c25d95a088e24da4f#0b74ab730f360e83b0aa914c25d95a088e24da4f"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -3141,7 +3142,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -7291,7 +7292,7 @@ dependencies = [
 [[package]]
 name = "vte"
 version = "0.15.0"
-source = "git+https://github.com/ELY-Open-Source/vte.git?rev=5142c08caf49148ece94d4ce418e54da8b9eab90#5142c08caf49148ece94d4ce418e54da8b9eab90"
+source = "git+https://github.com/ELY-Open-Source/vte.git?rev=8fa83a9b51cadcad3269e1ef3ab059672d875983#8fa83a9b51cadcad3269e1ef3ab059672d875983"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.2",
@@ -7793,7 +7794,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

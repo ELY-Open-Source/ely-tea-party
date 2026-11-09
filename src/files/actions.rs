@@ -40,18 +40,20 @@ impl Files {
                     .on_click(move |_, cx| host.update(cx, |_, cx| cx.emit(Here(here.clone())))),
             )
             .separator()
-            .item(MenuItem::new("Refresh").on_click(move |_, cx| {
-                refresh.update(cx, |files, cx| files.refresh(cx));
-            }));
+            .item(
+                MenuItem::new(text(cx, "et.files.refresh", &[])).on_click(move |_, cx| {
+                    refresh.update(cx, |files, cx| files.refresh(cx));
+                }),
+            );
         let parent = if folder {
             Some(path.clone())
         } else {
             path.parent().map(|p| p.to_path_buf())
         };
-        for (label, folder) in [("New File", false), ("New Folder", true)] {
+        for (label, folder) in [("et.files.new_file", false), ("et.files.new_folder", true)] {
             let (files, parent) = (cx.entity(), parent.clone());
             menu = menu.item(
-                MenuItem::new(label)
+                MenuItem::new(text(cx, label, &[]))
                     .disabled(self.busy || parent.is_none())
                     .on_click(move |window, cx| {
                         if let Some(parent) = &parent {
@@ -84,7 +86,7 @@ impl Files {
             );
         let files = cx.entity();
         menu.separator().item(
-            MenuItem::new("Move to Trash")
+            MenuItem::new(text(cx, "et.files.trash", &[]))
                 .disabled(self.busy || path == self.root)
                 .on_click(move |_, cx| {
                     files.update(cx, |files, cx| {
@@ -119,10 +121,24 @@ impl Files {
         let creating = self.creating.as_ref()?;
         let (close, submit) = (cx.entity(), cx.entity());
         let (parent, folder) = (creating.parent.clone(), creating.folder);
+        // The check runs with no context, so its words are read now.
+        let problems = ops::NAME_PROBLEMS.map(|key| (key, text(cx, key, &[])));
+        let said = move |key: &str| {
+            let found = problems.iter().find(|(each, _)| *each == key);
+            found.expect("each name problem is listed").1.clone()
+        };
         Some(
             PromptDialog::new(
                 "files-create",
-                if folder { "New Folder" } else { "New File" },
+                text(
+                    cx,
+                    if folder {
+                        "et.files.new_folder"
+                    } else {
+                        "et.files.new_file"
+                    },
+                    &[],
+                ),
                 &creating.input,
                 move |_, cx| {
                     close.update(cx, |files, cx| {
@@ -131,12 +147,19 @@ impl Files {
                     });
                 },
             )
-            .label(format!(
-                "Name in {}",
-                sessions::shown(&parent, dirs::home_dir().as_deref())
+            .label(text(
+                cx,
+                "et.files.name_in",
+                &[(
+                    "folder",
+                    &sessions::shown(&parent, dirs::home_dir().as_deref()),
+                )],
             ))
-            .submit("Create")
-            .check(|name| ops::validate_name(name).map_err(|error| error.to_string().into()))
+            .submit(text(cx, "et.files.create", &[]))
+            .check(move |name| match ops::name_problem(name) {
+                Some(key) => Err(said(key)),
+                None => Ok(()),
+            })
             .on_submit(move |name, _, cx| {
                 let operation = ops::Operation::Create {
                     parent: parent.clone(),
@@ -154,7 +177,7 @@ impl Files {
         Some(AlertDialog::new(
             "files-error",
             Severity::Danger,
-            "File operation failed",
+            text(cx, "et.files.failed", &[]),
             error,
             move |_, cx| {
                 close.update(cx, |files, cx| {
@@ -197,12 +220,10 @@ impl Files {
                             log::info!("files: completed {operation:?}");
                             match operation {
                                 ops::Operation::Create { parent, .. } => {
-                                    files.tree.open.insert(parent.clone());
-                                    files.wanted.insert(parent);
+                                    files.tree.open.insert(parent);
                                     files.tree.selected = Some(path);
                                 }
                                 ops::Operation::Trash(_) => {
-                                    files.wanted.retain(|p| !p.starts_with(&path));
                                     files.listings.retain(|p, _| !p.starts_with(&path));
                                     files.tree.open.retain(|p| !p.starts_with(&path));
                                     files.tree.selected = path.parent().map(|p| p.to_path_buf());

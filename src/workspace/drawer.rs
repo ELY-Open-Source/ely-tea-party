@@ -76,7 +76,7 @@ impl Workspace {
             }
             None => {
                 let folder = session.folder.clone();
-                match super::start(&SettingsStore::get(cx).shell, folder.clone(), None, cx) {
+                match super::start(&SettingsStore::get(cx).shell, &[], folder.clone(), None, cx) {
                     Ok(((pty, events), launch)) => {
                         let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
                         let events = cx.subscribe_in(
@@ -170,7 +170,19 @@ impl Workspace {
                 log::debug!("app: a bell in session {id}'s hidden drawer");
                 session.bell = true;
             }
-            TerminalEvent::Bell | TerminalEvent::Shows(_) | TerminalEvent::Speed(_) => {}
+            TerminalEvent::Bell
+            | TerminalEvent::Shows(_)
+            | TerminalEvent::Ended(_)
+            | TerminalEvent::Speed(_) => {}
+            TerminalEvent::Dragged(key) => match self.files.read(cx).path(key) {
+                Some(path) => {
+                    log::info!("app: {} dragged onto a drawer", path.display());
+                    drawer
+                        .terminal
+                        .update(cx, |view, cx| view.type_paths(&[path], cx));
+                }
+                None => log::warn!("app: a tree drag of {key} types nothing"),
+            },
             TerminalEvent::Exited(status) => {
                 log::info!("app: session {id}'s drawer ended, {status}");
                 self.close_drawer(index, window, cx);

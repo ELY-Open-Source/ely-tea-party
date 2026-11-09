@@ -6,7 +6,7 @@ use ely_gpui_component::{
     lists::List,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
-    theme::ControlSize,
+    theme::{ActiveTheme, ControlSize},
 };
 use gpui::{
     App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
@@ -51,13 +51,16 @@ use crate::{
     git::panel::{Acted, GitPanel},
     menus,
     sessions::{self, Session, orb},
-    settings::{SettingsStore, window::OpenSettings},
+    settings::{PanelTab, SettingsStore, window::OpenSettings},
     term::{
-        Events, Launch, Pty, TerminalView, config,
+        Events, Launch, Pty, config,
         shell::{ShellIntegration, Start, launch},
         spawn,
     },
 };
+
+mod folder;
+mod wallpaper;
 
 /// The key context of the main window's content.
 pub const CONTEXT: &str = "Workspace";
@@ -92,6 +95,10 @@ pub struct Workspace {
     meters: usage::Meters,
     /// The right column's lit tab, gliding between tabs.
     glide: panel::Glide,
+    /// The shells this system holds, found as the window opened.
+    found: Vec<crate::profiles::Found>,
+    choosing_folder: bool,
+    folder_actions: bool,
     _settings: Subscription,
     _updates: Subscription,
     _acted: Subscription,
@@ -113,9 +120,15 @@ impl Workspace {
             let folder = this.sessions[this.active].folder.clone();
             this.files.update(cx, |files, cx| files.show(&folder, cx));
         });
-        let files = cx.new(|_| Files::new(launch.cwd.clone()));
+        let files = cx.new(|cx| {
+            let mut files = Files::new(launch.cwd.clone());
+            files.poll(cx);
+            files
+        });
         let here = cx.subscribe_in(&files, window, |this, _, Here(folder), window, cx| {
-            this.here(folder.clone(), window, cx)
+            if let Err(error) = this.here(folder.clone(), window, cx) {
+                folder::failed(error, window, cx);
+            }
         });
         let mut workspace = Self {
             focus: cx.focus_handle(),
@@ -126,6 +139,9 @@ impl Workspace {
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
             ticking: None,
+            found: crate::profiles::detected(),
+            choosing_folder: false,
+            folder_actions: false,
             drawer_dragged: None,
             party: false,
             butler: crate::butler::Briefing::default(),
@@ -137,6 +153,11 @@ impl Workspace {
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 this.quiet_companion(cx);
+                let settings = SettingsStore::get(cx);
+                if !settings.files_menu || !settings.show_panel || settings.panel != PanelTab::Files
+                {
+                    this.folder_actions = false;
+                }
                 crate::memory::organize::cancel(cx);
                 if !SettingsStore::get(cx).butler.enabled {
                     this.butler.cancel();
@@ -151,48 +172,9 @@ impl Workspace {
             _here: here,
         };
         workspace.watch_companion(window, cx);
-        workspace.add((id, pty, events), launch, window, cx);
+        workspace.add((id, pty, events), launch, Vec::new(), window, cx);
         workspace.select(0, window, cx);
         workspace
-    }
-
-    fn add(
-        &mut self,
-        (id, pty, events): (u64, Pty, Events),
-        launch: Launch,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
-        let entity = terminal.entity_id();
-        let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
-            this.session_event(entity, event, window, cx)
-        });
-        let shell =
-            (launch.program.as_ref()).map_or_else(String::new, |(program, _)| program.clone());
-        let pid = terminal.read(cx).pid();
-        log::info!("app: session {pid} opens in {}", launch.cwd.display());
-        let trinket = sessions::free_trinket(self.sessions.iter().map(|session| session.trinket));
-        self.sessions.push(Session {
-            id,
-            link_id: Default::default(),
-            agent: None,
-            terminal,
-            title: String::new(),
-            name: String::new(),
-            editing: None,
-            folder: launch.cwd,
-            shell,
-            reports: launch.reports,
-            bell: false,
-            waiting: false,
-            look: None,
-            log: Default::default(),
-            trinket,
-            drawer: None,
-            pending: None,
-            _events: events,
-        });
     }
 
     /// Notes each session's mark `now`, and draws the window at each step while one shown moves.
@@ -313,12 +295,13 @@ impl Workspace {
 /// Starts `shell`, the Shell setting's way of naming one, in `folder`; a session's `agent` hooks reach the app under its id, a drawer's none.
 fn start(
     shell: &str,
+    args: &[String],
     folder: impl Into<Start>,
     agent: Option<u64>,
     cx: &App,
 ) -> anyhow::Result<((Pty, Events), Launch)> {
     let settings = SettingsStore::get(cx);
-    let mut launch = launch(shell, folder, &cx.global::<ShellIntegration>().0)?;
+    let mut launch = launch(shell, args, folder, &cx.global::<ShellIntegration>().0)?;
     if let Some(id) = agent {
         launch.env.extend(characters::env(id)?);
     }
@@ -333,6 +316,7 @@ impl Render for Workspace {
         let body = self.terminal_body(window, cx);
         let bubble = self.butler_bubble(window, cx);
         let settings = SettingsStore::get(cx).clone();
+        let base = cx.theme().colors.bg;
         let workspace = cx.entity();
         // It leads the first column or ends the last.
         let left = column_toggle(
@@ -373,7 +357,13 @@ impl Render for Workspace {
         let mut shell = ColumnShell::new("workspace").glass();
         let mut terminal = ShellColumn::new("terminal")
             .title(self.title().to_string())
-            .child(body);
+            .child(
+                div()
+                    .relative()
+                    .size_full()
+                    .child(body)
+                    .child(wallpaper::ruler()),
+            );
         if settings.show_sessions {
             let home = dirs::home_dir();
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {
@@ -395,11 +385,16 @@ impl Render for Workspace {
                 .on_click(move |_, window, cx| {
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
+            let mut column = self
+                .side_column(Side::Sessions, cx)
+                .leading(left)
+                .action(party::party_button(cx.entity()))
+                .action(new);
+            if let Some(profiles) = crate::profiles::button(&cx.entity(), &self.found, cx) {
+                column = column.action(profiles);
+            }
             shell = shell.column(
-                self.side_column(Side::Sessions, cx)
-                    .leading(left)
-                    .action(party::party_button(cx.entity()))
-                    .action(new)
+                column
                     .child(
                         div()
                             .id("sessions")
@@ -430,7 +425,7 @@ impl Render for Workspace {
             shell = shell.column(terminal.action(end));
         }
         // The context sits above the focus root, so its keys work wherever focus is.
-        div()
+        crate::interface::dress(div(), cx)
             .size_full()
             .relative()
             .key_context(CONTEXT)
@@ -485,7 +480,12 @@ impl Render for Workspace {
                             .child(if self.party {
                                 self.party(cx).into_any_element()
                             } else {
-                                shell.into_any_element()
+                                div()
+                                    .relative()
+                                    .size_full()
+                                    .children(wallpaper::paint(&settings, base, window, cx))
+                                    .child(shell)
+                                    .into_any_element()
                             }),
                     ),
             )

@@ -20,7 +20,8 @@ use ely_gpui_component::{
 use futures::StreamExt;
 use gpui::{
     Bounds, Context, EventEmitter, ExternalPaths, FocusHandle, Focusable, IntoElement, MouseButton,
-    ParentElement, Pixels, Render, Styled, Subscription, Task, Window, div, prelude::*, px,
+    ParentElement, Pixels, Render, SharedString, Styled, Subscription, Task, Window, div,
+    prelude::*, px,
 };
 
 use super::{
@@ -61,7 +62,11 @@ pub enum TerminalEvent {
     Bell,
     /// The state its row shows changed, to this one.
     Shows(Option<State>),
+    /// Its last command's status changed, to this one.
+    Ended(Option<i32>),
     Exited(ExitStatus),
+    /// A Files node's drag landed on it: the node's tree key.
+    Dragged(SharedString),
 }
 
 /// A program on a pseudo-terminal, drawn cell by cell in the theme and font the settings choose.
@@ -72,12 +77,14 @@ pub struct TerminalView {
     pub(super) marked: Option<String>,
     /// The cursor's cell in the window, from the last layout.
     pub(super) caret: Bounds<Pixels>,
+    /// The cursor's glide to `target`: where it was drawn and when it set off.
+    glide: Option<((f32, f32), Instant)>,
+    /// The cell the cursor heads for; a new one starts a glide.
+    target: Option<(usize, usize)>,
     pub(super) pointer: Pointer,
     pub(super) menu: FileMenu,
     /// The mouse mode, as the tap follows it.
     pub(super) mouse: MouseMode,
-    /// The background picture that last failed, logged once.
-    pub(super) backdrop_failed: Option<std::path::PathBuf>,
     /// Kitty graphics' textures.
     pictures: Pictures,
     /// Keys go as Windows' records, as ConPTY asks.
@@ -168,10 +175,11 @@ impl TerminalView {
             focus,
             marked: None,
             caret: Bounds::default(),
+            glide: None,
+            target: None,
             pointer: Pointer::default(),
             menu: FileMenu::default(),
             mouse: MouseMode::default(),
-            backdrop_failed: None,
             pictures: Pictures::default(),
             #[cfg(windows)]
             win32: false,
@@ -226,7 +234,7 @@ impl TerminalView {
         &self.records
     }
 
-    /// The status its shell's last command ended with.
+    /// The last command's status; none while a command runs.
     pub fn ended(&self) -> Option<i32> {
         self.ended
     }
@@ -238,6 +246,8 @@ impl TerminalView {
             self.pty.graphics().resume();
         } else if !front {
             paint::drop_pictures(self.pictures.release(), window);
+            // Shown again, the cursor starts where it stands.
+            (self.glide, self.target) = (None, None);
         }
         self.front = front;
     }
@@ -250,23 +260,6 @@ impl TerminalView {
                     batch.push(more);
                 }
                 if view.update(cx, |view, cx| view.handle(batch, cx)).is_err() {
-                    break;
-                }
-            }
-        })
-    }
-
-    fn blink(cx: &mut Context<Self>) -> Task<()> {
-        cx.spawn(async move |view, cx| {
-            loop {
-                cx.background_executor().timer(BLINK).await;
-                let ticked = view.update(cx, |view, cx| {
-                    if view.blinking {
-                        view.shown = !view.shown;
-                        cx.notify();
-                    }
-                });
-                if ticked.is_err() {
                     break;
                 }
             }
@@ -329,7 +322,22 @@ impl Render for TerminalView {
         let lit = self.finder.as_ref().map_or_else(Vec::new, |finder| {
             finder.lit(&term, cx.theme().colors.warning)
         });
-        let shown = frame(&term, &ink, &lit);
+        let link = self
+            .pointer
+            .hover
+            .and_then(|_| self.pointer.hovered(window.mouse_position(), self.size))
+            .and_then(|(column, row)| {
+                super::links::hit_at(
+                    &term,
+                    alacritty_terminal::index::Point::new(
+                        alacritty_terminal::index::Line(
+                            row as i32 - term.grid().display_offset() as i32,
+                        ),
+                        alacritty_terminal::index::Column(column),
+                    ),
+                )
+            });
+        let shown = frame(&term, &ink, &lit, link.as_ref());
         let mut graphics = self.pty.graphics();
         // Only a drawn session ticks; a hidden one pauses.
         let next = graphics.tick(Instant::now());
@@ -370,6 +378,8 @@ impl Render for TerminalView {
                     Some((cursor, shape))
                 }
             });
+        let target = cursor.as_ref().map(|(c, _)| (c.row, c.column));
+        self.follow(target, settings.cursor_smooth);
         let root = div()
             .id(("terminal", cx.entity_id()))
             .key_context(input::CONTEXT)
@@ -390,8 +400,16 @@ impl Render for TerminalView {
             .when(self.pointer.on_link, |root| {
                 root.cursor(gpui::CursorStyle::PointingHand)
             })
+            .hover_listener_mode(gpui::HoverListenerMode::InputModalityIndependent)
+            .on_hover(cx.listener(|view, hovered: &bool, window, cx| {
+                view.pointer.hover = hovered.then(|| window.mouse_position());
+                cx.notify();
+            }))
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_drop(cx.listener(|view, paths: &ExternalPaths, _, cx| view.drop_paths(paths, cx)))
+            .on_drop(
+                cx.listener(|view, drag: &crate::files::FileDrag, _, cx| view.dragged(drag, cx)),
+            )
             .size_full()
             .px(px(settings.padding_x))
             .pl(px(settings.padding_x) + Rail::width(window, cx))
@@ -438,13 +456,11 @@ impl Render for TerminalView {
             }
         };
         let rail = self.rail(scrollback, settings.padding_y, window, cx);
-        let backdrop = self.backdrop(&settings, window, cx);
         let request = self.menu.request();
         let menu = self.menu.items(cx);
         div()
             .relative()
             .size_full()
-            .children(backdrop)
             .child(
                 ContextMenu::new(("terminal-menu", cx.entity_id()), menu)
                     .manual(request)
@@ -461,4 +477,5 @@ impl Render for TerminalView {
     }
 }
 
+mod cursor;
 mod events;

@@ -24,8 +24,11 @@ mod appearance;
 mod butler;
 mod characters;
 pub use characters::open_characters;
+#[cfg(windows)]
+mod explorer;
 #[cfg(unix)]
 mod hooks;
+mod picture;
 mod terminal;
 
 actions!(ely_tea_party, [OpenSettings, CloseSettings]);
@@ -108,9 +111,8 @@ pub struct SettingsWindow {
     /// Why the typed shell and folder are not saved.
     refused: Option<SharedString>,
     refused_folder: Option<SharedString>,
-    /// The background picture, typed or browsed, and why it is not saved.
-    image: Entity<TextInput>,
-    refused_image: Option<SharedString>,
+    /// The background picture's fields: its file, scope, size, position and repeat.
+    picture: picture::Fields,
     /// Why the last change did not save.
     failed: Option<SharedString>,
     /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
@@ -118,10 +120,13 @@ pub struct SettingsWindow {
     font: Entity<TextInput>,
     butler_fields: Option<butler::Fields>,
     characters: characters::Fields,
+    cjk_font: Entity<TextInput>,
+    interface_font: Entity<TextInput>,
     /// A picker's input for each fallback family, and one for the family being added.
     fallbacks: Vec<Entity<TextInput>>,
     /// The empty picker that adds a fallback shows.
     adding: bool,
+    profiles: Vec<terminal::profiles::Fields>,
     /// Whether the cursor preview shows, as it blinks.
     lit: bool,
     /// The worn custom theme the editor shows, its name and its chosen color.
@@ -129,7 +134,7 @@ pub struct SettingsWindow {
     theme_name: Entity<TextInput>,
     _named: Subscription,
     slot: usize,
-    _typed: [Subscription; 3],
+    _typed: [Subscription; 2],
     _settings: Subscription,
     _credentials: Subscription,
     _updates: Subscription,
@@ -158,12 +163,9 @@ impl SettingsWindow {
             input
         });
         let font = cx.new(|cx| TextInput::new(window, cx));
+        let cjk_font = cx.new(|cx| TextInput::new(window, cx));
+        let interface_font = cx.new(|cx| TextInput::new(window, cx));
         let (theme_name, named) = Self::name_field(None, String::new(), window, cx);
-        let image = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
-            input.set_text(SettingsStore::get(cx).background_image.clone(), cx);
-            input
-        });
         let search = cx.new(|cx| {
             let placeholder = text(cx, "et.settings.search_shortcuts", &[]);
             TextInput::new(window, cx).placeholder(placeholder)
@@ -183,14 +185,9 @@ impl SettingsWindow {
                     this.refused_folder = this.save_typed("start_folder", folder, put, cx);
                 }
             }),
-            cx.subscribe(&image, |this, input, event: &InputEvent, cx| {
-                if let InputEvent::Changed = event {
-                    let image = input.read(cx).text().to_string();
-                    let put = |settings: &mut Settings, image| settings.background_image = image;
-                    this.refused_image = this.save_typed("background_image", image, put, cx);
-                }
-            }),
         ];
+        let picture = picture::Fields::new(window, cx);
+        let profiles = terminal::profiles::fields(window, cx);
         // Focus inside, so the window's keys find its context.
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
@@ -202,15 +199,17 @@ impl SettingsWindow {
             search,
             refused: None,
             refused_folder: None,
-            image,
-            refused_image: None,
+            picture,
             failed: None,
             drafts: 0,
             font,
             butler_fields: None,
             characters: characters::Fields::default(),
+            cjk_font,
+            interface_font,
             fallbacks: Vec::new(),
             adding: false,
+            profiles,
             lit: true,
             editing: None,
             theme_name,
@@ -240,6 +239,7 @@ impl SettingsWindow {
         search.update(cx, |input, cx| {
             input.set_placeholder(text(cx, "et.settings.search_shortcuts", &[]), cx)
         });
+        self.profiles = terminal::profiles::fields(window, cx);
     }
 
     /// Blinks the cursor preview as a terminal blinks its cursor, while it shows.
@@ -265,7 +265,7 @@ impl SettingsWindow {
         let (input, refused) = match field {
             "shell" => (self.shell.clone(), &mut self.refused),
             "start_folder" => (self.folder.clone(), &mut self.refused_folder),
-            "background_image" => (self.image.clone(), &mut self.refused_image),
+            "background_image" => (self.picture.image.clone(), &mut self.picture.refused_image),
             other => unreachable!("settings: no path field {other}"),
         };
         let Some(text) = path.to_str() else {
@@ -285,7 +285,7 @@ impl SettingsWindow {
         &mut self,
         field: &str,
         value: String,
-        put: fn(&mut Settings, String),
+        put: impl FnOnce(&mut Settings, String),
         cx: &mut Context<Self>,
     ) -> Option<SharedString> {
         let saved = SettingsStore::update(cx, |settings| put(settings, value.clone()));
@@ -463,7 +463,7 @@ impl Render for SettingsWindow {
                     .child(body),
             );
         // The context sits above the focus root, so its keys work wherever focus is.
-        div()
+        crate::interface::dress(div(), cx)
             .size_full()
             .key_context(CONTEXT)
             .map(menus::window_actions)
