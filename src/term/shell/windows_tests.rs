@@ -323,11 +323,20 @@ fn a_bare_cmd_typed_in_powershell_marks_its_prompts() {
         !given(&launch, "ELY_CMD_PROMPT").contains("aid="),
         "a nested cmd's is a program's"
     );
+    let inherited = crate::term::env::fresh()
+        .expect("the environment")
+        .get("PROMPT")
+        .map(str::to_owned);
     let own = super::launch("cmd", &[], start.clone(), &dir).expect("a cmd launch");
-    assert!(
-        given(&own, "PROMPT").contains("aid=ely-tea-party"),
-        "a cmd session's is the shell's"
-    );
+    let prompt = given(&own, "PROMPT");
+    if let Some(inherited) = inherited.filter(|prompt| prompt.contains("133;A")) {
+        assert_eq!(prompt, inherited, "an existing prompt's marks stay");
+    } else {
+        assert!(
+            prompt.contains("aid=ely-tea-party"),
+            "a cmd session's is the shell's"
+        );
+    }
     // A user's prompt cmd would run, parsed as a command.
     let hostile = super::cmd::prompt(Some("$P & echo INJECTED & rem $G"), false);
     launch.env.push(("ELY_CMD_PROMPT".into(), hostile));
