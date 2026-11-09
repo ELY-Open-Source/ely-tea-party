@@ -184,7 +184,7 @@ pub fn open(
         ..Default::default()
     };
     let id = agents::next_session();
-    launch.env.extend(agents::env(id)?);
+    launch.env.extend(agents::env(id, false)?);
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
     // Windows' wheel settings, read where gpui reads its own.
     #[cfg(windows)]

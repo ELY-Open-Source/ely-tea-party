@@ -16,7 +16,7 @@ fn hear(
     at: Instant,
 ) {
     agent.hooked = true;
-    agent.note(event, (tool, detail), &mut Timeline::default(), at);
+    agent.note(event, (tool, detail, None), &mut Timeline::default(), at);
     agent.set(status, at);
 }
 
@@ -272,4 +272,75 @@ fn she_speaks_at_the_moments_that_matter_then_falls_quiet() {
         agent.bubble(start + secs(40)).map(|said| said.0),
         Some(Moment::Finale)
     );
+}
+
+/// The tool rows `events` leave, each with its id as its detail.
+fn rows(events: &[(&str, &str, &str)]) -> Vec<(String, Option<Duration>)> {
+    let start = Instant::now();
+    let mut agent = Agent::new(Kind::Claude, start);
+    let mut log = Timeline::default();
+    for (n, (event, tool, id)) in events.iter().enumerate() {
+        let said = (Some(*tool), Some(*id), Some(*id));
+        agent.note(event, said, &mut log, start + secs(n as u64));
+    }
+    (log.entries.iter())
+        .filter_map(|entry| match &entry.step {
+            crate::agents::timeline::Step::Tool { detail, took, .. } => {
+                Some((detail.clone().unwrap_or_default(), *took))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn parallel_calls_make_one_row_each_with_their_own_time() {
+    let rows = rows(&[
+        ("PreToolUse", "Read", "a"),
+        ("PreToolUse", "Grep", "b"),
+        ("PostToolUse", "Read", "a"),
+        ("PostToolUse", "Grep", "b"),
+    ]);
+    assert_eq!(
+        rows,
+        [("a".into(), Some(secs(2))), ("b".into(), Some(secs(2)))]
+    );
+}
+
+#[test]
+fn a_subagent_s_tools_do_not_repeat_its_own_row() {
+    let rows = rows(&[
+        ("PreToolUse", "Agent", "boss"),
+        ("PreToolUse", "Read", "a"),
+        ("PostToolUse", "Read", "a"),
+        ("PostToolUse", "Agent", "boss"),
+    ]);
+    assert_eq!(
+        rows,
+        [("boss".into(), Some(secs(3))), ("a".into(), Some(secs(1)))]
+    );
+}
+
+#[test]
+fn a_result_with_no_call_still_makes_its_row() {
+    let rows = rows(&[("PostToolUse", "Read", "a")]);
+    assert_eq!(rows, [("a".into(), Some(secs(0)))]);
+}
+
+#[test]
+fn a_turn_no_one_typed_counts_from_its_own_first_tool() {
+    let start = Instant::now();
+    let mut agent = Agent::new(Kind::Claude, start);
+    let mut log = Timeline::default();
+    agent.note("UserPromptSubmit", (None, None, None), &mut log, start);
+    agent.note("Stop", (None, None, None), &mut log, start + secs(1));
+    agent.note(
+        "PreToolUse",
+        (Some("Read"), None, None),
+        &mut log,
+        start + secs(100),
+    );
+    agent.note("Stop", (None, None, None), &mut log, start + secs(103));
+    let rounds = log.rounds();
+    assert_eq!(rounds[1].end, Some((false, Some(secs(3)), None)));
 }

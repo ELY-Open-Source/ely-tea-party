@@ -90,6 +90,7 @@ pub struct Workspace {
     companion: companion::Companion,
     /// The sessions as last saved for the next start.
     saved: Option<restore::Saved>,
+    steps: restore::steps::Keeper,
     party_focus: FocusHandle,
     /// The shown agents' subscription use.
     meters: usage::Meters,
@@ -147,6 +148,7 @@ impl Workspace {
             butler: crate::butler::Briefing::default(),
             companion: companion::Companion::default(),
             saved: None,
+            steps: Default::default(),
             party_focus: cx.focus_handle(),
             meters: usage::Meters::default(),
             glide: panel::Glide::default(),
@@ -292,19 +294,17 @@ impl Workspace {
     }
 }
 
-/// Starts `shell`, the Shell setting's way of naming one, in `folder`; a session's `agent` hooks reach the app under its id, a drawer's none.
+/// Starts `shell`, the Shell setting's way of naming one, in `folder`; its hooks reach the app under session `id`, as its terminal's or its drawer's.
 fn start(
     shell: &str,
     args: &[String],
     folder: impl Into<Start>,
-    agent: Option<u64>,
+    (id, drawer): (u64, bool),
     cx: &App,
 ) -> anyhow::Result<((Pty, Events), Launch)> {
     let settings = SettingsStore::get(cx);
     let mut launch = launch(shell, args, folder, &cx.global::<ShellIntegration>().0)?;
-    if let Some(id) = agent {
-        launch.env.extend(characters::env(id)?);
-    }
+    launch.env.extend(characters::env(id, drawer)?);
     Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch))
 }
 

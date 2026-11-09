@@ -15,6 +15,8 @@ pub struct Said {
     pub tool: Option<String>,
     pub detail: Option<String>,
     pub conversation: Option<String>,
+    /// The tool call's own id, which its result names too.
+    pub tool_id: Option<String>,
 }
 
 /// Reads `agent`'s payload; `named` is the event its command line gave. None: the event means nothing here.
@@ -42,9 +44,14 @@ pub fn read(agent: &str, named: Option<&str>, payload: &Value) -> Option<Said> {
         "conversation_id",
         "conversationId",
     ];
+    let calls = ["tool_use_id", "toolUseId", "tool_call_id", "toolCallId"];
+    let tool_id = field(&calls, payload)
+        .or_else(|| payload["toolCall"]["id"].as_str())
+        .map(str::to_string);
     Some(Said {
         event: event.to_string(),
         tool,
+        tool_id,
         detail: detail(payload),
         conversation: field(&ids, payload).map(str::to_string),
     })
@@ -69,6 +76,15 @@ fn canonical<'a>(agent: &str, event: &'a str, payload: &Value) -> Option<&'a str
             let kind = payload["notificationType"].as_str();
             kind.filter(|kind| *kind == "permission_prompt")
                 .map(|_| "Notification")?
+        }
+        // A reminder that the agent sits idle asks nothing; the turn ended before it.
+        "Notification"
+            if matches!(
+                payload["notification_type"].as_str(),
+                Some("idle_prompt" | "auth_success")
+            ) =>
+        {
+            return None;
         }
         other => other,
     })
@@ -121,6 +137,27 @@ mod tests {
 
     fn said(agent: &str, named: Option<&str>, payload: Value) -> Option<Said> {
         read(agent, named, &payload)
+    }
+
+    #[test]
+    fn an_idle_reminder_is_no_question_and_a_permission_prompt_is() {
+        let notice = |kind: &str| json!({ "hook_event_name": "Notification", "message": "m", "notification_type": kind });
+        assert_eq!(said("claude", None, notice("idle_prompt")), None);
+        assert_eq!(said("claude", None, notice("auth_success")), None);
+        assert!(said("claude", None, notice("permission_prompt")).is_some());
+    }
+
+    #[test]
+    fn a_call_keeps_its_id_in_each_agent_s_spelling() {
+        let id = |payload: Value| {
+            said("claude", Some("PreToolUse"), payload).and_then(|said| said.tool_id)
+        };
+        assert_eq!(id(json!({ "tool_use_id": "a" })).as_deref(), Some("a"));
+        assert_eq!(
+            id(json!({ "toolCall": { "id": "b" } })).as_deref(),
+            Some("b")
+        );
+        assert_eq!(id(json!({})), None);
     }
 
     #[test]

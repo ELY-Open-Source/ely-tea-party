@@ -387,6 +387,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.panel.git", "Git"),
     ("et.panel.files", "文件"),
     ("et.panel.no_folder", "此 shell 不报告文件夹。"),
+    ("et.activity.drawer", "抽屉"),
     ("et.status.line", "{state}：{said}"),
     ("et.status.idle", "空闲"),
     ("et.status.working", "工作中"),

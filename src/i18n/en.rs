@@ -423,6 +423,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.panel.git", "Git"),
     ("et.panel.files", "Files"),
     ("et.panel.no_folder", "This shell reports no folder."),
+    ("et.activity.drawer", "Drawer"),
     ("et.status.line", "{state}: {said}"),
     ("et.status.idle", "Idle"),
     ("et.status.working", "Working"),

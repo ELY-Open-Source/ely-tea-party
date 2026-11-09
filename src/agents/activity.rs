@@ -5,10 +5,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::{Deserialize, Serialize};
+
 use super::{
     Agent, Pose, Status,
     quips::{self, Moment},
-    timeline::Timeline,
+    timeline::{Said, Timeline},
 };
 
 /// A command running this long lets its character slack until it ends.
@@ -21,7 +23,7 @@ const CHEER_FOR: Duration = Duration::from_secs(8);
 const QUIP_FOR: Duration = Duration::from_secs(6);
 
 /// What a tool does, as its character shows it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Doing {
     Reading,
     Searching,
@@ -106,6 +108,18 @@ pub struct Activity {
     pub since: Instant,
     /// Its result came back.
     pub done: bool,
+    /// The call's own id, which its result names too.
+    pub id: Option<String>,
+}
+
+impl Activity {
+    /// Whether a result of `tool` and `id` is this call's.
+    fn answered_by(&self, tool: Option<&str>, id: Option<&str>) -> bool {
+        match (id, self.id.as_deref()) {
+            (Some(theirs), Some(ours)) => theirs == ours,
+            _ => tool.is_none_or(|tool| tool == self.tool),
+        }
+    }
 }
 
 /// One turn, from the prompt to the agent's stop.
@@ -126,11 +140,11 @@ impl Agent {
     pub fn note(
         &mut self,
         event: &str,
-        (tool, detail): (Option<&str>, Option<&str>),
+        (tool, detail, id): Said<'_>,
         log: &mut Timeline,
         now: Instant,
     ) {
-        log.record(event, (tool, detail), self.turn.started, now);
+        let answered = log.record(event, (tool, detail, id), self.turn.started, now);
         let detail = detail.map(str::to_string);
         match event {
             "UserPromptSubmit" => {
@@ -142,6 +156,13 @@ impl Agent {
                 self.say(Moment::Received, now);
             }
             "PreToolUse" => {
+                // A turn no one typed, as a background task's end wakes.
+                if self.turn.started.is_none() {
+                    self.turn = Turn {
+                        started: Some(now),
+                        ..Turn::default()
+                    };
+                }
                 let tool = tool.unwrap_or_default();
                 let doing = Doing::of(tool);
                 self.turn.tools += 1;
@@ -157,27 +178,37 @@ impl Agent {
                     detail,
                     since: now,
                     done: false,
+                    id: id.map(str::to_string),
                 });
             }
-            "PostToolUse" | "PostToolUseFailure" => match self.activity.as_mut() {
-                Some(activity) if !activity.done => {
-                    activity.done = true;
-                    let long = activity.doing == Doing::Running
-                        && now.saturating_duration_since(activity.since) >= SLACK_AFTER;
-                    if event == "PostToolUseFailure" {
-                        self.say(Moment::Failed, now);
-                    } else if long {
-                        self.say(Moment::LongDone, now);
-                    }
-                }
+            "PostToolUse" | "PostToolUseFailure" => {
                 // Agents that hook no PreToolUse, as Antigravity, name the tool afterwards.
-                _ => {
+                let shown = self
+                    .activity
+                    .as_ref()
+                    .is_some_and(|activity| !activity.done && activity.answered_by(tool, id));
+                if !answered && !shown {
                     if let Some(tool) = tool {
-                        self.note("PreToolUse", (Some(tool), detail.as_deref()), log, now);
-                        self.note(event, (None, None), log, now);
+                        let said = (Some(tool), detail.as_deref(), id);
+                        self.note("PreToolUse", said, log, now);
+                        self.note(event, said, log, now);
                     }
+                    return;
                 }
-            },
+                let long = match self.activity.as_mut() {
+                    Some(activity) if !activity.done && activity.answered_by(tool, id) => {
+                        activity.done = true;
+                        activity.doing == Doing::Running
+                            && now.saturating_duration_since(activity.since) >= SLACK_AFTER
+                    }
+                    _ => false,
+                };
+                if event == "PostToolUseFailure" {
+                    self.say(Moment::Failed, now);
+                } else if long {
+                    self.say(Moment::LongDone, now);
+                }
+            }
             "Notification" | "PermissionRequest" => {
                 self.turn.said = detail;
                 self.say(Moment::Asks, now);
@@ -190,6 +221,7 @@ impl Agent {
                 self.turn.cheered = (long && event != "StopFailure").then_some(now);
                 self.turn.said = detail;
                 self.activity = None;
+                self.turn.started = None;
                 if event == "StopFailure" {
                     self.say(Moment::Failed, now);
                 } else if long {

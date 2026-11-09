@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use ely_gpui_component::{
+    i18n::text,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Palette, TextSize},
     typography::Caption,
@@ -16,7 +17,7 @@ use crate::{
     agents::{
         self, Status,
         activity::Doing,
-        timeline::{Entry, Round, Step},
+        timeline::{Entry, Round, Step, Timeline},
     },
     sessions::{self, Session},
     workspace::Workspace,
@@ -70,8 +71,11 @@ pub(super) fn activity(session: Option<&Session>, cx: &mut Context<Workspace>) -
     let Some(session) = session else {
         return Caption::new("No session.").px_1().pt_2().into_any_element();
     };
-    let rounds = session.log.rounds();
-    if rounds.is_empty() {
+    let drawer = session
+        .drawer
+        .as_ref()
+        .filter(|drawer| !drawer.log.entries.is_empty());
+    if session.log.entries.is_empty() && drawer.is_none() {
         let hint = match session.agent {
             Some(_) => "Nothing yet: steps show once the agent's hooks report.",
             None => "No agent runs in this session.",
@@ -79,11 +83,49 @@ pub(super) fn activity(session: Option<&Session>, cx: &mut Context<Workspace>) -
         return Caption::new(hint).px_1().pt_2().into_any_element();
     }
     let now = Instant::now();
-    let working = session
-        .agent
-        .as_ref()
-        .is_some_and(|agent| agent.status != Status::Idle);
-    let last = rounds.len() - 1;
+    let own: Vec<AnyElement> = cards(&session.log, session.agent.as_ref(), (0, true), now, cx);
+    let open = drawer.is_some_and(|drawer| drawer.open);
+    let below = drawer.map_or_else(Vec::new, |drawer| {
+        let heading = Caption::new(text(cx, "et.activity.drawer", &[]))
+            .px_1()
+            .into_any_element();
+        let first = session.log.entries.len().max(1) + 1;
+        let mut group = vec![heading];
+        group.extend(cards(
+            &drawer.log,
+            drawer.agent.as_ref(),
+            (first, false),
+            now,
+            cx,
+        ));
+        group
+    });
+    // The drawer's, while it shows, is what the user is looking at.
+    let (first, second) = if open { (below, own) } else { (own, below) };
+    div()
+        .id("activity")
+        .size_full()
+        .overflow_y_scroll()
+        .px_1()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .children(first)
+        .children(second)
+        .into_any_element()
+}
+
+/// `log`'s rounds, newest first, their element ids from `first`; `linked` rounds' prompts go back in the session's terminal.
+fn cards(
+    log: &Timeline,
+    agent: Option<&agents::Agent>,
+    (first, linked): (usize, bool),
+    now: Instant,
+    cx: &mut Context<Workspace>,
+) -> Vec<AnyElement> {
+    let rounds = log.rounds();
+    let working = agent.is_some_and(|agent| agent.status != Status::Idle);
+    let last = rounds.len().saturating_sub(1);
     // Prompts with text after each round's, which counts it back in the terminal's list.
     let mut later = 0;
     let mut cards = Vec::with_capacity(rounds.len());
@@ -94,21 +136,14 @@ pub(super) fn activity(session: Option<&Session>, cx: &mut Context<Workspace>) -
             None if index == last && working => Standing::Running,
             None => Standing::Unended,
         };
-        let open = (index == last) != session.log.flipped.contains(&round.at);
+        let open = (index == last) != log.flipped.contains(&round.at);
         let back = matches!(round.prompt, Some(Some(_))).then_some(later);
-        cards.push(card((index, round), (standing, open, back), now, cx));
         later += usize::from(back.is_some());
+        let back = back.filter(|_| linked);
+        cards
+            .push(card((first + index, round), (standing, open, back), now, cx).into_any_element());
     }
-    div()
-        .id("activity")
-        .size_full()
-        .overflow_y_scroll()
-        .px_1()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .children(cards)
-        .into_any_element()
+    cards
 }
 
 /// One round: its header, then its steps and last words while open, else a summary.
@@ -256,6 +291,7 @@ fn step(
             detail,
             took,
             failed,
+            ..
         } => {
             let what = sessions::one_line(detail.as_deref().unwrap_or(name));
             let ran = ran(entry, standing, now);
@@ -367,7 +403,12 @@ impl Workspace {
     /// Opens or closes a round of the shown session's Activity.
     fn flip_round(&mut self, round: Instant, cx: &mut Context<Self>) {
         if let Some(session) = self.sessions.get_mut(self.active) {
-            session.log.flip(round);
+            let drawer = (session.drawer.as_mut()).filter(|drawer| drawer.log.holds(round));
+            let log = match drawer {
+                Some(drawer) => &mut drawer.log,
+                None => &mut session.log,
+            };
+            log.flip(round);
             cx.notify();
         }
     }

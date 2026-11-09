@@ -156,7 +156,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
         let id = agents::next_session();
-        let ((pty, events), launch) = super::start(shell, &args, start, Some(id), cx)?;
+        let ((pty, events), launch) = super::start(shell, &args, start, (id, false), cx)?;
         self.add((id, pty, events), launch, args, window, cx);
         let last = self.sessions.len() - 1;
         if let Some(at) = at {
