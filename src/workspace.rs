@@ -3,7 +3,6 @@ use std::time::Instant;
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     i18n::text,
-    lists::List,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
     theme::{ActiveTheme, ControlSize},
@@ -28,7 +27,9 @@ mod party;
 mod rename;
 pub mod restore;
 mod session;
+mod sidebar;
 mod speed;
+mod switcher;
 mod update;
 mod usage;
 mod widths;
@@ -38,7 +39,7 @@ pub use agents::Reports;
 pub use drawer::Drawer;
 pub use keys::{
     CloseSession, JumpToWaiting, LastSession, NewSession, NextSession, PreviousSession,
-    SelectSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions, bind_keys,
+    QuickSwitch, SelectSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions, bind_keys,
 };
 
 use header::column_toggle;
@@ -72,6 +73,8 @@ pub const TITLE: &str = "Ely Tea Party";
 pub struct Workspace {
     focus: FocusHandle,
     sessions: Vec<Session>,
+    sidebar: sidebar::Sidebar,
+    switcher: Option<Entity<switcher::Switcher>>,
     /// The session shown.
     active: usize,
     files: Entity<Files>,
@@ -103,7 +106,7 @@ pub struct Workspace {
     _settings: Subscription,
     _updates: Subscription,
     _acted: Subscription,
-    _agents: [Task<()>; 3],
+    _agents: [Task<()>; 2],
     _here: Subscription,
 }
 
@@ -134,6 +137,8 @@ impl Workspace {
         let mut workspace = Self {
             focus: cx.focus_handle(),
             sessions: Vec::new(),
+            sidebar: sidebar::Sidebar::default(),
+            switcher: None,
             active: 0,
             files,
             git,
@@ -209,6 +214,10 @@ impl Workspace {
         if index >= self.sessions.len() {
             return;
         }
+        self.sidebar.reveal(&self.sessions[index].folder);
+        if self.switcher.take().is_some() {
+            log::debug!("switcher: closed as a session takes focus");
+        }
         if index != self.active {
             self.quiet_companion(cx);
         }
@@ -225,6 +234,7 @@ impl Workspace {
         }
         self.party = false;
         let session = &mut self.sessions[index];
+        switcher::visit(session.id, cx);
         session.bell = false;
         session.waiting = false;
         session
@@ -284,13 +294,6 @@ impl Workspace {
             log::debug!("app: the title is {title:?}");
             window.set_window_title(title);
         }
-    }
-
-    /// Shows the next session, or the one before, round the ends.
-    fn step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let count = self.sessions.len();
-        let by = if forward { 1 } else { count - 1 };
-        self.select((self.active + by) % count, window, cx);
     }
 }
 
@@ -365,19 +368,7 @@ impl Render for Workspace {
                     .child(wallpaper::ruler()),
             );
         if settings.show_sessions {
-            let home = dirs::home_dir();
-            let rows = self.sessions.iter().enumerate().map(|(index, session)| {
-                let active = index == self.active;
-                sessions::row(
-                    &workspace,
-                    index,
-                    session,
-                    active,
-                    (home.as_deref(), now),
-                    cx,
-                )
-            });
-            let list = List::new().divided().children(rows);
+            let list = self.session_list(now, cx);
             let new = IconButton::new("new-session", IconName::Plus)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
@@ -403,7 +394,7 @@ impl Render for Workspace {
                             .p_2()
                             // A row dropped off the rows goes last.
                             .on_drop(cx.listener(|this, moving: &sessions::Moving, _, cx| {
-                                this.move_session(moving.from, usize::MAX, cx)
+                                this.move_sidebar_session(moving.from, usize::MAX, cx)
                             }))
                             // A double click off the rows opens a session.
                             .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
@@ -434,6 +425,9 @@ impl Render for Workspace {
             .on_scroll_wheel(|_, _, cx| crate::pet::touch(cx))
             .capture_key_down(|_, _, cx| crate::pet::touch(cx))
             .map(menus::window_actions)
+            .on_action(
+                cx.listener(|this, _: &QuickSwitch, window, cx| this.toggle_switcher(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
                 this.toggle(
                     |settings| settings.show_sessions = !settings.show_sessions,
@@ -461,11 +455,13 @@ impl Render for Workspace {
                 cx.listener(|this, _: &JumpToWaiting, window, cx| this.jump_to_waiting(window, cx)),
             )
             .on_action(cx.listener(|this, _: &LastSession, window, cx| {
-                this.select(this.sessions.len().saturating_sub(1), window, cx)
+                if let Some(&index) = this.session_order(cx).last() {
+                    this.select(index, window, cx);
+                }
             }))
             .on_action(cx.listener(|this, select: &SelectSession, window, cx| {
-                if select.0 < this.sessions.len() {
-                    this.select(select.0, window, cx);
+                if let Some(&index) = this.session_order(cx).get(select.0) {
+                    this.select(index, window, cx);
                 } else {
                     cx.propagate();
                 }
@@ -492,5 +488,6 @@ impl Render for Workspace {
             .children(bubble)
             .children(self.companion_bubble(window, cx))
             .child(crate::butler::outside_click_listener())
+            .children(self.switcher.clone())
     }
 }

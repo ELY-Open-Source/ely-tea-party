@@ -6,6 +6,16 @@ else
 end
 set -e ELY_FISH_XDG_DATA_DIRS
 if status is-interactive
+    function _ely_path --on-event fish_prompt
+        if set -q ELY_BIN_DIR; and test -n "$ELY_BIN_DIR"
+            set -l kept "$ELY_BIN_DIR"
+            for part in $PATH
+                test "$part" = "$ELY_BIN_DIR"; or set -a kept "$part"
+            end
+            set -gx PATH $kept
+        end
+    end
+    _ely_path
     function _ely_prompt --on-event fish_prompt
         set -l dir $PWD
         if set -q ELY_WSL

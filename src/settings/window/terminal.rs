@@ -20,8 +20,8 @@ use crate::{
     term::input::{self, Find, NextPrompt, PreviousPrompt},
     update::{self, State, VERSION},
     workspace::{
-        self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
-        ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
+        self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, QuickSwitch,
+        SelectSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
     },
 };
 
@@ -201,7 +201,10 @@ impl SettingsWindow {
         let page = div().flex().flex_col().gap_6();
         #[cfg(unix)]
         let page = page.child(super::hooks::section(cx));
-        page.child(section).child(profiles).child(keys)
+        page.child(crate::communication::ui::section(cx))
+            .child(section)
+            .child(profiles)
+            .child(keys)
     }
 }
 
@@ -303,6 +306,11 @@ fn listed(cx: &App) -> Vec<(SharedString, SharedString, Box<dyn Action>)> {
     let word = |key: &str| text(cx, key, &[]);
     let sessions = word("et.keys.sessions");
     let mut listed = vec![
+        (
+            sessions.clone(),
+            word("et.switcher.title"),
+            QuickSwitch.boxed_clone(),
+        ),
         (
             sessions.clone(),
             word("et.session.new"),

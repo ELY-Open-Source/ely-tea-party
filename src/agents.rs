@@ -5,6 +5,7 @@ pub mod assets;
 pub mod detect;
 #[cfg(unix)]
 pub mod hooks;
+pub mod icons;
 #[cfg(unix)]
 pub mod install;
 pub mod quips;
@@ -268,12 +269,14 @@ pub fn next_session() -> u64 {
 /// The variables a session starts with so its agents' hooks reach the app.
 #[cfg(unix)]
 pub fn env(id: u64, drawer: bool) -> anyhow::Result<Vec<(String, String)>> {
-    hooks::env(id, drawer)
+    let mut env = hooks::env(id, drawer)?;
+    env.extend(crate::communication::env(id, drawer)?);
+    Ok(env)
 }
 
 #[cfg(windows)]
-pub fn env(_: u64, _: bool) -> anyhow::Result<Vec<(String, String)>> {
-    Ok(Vec::new())
+pub fn env(id: u64, drawer: bool) -> anyhow::Result<Vec<(String, String)>> {
+    crate::communication::env(id, drawer)
 }
 
 /// What Claude Code marks its children with; none of it describes a fresh session.
@@ -292,6 +295,8 @@ pub const CLAUDE_MARKS: [&str; 9] = [
 /// An agent running in a session.
 #[derive(Clone, Debug)]
 pub struct Agent {
+    pub instance: uuid::Uuid,
+    pub instance_pid: Option<u32>,
     pub kind: Kind,
     pub status: Status,
     pub speed: speed::Speed,
@@ -317,6 +322,8 @@ pub struct Agent {
 impl Agent {
     pub fn new(kind: Kind, now: Instant) -> Self {
         Self {
+            instance: uuid::Uuid::new_v4(),
+            instance_pid: None,
             kind,
             status: Status::Idle,
             speed: speed::Speed::Unknown,

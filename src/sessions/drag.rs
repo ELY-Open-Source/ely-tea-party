@@ -14,8 +14,11 @@ use gpui::{
     prelude::FluentBuilder, transparent_black,
 };
 
-use super::{Session, TITLE, item, menu, one_line, shown};
-use crate::{settings::SettingsStore, workspace::Workspace};
+use super::{Session, TITLE, compact, item, menu, one_line, shown};
+use crate::{
+    settings::{SettingsStore, SidebarStyle},
+    workspace::Workspace,
+};
 
 /// The session shown once session `from` moved to `to`, `active` having been shown.
 pub fn after_move(active: usize, from: usize, to: usize) -> usize {
@@ -62,12 +65,32 @@ pub fn row(
     cx: &App,
 ) -> impl IntoElement {
     let pid = session.terminal.read(cx).pid() as usize;
-    let title = match &session.agent {
-        Some(agent) => session.called(agent),
-        None if session.title.is_empty() => TITLE.to_string(),
-        None => one_line(&session.title),
+    let settings = SettingsStore::get(cx);
+    let compact = settings.sidebar_style == SidebarStyle::Compact;
+    let title = if compact {
+        compact::title(session)
+    } else {
+        match &session.agent {
+            Some(agent) => session.called(agent),
+            None if session.title.is_empty() => TITLE.to_string(),
+            None => one_line(&session.title),
+        }
     };
-    let full = shown(&session.folder, when.0);
+    let full = if compact {
+        let agent = session
+            .agent
+            .as_ref()
+            .map(|agent| crate::agents::icons::name(agent.kind))
+            .unwrap_or("Terminal");
+        format!(
+            "{} · {}\n{}",
+            agent,
+            text(cx, session.task_state(cx).label(), &[]),
+            shown(&session.folder, when.0)
+        )
+    } else {
+        shown(&session.folder, when.0)
+    };
     let moving = Moving {
         from: index,
         title: title.into(),
@@ -75,9 +98,12 @@ pub fn row(
     let workspace = workspace.clone();
     let close = workspace.clone();
     let id = session.terminal.entity_id();
-    let item = item(&workspace, index, session, active, when.0, when.1, cx);
+    let item = if compact {
+        compact::item(&workspace, index, session, active, cx).into_any_element()
+    } else {
+        item(&workspace, index, session, active, when.0, when.1, cx).into_any_element()
+    };
     let menu = menu::row(&workspace, session.terminal.entity_id(), cx);
-    let settings = SettingsStore::get(cx);
     let item = if settings.session_menu {
         ContextMenu::new(("session-menu", pid), menu)
             .w_full()
@@ -88,25 +114,34 @@ pub fn row(
     };
     div()
         .id(("session-row", pid))
-        .my_1()
+        .when(!compact, |row| row.my_1())
         .relative()
         .rounded(cx.theme().radius(Radius::Lg))
         .border_1()
         .border_color(transparent_black())
         .tooltip(Tooltip::text(full))
         .when(settings.drag_sessions, |row| {
+            let target = workspace.clone();
             row.on_drag(moving, |moving, _, _, cx| {
                 cx.new(|_| Ghost(moving.title.clone()))
             })
             .drag_over::<Moving>(move |style, moving, _, cx| {
-                if moving.from == index {
+                if moving.from == index
+                    || !target.read(cx).sidebar_drop_allowed(moving.from, index, cx)
+                {
                     style
                 } else {
                     style.border_color(cx.theme().colors.focus)
                 }
             })
-            .on_drop(move |moving: &Moving, _, cx| {
-                workspace.update(cx, |this, cx| this.move_session(moving.from, index, cx))
+            .on_drop({
+                let workspace = workspace.clone();
+                move |moving: &Moving, _, cx| {
+                    cx.stop_propagation();
+                    workspace.update(cx, |this, cx| {
+                        this.move_sidebar_session(moving.from, index, cx)
+                    })
+                }
             })
         })
         .child(item)
@@ -144,10 +179,10 @@ pub fn row(
                         }
                     });
                 })
-                .child(
-                    Icon::new(IconName::X)
-                        .size(IconSize::Xs)
-                        .color(cx.theme().colors.danger),
-                ),
+                .child(Icon::new(IconName::X).size(IconSize::Xs).color(if compact {
+                    cx.theme().colors.fg_muted
+                } else {
+                    cx.theme().colors.danger
+                })),
         )
 }

@@ -72,6 +72,9 @@ fn command() -> Option<i32> {
 }
 
 fn main() {
+    if let Some(code) = ely_tea_party::communication::command() {
+        std::process::exit(code);
+    }
     if let Some(code) = command() {
         std::process::exit(code);
     }
@@ -88,7 +91,9 @@ fn main() {
     for link in links {
         sender.unbounded_send(link).expect("the receiver is held");
     }
-    let application = application().with_assets(ely_gpui_component::Assets);
+    let application = application().with_assets(ely_gpui_component::Assets::before(
+        ely_tea_party::agents::icons::Icons,
+    ));
     let opened = sender.clone();
     application.on_open_urls(move |urls| {
         for url in urls {

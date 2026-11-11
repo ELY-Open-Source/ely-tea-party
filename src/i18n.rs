@@ -11,10 +11,14 @@ use crate::{
 mod en;
 mod en_characters;
 mod en_files;
+mod en_messaging;
+mod en_switcher;
 mod en_tasks;
 mod zh;
 mod zh_characters;
 mod zh_files;
+mod zh_messaging;
+mod zh_switcher;
 mod zh_tasks;
 
 /// Every English word, the catalog others mirror.
@@ -24,6 +28,8 @@ fn english() -> Vec<(&'static str, &'static str)> {
         en_characters::MESSAGES,
         en_files::MESSAGES,
         en_tasks::MESSAGES,
+        en_switcher::MESSAGES,
+        en_messaging::MESSAGES,
     ]
     .concat()
 }
@@ -35,6 +41,8 @@ fn chinese() -> Vec<(&'static str, &'static str)> {
         zh_characters::MESSAGES,
         zh_files::MESSAGES,
         zh_tasks::MESSAGES,
+        zh_switcher::MESSAGES,
+        zh_messaging::MESSAGES,
     ]
     .concat()
 }

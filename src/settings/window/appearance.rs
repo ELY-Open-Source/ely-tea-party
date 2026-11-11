@@ -56,11 +56,12 @@ impl SettingsWindow {
             |settings, language| settings.language = language,
             cx,
         );
-        let [font, size] = self.interface_rows(cx);
+        let [font, size, sidebar] = self.interface_rows(cx);
         let language = SettingsSection::new(word("et.appearance.language"))
             .row(SettingsRow::new(word("et.appearance.interface")).control(language))
             .row(font)
-            .row(size);
+            .row(size)
+            .row(sidebar);
         let separate = settings.dark_theme.is_some();
         let dark = Switch::new("dark_theme", separate).on_change({
             let this = this.clone();

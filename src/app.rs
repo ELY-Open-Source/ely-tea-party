@@ -54,9 +54,11 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     i18n::init(cx);
     crate::interface::init(cx);
     ShellIntegration::init(cx)?;
+    crate::communication::init(cx)?;
     #[cfg(unix)]
     {
-        cx.set_global(workspace::Reports::new(agents::hooks::listen()?));
+        let reports = workspace::Reports::new(agents::hooks::listen()?, cx);
+        cx.set_global(reports);
         cx.on_app_quit(|_| async { agents::hooks::close() })
             .detach();
     }

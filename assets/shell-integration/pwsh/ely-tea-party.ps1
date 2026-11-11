@@ -2,6 +2,14 @@
 $global:ElyPrompt = $function:prompt
 $global:ElyRan = $false
 $global:ElyCmdBack = $null
+function global:ElyPath {
+    if ($env:ELY_BIN_DIR) {
+        $separator = [IO.Path]::PathSeparator
+        $parts = @($env:PATH -split [regex]::Escape($separator) | Where-Object { $_ -ne $env:ELY_BIN_DIR })
+        $env:PATH = (@($env:ELY_BIN_DIR) + $parts) -join $separator
+    }
+}
+ElyPath
 function global:prompt {
     # First: every statement sets $? again.
     $ok = $?
@@ -22,6 +30,7 @@ function global:prompt {
     # The user's prompt sees a failed command's $? still.
     if (-not $ok) { Write-Error '' -ErrorAction Ignore }
     $text = & $global:ElyPrompt
+    ElyPath
     $folder = $executionContext.SessionState.Path.CurrentLocation
     if ($folder.Provider.Name -eq 'FileSystem') {
         $parts = $folder.ProviderPath.Replace('\', '/') -split '/'

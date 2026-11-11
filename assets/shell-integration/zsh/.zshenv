@@ -7,6 +7,18 @@ else
 fi
 [[ -r "${ZDOTDIR:-$HOME}/.zshenv" ]] && builtin source "${ZDOTDIR:-$HOME}/.zshenv"
 if [[ -o interactive ]]; then
+  _ely_path() {
+    builtin setopt local_options no_sh_word_split no_ksh_arrays
+    [[ -n ${ELY_BIN_DIR-} ]] || return 0
+    builtin local part
+    builtin local -a kept
+    kept=("$ELY_BIN_DIR")
+    for part in "${path[@]}"; do
+      [[ $part == "$ELY_BIN_DIR" ]] || kept+=("$part")
+    done
+    path=("${kept[@]}")
+    builtin export PATH
+  }
   _ely_ran=
   _ely_first=1
   _ely_precmd() {
@@ -49,6 +61,7 @@ if [[ -o interactive ]]; then
   _ely_mark() {
     builtin setopt local_options unset no_ksh_arrays no_sh_word_split no_err_return no_err_exit
     builtin local a=$'\e]133;A;aid=elyterminal' p=$'\e]133;P;k=s' r=';redraw=1'
+    _ely_path
     if [[ -o prompt_percent && $PS1 != *$'\e]133;A'* ]]; then
       PS1=$'%{'$a$'\a%}'$PS1$'%{\e]133;B\a%}'
     fi

@@ -6,6 +6,17 @@ fn defaults_are_valid() {
 }
 
 #[test]
+fn sidebar_style_preserves_old_settings_and_round_trips_the_choice() {
+    let mut settings: Settings = serde_json::from_str("{}").unwrap();
+    assert_eq!(settings.sidebar_style, SidebarStyle::Characters);
+    settings.sidebar_style = SidebarStyle::Compact;
+    let saved = serde_json::to_string(&settings).unwrap();
+    let restored: Settings = serde_json::from_str(&saved).unwrap();
+    assert_eq!(restored.sidebar_style, SidebarStyle::Compact);
+    assert!(serde_json::from_str::<Settings>(r#"{"sidebar_style":"missing"}"#).is_err());
+}
+
+#[test]
 fn a_file_without_the_session_switches_leaves_them_on() {
     let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
     assert!(settings.drag_sessions, "a drag reorders a row by default");
