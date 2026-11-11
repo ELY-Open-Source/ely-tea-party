@@ -18,6 +18,7 @@ use crate::{
 
 mod bubble;
 mod cards;
+mod results;
 
 impl Workspace {
     fn open_session_link(
@@ -95,6 +96,7 @@ impl Workspace {
         {
             return;
         }
+        self.expand_task(id, true, cx);
         let Some(session) = self.sessions.iter().find(|session| session.link_id == id) else {
             return;
         };
@@ -107,7 +109,6 @@ impl Workspace {
         let status = tasks::observed(session, cx);
         self.butler.cancel();
         self.butler.target = Some(id);
-        self.butler.expanded = Some(id);
         self.butler.cached = false;
         self.butler.tokens = None;
         self.butler.error = None;

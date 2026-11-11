@@ -56,15 +56,11 @@ pub fn excerpt(value: &str) -> String {
 
 pub fn observed(session: &crate::sessions::Session, cx: &gpui::App) -> Status {
     let status = status(session.looks(cx), session.agent_look());
-    if session.agent.as_ref().is_some_and(|agent| agent.hooked) {
-        reported(status, session.log.entries.back().map(|entry| &entry.step))
-    } else {
-        status
-    }
+    reported(status, session.log.entries.back().map(|entry| &entry.step))
 }
 
 fn reported(status: Status, latest: Option<&Step>) -> Status {
-    if matches!(status, Status::Idle | Status::Unknown)
+    if matches!(status, Status::Idle | Status::Unknown | Status::Ended)
         && let Some(Step::Ended { failed, .. }) = latest
     {
         if *failed {
@@ -93,6 +89,17 @@ pub fn latest(step: &Step) -> Option<(&'static str, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reported_failure_is_not_overridden_by_a_native_done_marker() {
+        let failed = Step::Ended {
+            failed: true,
+            took: None,
+            said: None,
+        };
+        assert_eq!(reported(Status::Ended, Some(&failed)), Status::Error);
+        assert_eq!(reported(Status::Working, Some(&failed)), Status::Working);
+    }
 
     #[test]
     fn idle_or_missing_signals_never_claim_completion() {

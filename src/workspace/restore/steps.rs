@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agents::timeline::{Entry, KEPT, Step, Timeline},
+    agents::timeline::{Entry, KEPT, Review, Step, Timeline},
     sessions::{LinkId, Session},
 };
 
@@ -20,6 +20,8 @@ const EVERY: Duration = Duration::from_secs(5);
 pub struct KeptStep {
     at: u64,
     step: Step,
+    #[serde(default)]
+    review: Review,
 }
 
 /// Each session's steps, by the link that outlives it.
@@ -35,22 +37,29 @@ pub struct Keeper {
 impl Keeper {
     /// Saves `sessions`' steps when they changed, at most once in [`EVERY`].
     pub fn keep(&mut self, sessions: &[Session], now: Instant) {
-        let changes = sessions.iter().map(|session| session.log.changes).sum();
+        let changes: u64 = sessions.iter().map(|session| session.log.changes).sum();
         let soon = self
             .at
             .is_some_and(|at| now.saturating_duration_since(at) < EVERY);
         if changes == self.changes || soon {
             return;
         }
-        (self.changes, self.at) = (changes, Some(now));
+        if let Err(error) = self.flush(sessions, now) {
+            log::error!("restore: the steps stay unsaved: {error:#}");
+        }
+    }
+
+    pub fn flush(&mut self, sessions: &[Session], now: Instant) -> anyhow::Result<()> {
         let wall = millis(SystemTime::now());
-        let kept: Kept = (sessions.iter())
+        let kept: Kept = sessions
+            .iter()
             .filter(|session| !session.log.entries.is_empty())
             .map(|session| (session.link_id, saved(&session.log, wall, now)))
             .collect();
-        if let Err(error) = save(&kept) {
-            log::error!("restore: the steps stay unsaved: {error:#}");
-        }
+        save(&kept)?;
+        self.changes = sessions.iter().map(|session| session.log.changes).sum();
+        self.at = Some(now);
+        Ok(())
     }
 }
 
@@ -89,6 +98,7 @@ fn saved(log: &Timeline, wall: u64, now: Instant) -> Vec<KeptStep> {
     let keep = |entry: &Entry| KeptStep {
         at: wall.saturating_sub(now.saturating_duration_since(entry.at).as_millis() as u64),
         step: entry.step.clone(),
+        review: entry.review,
     };
     log.entries.iter().map(keep).collect()
 }
@@ -98,7 +108,7 @@ fn restored(steps: Vec<KeptStep>, wall: u64, now: Instant) -> Timeline {
     let skip = steps.len().saturating_sub(KEPT);
     let mut log = Timeline::default();
     let mut last: Option<Instant> = None;
-    for KeptStep { at, step } in steps.into_iter().skip(skip) {
+    for KeptStep { at, step, review } in steps.into_iter().skip(skip) {
         let mut ago = Duration::from_millis(wall.saturating_sub(at));
         let mut when = now.checked_sub(ago);
         while when.is_none() {
@@ -110,7 +120,11 @@ fn restored(steps: Vec<KeptStep>, wall: u64, now: Instant) -> Timeline {
             when = last + Duration::from_nanos(1);
         }
         last = Some(when);
-        log.entries.push_back(Entry { at: when, step });
+        log.entries.push_back(Entry {
+            at: when,
+            step,
+            review,
+        });
     }
     log
 }
@@ -138,6 +152,28 @@ mod tests {
         );
         log.record("Stop", (None, Some("done"), None), Some(at(30)), at(5));
         log
+    }
+
+    #[test]
+    fn review_survives_restart_and_older_files_start_unseen() {
+        let now = Instant::now();
+        let mut log = logged(now);
+        let at = log.completion().unwrap().at;
+        assert!(log.review(at, Review::Accepted));
+        let wall = 1_800_000_000_000;
+        let json = serde_json::to_string(&saved(&log, wall, now)).unwrap();
+        let back = restored(
+            serde_json::from_str(&json).unwrap(),
+            wall + 1000,
+            now + Duration::from_secs(1),
+        );
+        assert_eq!(back.completion().unwrap().review, Review::Accepted);
+        let mut old: serde_json::Value = serde_json::from_str(&json).unwrap();
+        for entry in old.as_array_mut().unwrap() {
+            entry.as_object_mut().unwrap().remove("review");
+        }
+        let back = restored(serde_json::from_value(old).unwrap(), wall, now);
+        assert_eq!(back.completion().unwrap().review, Review::Unseen);
     }
 
     #[test]
@@ -176,14 +212,17 @@ mod tests {
             KeptStep {
                 at: 0,
                 step: step(),
+                review: Review::default(),
             },
             KeptStep {
                 at: 1,
                 step: step(),
+                review: Review::default(),
             },
             KeptStep {
                 at: centuries,
                 step: step(),
+                review: Review::default(),
             },
         ];
         let log = restored(steps, centuries + 1, now);
@@ -198,6 +237,7 @@ mod tests {
             .map(|at| KeptStep {
                 at,
                 step: Step::Prompt(Some(at.to_string())),
+                review: Review::default(),
             })
             .collect();
         let log = restored(steps, 10_000, now);

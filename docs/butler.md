@@ -3,8 +3,11 @@
 Click the whale mascot to open local task cards. This works without enabling AI,
 entering an API key, or starting the bundled Node runtime. Cards show each main
 terminal's current status, folder, most recent hook-reported task and latest hook
-activity when available. Errors and waiting sessions come first. Open terminal
+activity when available. Errors, waiting sessions and unreviewed completions come first. Open terminal
 jumps to the card's stable session UUID, including when session names are identical.
+
+See [task attention and result review](task-results.md) for the shared sidebar,
+Tea Party and card states, result actions and persistent acknowledgment.
 
 The cards distinguish reported errors, waiting, working, reported completion,
 idle and unknown status. A reported completion is labelled unreviewed; idle or

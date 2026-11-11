@@ -289,6 +289,7 @@ impl Workspace {
         let (tool, detail) = (report.tool.as_deref(), report.detail.as_deref());
         let said = (tool, detail, report.tool_id.as_deref());
         agent.note(&report.event, said, &mut session.log, now);
+        session.log.retain_reply(report.reply.clone());
         if let Some(said) = report.detail.clone() {
             match report.event.as_str() {
                 "UserPromptSubmit" => session
@@ -350,16 +351,17 @@ impl Workspace {
             report.tool_id.as_deref(),
         );
         agent.note(&report.event, said, &mut drawer.log, now);
+        drawer.log.retain_reply(report.reply);
         agent.set(status, now);
         cx.notify();
     }
 
     /// Shows the first other session whose agent waits for an answer, else one that rang.
     pub(super) fn jump_to_waiting(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let waits = crate::sessions::waits;
         let others = || (0..self.sessions.len()).filter(|index| *index != self.active);
         let found = others()
-            .find(|index| waits(&self.sessions[*index]))
+            .filter(|index| self.sessions[*index].task_state(cx).needs_attention())
+            .min_by_key(|index| self.sessions[*index].task_state(cx).priority())
             .or_else(|| others().find(|index| self.sessions[*index].bell));
         match found {
             Some(index) => self.select(index, window, cx),
