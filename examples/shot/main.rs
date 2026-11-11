@@ -44,7 +44,9 @@ fn main() {
         quote: Quote::Posix,
     };
     gpui_platform::application()
-        .with_assets(ely_gpui_component::Assets)
+        .with_assets(ely_gpui_component::Assets::before(
+            ely_tea_party::agents::icons::Icons,
+        ))
         .run(move |cx: &mut gpui::App| {
             ely_gpui_component::init(cx).expect("Ely starts");
             app::start(cx).expect("the app starts");

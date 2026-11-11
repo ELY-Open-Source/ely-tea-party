@@ -12,6 +12,26 @@ if [ -n "${ELY_BASH_LOGIN-}" ]; then
 else
   [ -r ~/.bashrc ] && builtin source ~/.bashrc
 fi
+_ely_path() {
+  [[ -n ${ELY_BIN_DIR-} ]] || return 0
+  if [[ $ELY_BIN_DIR == [[:alpha:]]:* ]] && builtin pwd -W >/dev/null 2>&1; then
+    builtin local directory executable
+    if ! directory=$(cygpath -u "$ELY_BIN_DIR") || ! executable=$(cygpath -u "$ELY_CLI"); then
+      builtin printf 'Ely Tea Party: cannot convert the bundled CLI path for Git Bash\n' >&2
+      return 1
+    fi
+    builtin export ELY_BIN_DIR="$directory" ELY_CLI="$executable"
+  fi
+  builtin local rest="${PATH-}" built="$ELY_BIN_DIR" part
+  while [[ $rest == *:* ]]; do
+    part=${rest%%:*}
+    rest=${rest#*:}
+    [[ $part == "$ELY_BIN_DIR" ]] || built+=":$part"
+  done
+  [[ $rest == "$ELY_BIN_DIR" ]] || built+=":$rest"
+  builtin export PATH="$built"
+}
+_ely_path
 _ely_ran=
 _ely_n=0
 _ely_ps0=
@@ -66,6 +86,7 @@ _ely_prompt() {
 }
 # Last, after anything that sets PS1 or PS0.
 _ely_mark() {
+  _ely_path
   if [[ $PS1 != *'\e]133;A'* ]]; then
     if [ -z "$_ely_ps0" ] && builtin shopt -q promptvars; then
       # bash 3.2 has no PS0; \#, the command number, moves once a command ran.

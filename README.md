@@ -114,10 +114,13 @@ At rest she just stands there. After a minute with nothing happening she sneaks 
 
 Settings › Terminal lists them all, as your platform binds them.
 
+Quick switch searches open local sessions across windows by name, folder or agent. Use multiple words together, select with ↑/↓, press Enter to switch, or Esc to return. An empty query shows recent visits first, then task status; each row shows the agent icon and current status.
+
 | | macOS | Windows and Linux |
 |---|---|---|
 | New session | <kbd>Cmd</kbd>+<kbd>T</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> |
 | Close session | <kbd>Cmd</kbd>+<kbd>W</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd> |
+| Quick switch session | <kbd>Cmd</kbd>+<kbd>K</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> |
 | Session 1 to 8, last | <kbd>Cmd</kbd>+<kbd>1</kbd>…<kbd>8</kbd>, <kbd>9</kbd> | <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>8</kbd>, <kbd>9</kbd> |
 | Next, previous session | <kbd>Ctrl</kbd>+<kbd>Tab</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | the same |
 | Jump to an agent waiting for you | <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> |
@@ -131,6 +134,8 @@ Settings › Terminal lists them all, as your platform binds them.
 | Open a link | <kbd>Cmd</kbd>+click | <kbd>Ctrl</kbd>+click |
 | Settings | <kbd>Cmd</kbd>+<kbd>,</kbd> | <kbd>Ctrl</kbd>+<kbd>,</kbd> |
 | Quit | <kbd>Cmd</kbd>+<kbd>Q</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> |
+
+Local agent communication is available through the bundled `ely-tea-party msg` CLI. Settings → Terminal → Agent messaging integration manages the Claude Code and Codex skill entries. See [session messaging](docs/session-messaging.md) for discovery, inboxes, replies and update behavior.
 
 ## Settings
 

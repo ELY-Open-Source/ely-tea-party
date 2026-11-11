@@ -1,6 +1,13 @@
 //! Simplified Chinese, in the words macOS and Ely use.
 
 pub const MESSAGES: &[(&str, &str)] = &[
+    ("et.sidebar.style", "侧边栏样式"),
+    ("et.sidebar.characters", "角色"),
+    ("et.sidebar.compact", "紧凑"),
+    (
+        "et.sidebar.hint",
+        "紧凑模式按目录分组，以小图标区分 coding agent",
+    ),
     ("et.session.copy_link", "复制会话链接"),
     ("et.memory.clear", "清空全部记忆"),
     ("et.memory.clear_confirm", "确认清空所有项目记忆与偏好"),

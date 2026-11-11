@@ -28,6 +28,14 @@ pub enum Mascot {
     Ely,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SidebarStyle {
+    #[default]
+    Characters,
+    Compact,
+}
+
 /// Where a new session starts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -190,6 +198,7 @@ pub struct Settings {
     /// A check for a newer release at start and every few hours.
     pub check_updates: bool,
     pub show_sessions: bool,
+    pub sidebar_style: SidebarStyle,
     /// A drawer's height in pixels, as its divider was dragged.
     pub drawer_height: f32,
     /// A drag moves a session's row in the list.
@@ -266,6 +275,7 @@ impl Default for Settings {
             ely_left: 140.0,
             check_updates: true,
             show_sessions: true,
+            sidebar_style: SidebarStyle::Characters,
             drawer_height: 260.0,
             drag_sessions: true,
             session_menu: true,

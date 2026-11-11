@@ -13,6 +13,10 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 - Built-in themes, each shown as a small preview, Catppuccin among them, and themes of the user's own, each made from Ely Dark and never over a built-in one. A theme colors the terminal and the chrome.
 - The window background blurs on macOS, Windows, Wayland and X11.
 
+- Cmd-K (Ctrl-Shift-K off macOS) opens a local session switcher across open windows. Search session names, folders and agent names with multiple fuzzy terms; empty search favors recent visits, then task status, with the current session last. Rows show agent icons and live status; arrows select, Enter switches, Escape restores focus.
+
+- The bundled CLI exposes local session discovery and mailboxes (`msg list`, `send`, `inbox`, `reply`, `ack`, `guide`). Ely terminals include its binary on PATH. Settings manages Claude Code and Codex skill bootstraps, updates only owned content, and reports modifications or failures. Messages bind exact live addresses, persist locally, and require explicit receiver reads and acknowledgments.
+
 ## 2. Foundation
 
 - One binary crate, `elyterminal`, edition 2024, Rust 1.95.
@@ -97,6 +101,7 @@ Ghostty is the bar for what the terminal does, 1.4's kitty graphics, clipboard, 
 ## 7. Sessions panel
 
 - A list of sessions. Each row: title, then the working directory, home as `~`.
+- Settings › Appearance › Sidebar style switches immediately between Characters (default) and Compact, and saves the choice. Compact groups sessions by their full current directory, with collapsible folder headers and a small agent icon, session name and status per row. Same-named folders show their paths. Rows reorder within their folder; session shortcuts follow the grouped order and reveal the selected folder.
 - New session (+ and Cmd-T), close (row's ×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab and Ctrl-Shift-Tab).
 - Profiles, as Windows Terminal's: the arrow beside + opens a menu of the user's profiles, each a name, a command line and a folder, kept in Settings › Terminal › Profiles, then the shells this system holds: on Windows pwsh, powershell, cmd, Git Bash and each WSL distribution, elsewhere each shell `/etc/shells` lists. A command line that names a program alone, or wsl with `-d` alone, runs with the shell's integration; any other arguments run as written, and the session reports no folder.
 - A right press on a row opens a menu at the pointer, while Session menu in Settings › Terminal is on: Duplicate session opens a session of the shell that row runs, in the folder it last reported, right after it and shown; Close session closes the row. A shell that reports no folder, as cmd does, duplicates into the folder it started in.

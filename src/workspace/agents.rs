@@ -16,8 +16,8 @@ const EVERY: Duration = Duration::from_secs(1);
 /// How often characters move to their next frame: the art's 12 frames a second.
 const FRAME: Duration = Duration::from_millis(83);
 
-/// The tasks that keep the sessions' agents current: a tick, the hooks' reports, the characters' frames.
-pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<()>; 3] {
+/// The foreground polling and animation tasks for this window.
+pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<()>; 2] {
     let tick = cx.spawn_in(window, async move |this, cx| {
         loop {
             cx.background_executor().timer(EVERY).await;
@@ -42,54 +42,51 @@ pub(super) fn watch(window: &mut Window, cx: &mut Context<Workspace>) -> [Task<(
             }
         }
     });
-    [tick, hear(cx), frames]
+    [tick, frames]
 }
 
 #[cfg(unix)]
-fn hear(cx: &mut Context<Workspace>) -> Task<()> {
-    use futures::StreamExt;
-
-    let Some(mut reports) = cx
-        .try_global::<Reports>()
-        .and_then(|reports| reports.take())
-    else {
-        log::error!("agents: no hook reports for this window; agents show by their output alone");
-        return Task::ready(());
-    };
-    cx.spawn(async move |this, cx| {
-        while let Some(report) = reports.next().await {
-            if this.update(cx, |this, cx| this.hear(report, cx)).is_err() {
-                break;
-            }
-        }
-    })
+pub struct Reports {
+    _task: Task<()>,
 }
-
-#[cfg(windows)]
-fn hear(_: &mut Context<Workspace>) -> Task<()> {
-    Task::ready(())
-}
-
-/// The hooks' reports, until the main window takes them.
-#[cfg(unix)]
-pub struct Reports(
-    std::sync::Mutex<
-        Option<futures::channel::mpsc::UnboundedReceiver<crate::agents::hooks::Report>>,
-    >,
-);
 
 #[cfg(unix)]
 impl Reports {
     pub fn new(
-        reports: futures::channel::mpsc::UnboundedReceiver<crate::agents::hooks::Report>,
+        mut reports: futures::channel::mpsc::UnboundedReceiver<crate::agents::hooks::Report>,
+        cx: &mut gpui::App,
     ) -> Self {
-        Self(std::sync::Mutex::new(Some(reports)))
-    }
-
-    fn take(
-        &self,
-    ) -> Option<futures::channel::mpsc::UnboundedReceiver<crate::agents::hooks::Report>> {
-        self.0.lock().ok()?.take()
+        use futures::StreamExt;
+        let task = cx.spawn(async move |cx| {
+            while let Some(report) = reports.next().await {
+                cx.update(|cx| {
+                    for handle in cx
+                        .windows()
+                        .into_iter()
+                        .filter_map(|window| window.downcast::<Workspace>())
+                    {
+                        let found = handle.update(cx, |workspace, _, cx| {
+                            if !workspace
+                                .sessions
+                                .iter()
+                                .any(|session| session.id == report.session)
+                            {
+                                return false;
+                            }
+                            workspace.hear(report.clone(), cx);
+                            true
+                        });
+                        match found {
+                            Ok(true) => return,
+                            Ok(false) => {}
+                            Err(error) => log::debug!("agents: report window unavailable: {error}"),
+                        }
+                    }
+                    log::debug!("agents: report for closed session {}", report.session);
+                });
+            }
+        });
+        Self { _task: task }
     }
 }
 
@@ -131,6 +128,14 @@ impl Workspace {
                     "agents: session {} went from {had:?} to {has:?}",
                     session.id
                 );
+            }
+            if let Some(agent) = session.agent.as_mut() {
+                let pid = view.foreground();
+                if agent.instance_pid.is_some() && pid.is_some() && agent.instance_pid != pid {
+                    agent.instance = uuid::Uuid::new_v4();
+                    log::info!("messages: session {} agent process changed", session.id);
+                }
+                agent.instance_pid = pid;
             }
             // Hooks name their program; an unhooked Antigravity is known by its command.
             if let Some(agent) = session.agent.as_mut()
@@ -252,6 +257,10 @@ impl Workspace {
         let Some(agent) = session.agent.as_mut() else {
             return;
         };
+        if report.event == "SessionStart" {
+            agent.instance = uuid::Uuid::new_v4();
+            agent.instance_pid = None;
+        }
         agent.hooked = true;
         agent.program = Some(report.agent.clone());
         if let Some(conversation) = &report.conversation {
@@ -261,6 +270,7 @@ impl Workspace {
                 .is_some_and(|id| id != conversation)
             {
                 agent.reported_speed(crate::agents::speed::Speed::Unknown);
+                agent.instance_pid = None;
             }
             agent.conversation = Some(conversation.clone());
         }
@@ -344,6 +354,9 @@ impl Workspace {
             _ => Agent::new(kind, now),
         };
         let agent = drawer.agent.insert(agent);
+        if report.event == "SessionStart" {
+            agent.instance = uuid::Uuid::new_v4();
+        }
         agent.hooked = true;
         let said = (
             report.tool.as_deref(),

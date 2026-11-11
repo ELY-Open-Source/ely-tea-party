@@ -8,7 +8,10 @@ use crate::{
     settings::window::OpenSettings,
     term::{input::Find, zoom},
     update::CheckForUpdates,
-    workspace::{CloseSession, NewSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions},
+    workspace::{
+        CloseSession, NewSession, QuickSwitch, ToggleDrawer, TogglePanel, ToggleParty,
+        ToggleSessions,
+    },
 };
 
 actions!(
@@ -39,6 +42,7 @@ pub fn menus(cx: &App) -> Vec<Menu> {
             vec![
                 MenuItem::action(word("et.menu.new_session"), NewSession),
                 MenuItem::action(word("et.menu.close_session"), CloseSession),
+                MenuItem::action(word("et.switcher.title"), QuickSwitch),
             ],
         ),
         menu(

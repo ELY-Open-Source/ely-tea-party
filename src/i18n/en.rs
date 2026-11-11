@@ -1,6 +1,13 @@
 //! English, the catalog every other one mirrors.
 
 pub const MESSAGES: &[(&str, &str)] = &[
+    ("et.sidebar.style", "Sidebar style"),
+    ("et.sidebar.characters", "Characters"),
+    ("et.sidebar.compact", "Compact"),
+    (
+        "et.sidebar.hint",
+        "Compact groups sessions by folder with small agent icons",
+    ),
     ("et.session.copy_link", "Copy session link"),
     ("et.memory.clear", "Clear all memory"),
     (

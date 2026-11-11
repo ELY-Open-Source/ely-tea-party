@@ -22,6 +22,7 @@ use crate::{
     workspace::{Drawer, TITLE, Workspace},
 };
 
+pub(crate) mod compact;
 mod drag;
 mod link;
 mod menu;

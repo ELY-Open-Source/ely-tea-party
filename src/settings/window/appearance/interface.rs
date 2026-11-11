@@ -7,12 +7,21 @@ use ely_gpui_component::{
 };
 use gpui::{Context, ParentElement, SharedString, Styled, div, prelude::FluentBuilder};
 
-use super::super::{SettingsWindow, set};
-use crate::settings::{INTERFACE_SIZE, SettingsStore};
+use super::super::{SettingsWindow, choice, set};
+use crate::settings::{INTERFACE_SIZE, SettingsStore, SidebarStyle};
+
+const SIDEBAR_STYLES: [(SidebarStyle, &str, &str); 2] = [
+    (
+        SidebarStyle::Characters,
+        "characters",
+        "et.sidebar.characters",
+    ),
+    (SidebarStyle::Compact, "compact", "et.sidebar.compact"),
+];
 
 impl SettingsWindow {
     /// The interface's family and size, as ely-mark sets them.
-    pub(super) fn interface_rows(&self, cx: &Context<Self>) -> [SettingsRow; 2] {
+    pub(super) fn interface_rows(&self, cx: &Context<Self>) -> [SettingsRow; 3] {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
         let word = |key: &str| text(cx, key, &[]);
@@ -61,6 +70,14 @@ impl SettingsWindow {
                 font.child(div().flex().child(system))
             });
         let now = SharedString::from(settings.interface_size.to_string());
+        let sidebar = choice(
+            &this,
+            "sidebar_style",
+            &SIDEBAR_STYLES,
+            settings.sidebar_style,
+            |settings, style| settings.sidebar_style = style,
+            cx,
+        );
         let size = INTERFACE_SIZE
             .fold(
                 SegmentedControl::new("interface_size", now),
@@ -75,6 +92,9 @@ impl SettingsWindow {
         [
             SettingsRow::new(word("et.appearance.interface_font")).control(font),
             SettingsRow::new(word("et.appearance.interface_size")).control(size),
+            SettingsRow::new(word("et.sidebar.style"))
+                .description(word("et.sidebar.hint"))
+                .control(sidebar),
         ]
     }
 }

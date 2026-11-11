@@ -5,6 +5,7 @@ use super::CONTEXT;
 actions!(
     ely_tea_party,
     [
+        QuickSwitch,
         ToggleSessions,
         TogglePanel,
         NewSession,
@@ -25,6 +26,7 @@ pub struct SelectSession(pub usize);
 
 /// Ghostty's keys: Cmd on macOS; off it, Ctrl-Shift for keys a terminal takes, Alt for digits.
 pub fn bind_keys(cx: &mut App) {
+    super::switcher::bind_keys(cx);
     let party = if cfg!(target_os = "macos") {
         "cmd"
     } else {
@@ -44,6 +46,15 @@ pub fn bind_keys(cx: &mut App) {
     };
     let context = Some(CONTEXT);
     cx.bind_keys([
+        KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-k"
+            } else {
+                "ctrl-shift-k"
+            },
+            QuickSwitch,
+            context,
+        ),
         KeyBinding::new(sessions, ToggleSessions, context),
         KeyBinding::new(panel, TogglePanel, context),
         KeyBinding::new(new, NewSession, context),

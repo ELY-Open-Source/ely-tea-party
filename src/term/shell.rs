@@ -145,7 +145,7 @@ pub fn launch(
     let mut launch = Launch {
         program: (!shell.is_empty()).then(|| (path.clone(), args.to_vec())),
         cwd,
-        env: Vec::new(),
+        env: crate::communication::path::environment()?,
         reports: true,
         quote: match name.as_str() {
             "pwsh" | "powershell" => Quote::PowerShell,

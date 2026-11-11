@@ -16,6 +16,8 @@ use crate::{
     },
 };
 
+mod cleanup;
+mod cli_path;
 mod resize;
 mod start;
 
@@ -207,7 +209,7 @@ impl Run {
         }
         let root = self.root.clone();
         drop(self);
-        fs::remove_dir_all(&root).expect("cleanup");
+        cleanup::remove(&root);
     }
 }
 
@@ -434,7 +436,14 @@ fn an_unknown_shell_starts_without_integration() {
     let dir = PathBuf::from("/nonexistent");
     let launch = launch("/bin/sh", &[], PathBuf::from("/"), &dir).expect("a launch");
     assert_eq!(launch.program, Some(("/bin/sh".into(), Vec::new())));
-    assert!(launch.env.is_empty());
+    assert_eq!(
+        launch
+            .env
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        ["ELY_CLI", "ELY_BIN_DIR", "PATH"]
+    );
 }
 
 #[test]

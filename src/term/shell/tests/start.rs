@@ -31,7 +31,9 @@ fn a_profile_s_arguments_run_as_written_without_integration() {
         crate::settings::program_path("bash").expect("bash")
     );
     assert_eq!(given, args, "no --rcfile beside them");
-    assert!(!bash.reports && bash.env.is_empty());
+    assert!(!bash.reports);
+    assert!(bash.env.iter().any(|(key, _)| key == "ELY_CLI"));
+    assert!(!bash.env.iter().any(|(key, _)| key == "ZDOTDIR"));
     let wsl = ["-d".to_string(), "Ubuntu".to_string()];
     let sh = launch("/bin/sh", &wsl, Start::Home, dir).expect("a launch");
     assert_eq!(sh.program.expect("sh").1, wsl, "-d is wsl's alone");
