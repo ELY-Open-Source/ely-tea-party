@@ -4,19 +4,19 @@ use std::time::Instant;
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
+    i18n::text,
     primitives::{Icon, IconName},
     shell::{ColumnShell, ShellColumn},
     theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
 };
 use gpui::{
     AnyElement, App, Context, Entity, Focusable, FontWeight, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, StatefulInteractiveElement, Styled, Window, div,
-    prelude::FluentBuilder, rems,
+    KeyDownEvent, ParentElement, StatefulInteractiveElement, Styled, Window, div, rems,
 };
 
 use super::{TITLE, Workspace};
 use crate::{
-    agents::{self, Status, quips::Moment},
+    agents::{self, quips::Moment},
     sessions::{self, Session},
 };
 
@@ -41,19 +41,12 @@ impl Workspace {
         let workspace = cx.entity();
         let now = Instant::now();
         let home = dirs::home_dir();
-        let count = |status: Status| {
-            let agents = self
-                .sessions
-                .iter()
-                .filter_map(|session| session.agent.as_ref());
-            agents.filter(|agent| agent.status == status).count()
-        };
-        let title = format!(
-            "Tea Party · {} 位在忙 · {} 位等你 · {} 位休息",
-            count(Status::Working),
-            count(Status::NeedsInput),
-            count(Status::Idle)
-        );
+        let count = self
+            .sessions
+            .iter()
+            .filter(|s| s.task_state(cx).needs_attention())
+            .count();
+        let title = text(cx, "et.task.party", &[("count", &count.to_string())]);
         let back = {
             let workspace = workspace.clone();
             IconButton::new("close-party", IconName::LayoutGrid)
@@ -64,10 +57,10 @@ impl Workspace {
                     workspace.update(cx, |this, cx| this.toggle_party(window, cx))
                 })
         };
-        let cards: Vec<AnyElement> = self
-            .sessions
-            .iter()
-            .enumerate()
+        let mut ordered: Vec<_> = self.sessions.iter().enumerate().collect();
+        ordered.sort_by_key(|(_, session)| session.task_state(cx).priority());
+        let cards: Vec<AnyElement> = ordered
+            .into_iter()
             .map(|(index, session)| {
                 card(
                     &workspace,
@@ -138,14 +131,11 @@ fn card(
             .child(text)
     };
     let folder = sessions::brief(&session.folder, home);
-    let (picture, name, lines, waits, bubble) = match &session.agent {
+    let (picture, name, lines, bubble) = match &session.agent {
         Some(agent) => {
             let pose = agent.pose(now, session.id);
             let since = agents::ago(now.saturating_duration_since(agent.since));
-            let mut lines = vec![quiet(
-                format!("{} · {since}", agent.kind.label(pose)),
-                colors.fg_muted,
-            )];
+            let mut lines = vec![quiet(since, colors.fg_muted)];
             lines.extend(
                 agent
                     .news(pose)
@@ -159,13 +149,7 @@ fn card(
             let picture =
                 sessions::avatar(agent, pose, rems(8.), (session, now), cx).into_any_element();
             let bubble = agent.bubble(now);
-            (
-                picture,
-                session.called(agent),
-                lines,
-                agent.status == Status::NeedsInput,
-                bubble,
-            )
+            (picture, session.called(agent), lines, bubble)
         }
         None => {
             let picture = div()
@@ -186,7 +170,7 @@ fn card(
             } else {
                 sessions::one_line(&session.title)
             };
-            (picture, name, Vec::new(), session.bell, None)
+            (picture, name, Vec::new(), None)
         }
     };
     // Room for a bubble on every card, so the table does not jump when one speaks.
@@ -211,14 +195,17 @@ fn card(
                 .text_color(color)
                 .child(format!("「{line}」"))
         }));
-    let border = if waits {
-        colors.warning
+    let state = session.task_state(cx);
+    let border = if state.needs_attention() {
+        state.color(colors)
     } else if shown {
         colors.focus
     } else {
         colors.border
     };
     let workspace = workspace.clone();
+    let id = session.link_id;
+    let completed = session.log.completion().is_some();
     div()
         .id(("party-card", session.id as usize))
         .w(rems(15.))
@@ -234,7 +221,13 @@ fn card(
         .cursor_pointer()
         .hover(|style| style.bg(colors.hover))
         .on_click(move |_, window, cx| {
-            workspace.update(cx, |this, cx| this.select(index, window, cx))
+            workspace.update(cx, |this, cx| {
+                if completed {
+                    this.open_task_result(id, window, cx);
+                } else {
+                    this.select(index, window, cx);
+                }
+            })
         })
         .child(speech)
         .child(picture)
@@ -248,8 +241,9 @@ fn card(
         )
         .children(lines)
         .child(quiet(folder, colors.fg_subtle))
-        .when(waits, |card| {
-            card.child(quiet("举手：等你回复".into(), colors.warning))
-        })
+        .child(quiet(
+            text(cx, state.label(), &[]).to_string(),
+            state.color(colors),
+        ))
         .into_any_element()
 }

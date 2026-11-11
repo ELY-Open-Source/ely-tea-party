@@ -11,18 +11,32 @@ use crate::{
 mod en;
 mod en_characters;
 mod en_files;
+mod en_tasks;
 mod zh;
 mod zh_characters;
 mod zh_files;
+mod zh_tasks;
 
 /// Every English word, the catalog others mirror.
 fn english() -> Vec<(&'static str, &'static str)> {
-    [en::MESSAGES, en_characters::MESSAGES, en_files::MESSAGES].concat()
+    [
+        en::MESSAGES,
+        en_characters::MESSAGES,
+        en_files::MESSAGES,
+        en_tasks::MESSAGES,
+    ]
+    .concat()
 }
 
 /// Every Simplified Chinese word, in English's order.
 fn chinese() -> Vec<(&'static str, &'static str)> {
-    [zh::MESSAGES, zh_characters::MESSAGES, zh_files::MESSAGES].concat()
+    [
+        zh::MESSAGES,
+        zh_characters::MESSAGES,
+        zh_files::MESSAGES,
+        zh_tasks::MESSAGES,
+    ]
+    .concat()
 }
 
 /// Every catalog, `language` shown; each must hold English's keys.

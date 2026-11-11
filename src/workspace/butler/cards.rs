@@ -9,11 +9,7 @@ use ely_gpui_component::{
 use gpui::{AnyElement, Context, Div, FontWeight, div, prelude::*, rems};
 
 use crate::{
-    agents::timeline::Step,
-    butler::tasks::{self, Status},
-    sessions,
-    settings::SettingsStore,
-    workspace::Workspace,
+    agents::timeline::Step, butler::tasks, sessions, settings::SettingsStore, workspace::Workspace,
 };
 
 impl Workspace {
@@ -22,12 +18,7 @@ impl Workspace {
         let count = self
             .sessions
             .iter()
-            .filter(|session| {
-                matches!(
-                    tasks::observed(session, cx),
-                    Status::Error | Status::Waiting
-                )
-            })
+            .filter(|session| session.task_state(cx).needs_attention())
             .count();
         div()
             .flex()
@@ -143,12 +134,12 @@ impl Workspace {
         let mut tasks: Vec<_> = self
             .sessions
             .iter()
-            .map(|session| (session, tasks::observed(session, cx)))
+            .map(|session| (session, session.task_state(cx)))
             .collect();
-        tasks.sort_by_key(|(_, status)| *status);
+        tasks.sort_by_key(|(_, status)| status.priority());
         let attention = tasks
             .iter()
-            .filter(|(_, status)| matches!(status, Status::Error | Status::Waiting))
+            .filter(|(_, status)| status.needs_attention())
             .count();
         div()
             .flex()
@@ -194,13 +185,7 @@ impl Workspace {
                                     .map(|prompt| word_value(cx, "et.butler.task_goal", prompt))
                             })
                             .unwrap_or_else(|| word(status.label()));
-                        let color = match status {
-                            Status::Error => theme.colors.danger,
-                            Status::Waiting => theme.colors.warning,
-                            Status::Ended => theme.colors.success,
-                            Status::Working => theme.colors.info,
-                            _ => theme.colors.fg_muted,
-                        };
+                        let color = session.task_color(cx);
                         let avatar = if let Some(agent) = &session.agent {
                             sessions::avatar(
                                 agent,
@@ -222,14 +207,7 @@ impl Workspace {
                                 .child(Icon::new(IconName::Terminal).size(IconSize::Sm))
                                 .into_any_element()
                         };
-                        let status_label = match status {
-                            Status::Error => "et.butler.badge_error",
-                            Status::Waiting => "et.butler.badge_waiting",
-                            Status::Ended => "et.butler.badge_ended",
-                            Status::Working => "et.butler.task_working",
-                            Status::Idle => "et.status.idle",
-                            Status::Unknown => "et.butler.badge_unknown",
-                        };
+                        let status_label = status.label();
                         let heading = div()
                             .flex()
                             .items_center()
@@ -298,86 +276,85 @@ impl Workspace {
                                     },
                                 )),
                             );
-                        let row = div()
-                            .id(("butler-task", session.id))
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .px_3()
-                            .py_2()
-                            .rounded(theme.radius(Radius::Lg))
-                            .hover(|style| style.bg(theme.colors.fg.opacity(0.025)))
-                            .when(expanded, |row| row.bg(theme.colors.surface.opacity(0.55)))
-                            .child(heading)
-                            .child(
-                                div()
-                                    .ml(rems(2.5))
-                                    .text_color(theme.colors.fg_muted)
-                                    .line_height(rems(1.35))
-                                    .when(!expanded, |preview| preview.line_clamp(2))
-                                    .child(preview),
-                            )
-                            .when(expanded && latest.is_some(), |row| {
-                                row.children(prompt.map(|prompt| {
+                        let row =
+                            div()
+                                .id(("butler-task", session.id))
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .px_3()
+                                .py_2()
+                                .rounded(theme.radius(Radius::Lg))
+                                .hover(|style| style.bg(theme.colors.fg.opacity(0.025)))
+                                .when(expanded, |row| row.bg(theme.colors.surface.opacity(0.55)))
+                                .child(heading)
+                                .child(
                                     div()
                                         .ml(rems(2.5))
-                                        .text_xs()
                                         .text_color(theme.colors.fg_muted)
-                                        .child(word_value(cx, "et.butler.task_goal", &prompt))
-                                }))
-                            })
-                            .child(
-                                div()
-                                    .ml(rems(2.5))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .child(
-                                        Button::new(
-                                            ("butler-details", session.id),
-                                            word(if expanded {
-                                                "et.butler.collapse"
-                                            } else {
-                                                "et.butler.details"
-                                            }),
-                                        )
-                                        .size(ControlSize::Sm)
-                                        .variant(ButtonVariant::Ghost)
-                                        .trailing_icon(if expanded {
-                                            IconName::ChevronUp
-                                        } else {
-                                            IconName::ChevronDown
-                                        })
-                                        .on_click(
-                                            cx.listener(move |this, _, _, cx| {
-                                                this.butler.expanded = (!expanded).then_some(id);
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    )
-                                    .when(enabled, |actions| {
-                                        actions.child(
+                                        .line_height(rems(1.35))
+                                        .when(!expanded, |preview| preview.line_clamp(2))
+                                        .child(preview),
+                                )
+                                .when(expanded && latest.is_some(), |row| {
+                                    row.children(prompt.map(|prompt| {
+                                        div()
+                                            .ml(rems(2.5))
+                                            .text_xs()
+                                            .text_color(theme.colors.fg_muted)
+                                            .child(word_value(cx, "et.butler.task_goal", &prompt))
+                                    }))
+                                })
+                                .child(
+                                    div()
+                                        .ml(rems(2.5))
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .child(
                                             Button::new(
-                                                ("butler-explain", session.id),
-                                                word("et.butler.explain"),
+                                                ("butler-details", session.id),
+                                                word(if expanded {
+                                                    "et.butler.collapse"
+                                                } else {
+                                                    "et.butler.details"
+                                                }),
                                             )
                                             .size(ControlSize::Sm)
                                             .variant(ButtonVariant::Ghost)
-                                            .icon(IconName::Sparkles)
-                                            .disabled(self.butler.running.is_some())
+                                            .trailing_icon(if expanded {
+                                                IconName::ChevronUp
+                                            } else {
+                                                IconName::ChevronDown
+                                            })
                                             .on_click(
                                                 cx.listener(move |this, _, _, cx| {
-                                                    this.explain_task(id, cx)
+                                                    this.expand_task(id, !expanded, cx);
                                                 }),
                                             ),
                                         )
-                                    }),
-                            )
-                            .children(if self.butler.target == Some(id) {
-                                explanation.take()
-                            } else {
-                                None
-                            });
+                                        .when(enabled, |actions| {
+                                            actions.child(
+                                                Button::new(
+                                                    ("butler-explain", session.id),
+                                                    word("et.butler.explain"),
+                                                )
+                                                .size(ControlSize::Sm)
+                                                .variant(ButtonVariant::Ghost)
+                                                .icon(IconName::Sparkles)
+                                                .disabled(self.butler.running.is_some())
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.explain_task(id, cx)
+                                                })),
+                                            )
+                                        }),
+                                )
+                                .when(expanded, |row| row.child(self.task_result(session, cx)))
+                                .children(if self.butler.target == Some(id) {
+                                    explanation.take()
+                                } else {
+                                    None
+                                });
                         div()
                             .when(index == 0 || index == attention, |group| {
                                 group.child(

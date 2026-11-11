@@ -4,8 +4,9 @@ use std::{
 };
 
 use ely_gpui_component::{
+    buttons::{ButtonVariant, IconButton},
     forms::{Input, TextInput},
-    i18n::I18n,
+    i18n::{I18n, text},
     lists::ListItem,
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize, Radius},
@@ -26,6 +27,7 @@ mod link;
 mod menu;
 pub use link::LinkId;
 mod status;
+pub mod task;
 
 #[cfg(test)]
 use status::LISTED;
@@ -233,6 +235,9 @@ fn item(
     let folder = brief(&session.folder, home);
     let select = workspace.clone();
     let editing = session.editing.is_some();
+    let state = session.task_state(cx);
+    let result = workspace.clone();
+    let link = session.link_id;
     // A job left running in a drawer out of sight.
     let running = session
         .drawer
@@ -249,7 +254,7 @@ fn item(
                 .description(format!(
                     "{} · {} · {since}{speed}",
                     one_line(&session.called(agent)),
-                    agent.kind.label(pose)
+                    text(cx, state.label(), &[])
                 ))
                 .detail(format!("更新于 {}", agents::updated(agent.active, now)))
                 // The shown session's character stands out.
@@ -261,11 +266,13 @@ fn item(
                     cx,
                 ))
         }
-        None => ListItem::new(("session", pid), folder).description(one_line(session.named())),
+        None => ListItem::new(("session", pid), folder)
+            .description(one_line(session.named()))
+            .detail(text(cx, state.label(), &[])),
     };
     let item = item
         .selected(active)
-        .strong(session.bell || session.waiting || waits(session))
+        .strong(session.bell || state.needs_attention())
         // The column's own double click opens a session; a press in the field it renames with stays the field's.
         .on_click(move |event, window, cx| {
             cx.stop_propagation();
@@ -277,10 +284,20 @@ fn item(
         })
         .trailing(
             div()
-                .w(cx.theme().control_height(ControlSize::Sm))
+                .min_w(cx.theme().control_height(ControlSize::Sm))
                 .flex()
                 .items_center()
                 .justify_center()
+                .children(session.log.completion().map(|_| {
+                    IconButton::new(("session-result", session.id), IconName::BookOpen)
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .tooltip(text(cx, "et.task.result", &[]))
+                        .on_click(move |_, window, cx| {
+                            cx.stop_propagation();
+                            result.update(cx, |this, cx| this.open_task_result(link, window, cx));
+                        })
+                }))
                 .children(
                     running
                         .then(|| Icon::new(IconName::Terminal).color(cx.theme().colors.fg_muted)),

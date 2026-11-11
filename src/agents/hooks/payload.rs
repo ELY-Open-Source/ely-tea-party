@@ -14,6 +14,7 @@ pub struct Said {
     pub event: String,
     pub tool: Option<String>,
     pub detail: Option<String>,
+    pub reply: Option<String>,
     pub conversation: Option<String>,
     /// The tool call's own id, which its result names too.
     pub tool_id: Option<String>,
@@ -53,6 +54,7 @@ pub fn read(agent: &str, named: Option<&str>, payload: &Value) -> Option<Said> {
         tool,
         tool_id,
         detail: detail(payload),
+        reply: reply(event, payload),
         conversation: field(&ids, payload).map(str::to_string),
     })
 }
@@ -124,6 +126,33 @@ fn detail(payload: &Value) -> Option<String> {
     Some(clipped)
 }
 
+fn reply(event: &str, payload: &Value) -> Option<String> {
+    if !matches!(event, "Stop" | "StopFailure" | "agent-turn-complete") {
+        return None;
+    }
+    let value = field(
+        &[
+            "last_assistant_message",
+            "last-assistant-message",
+            "message",
+        ],
+        payload,
+    )?
+    .trim();
+    if value.is_empty() {
+        return None;
+    }
+    const LIMIT: usize = 8192;
+    if value.len() <= LIMIT {
+        return Some(value.to_string());
+    }
+    let mut end = LIMIT - '…'.len_utf8();
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(format!("{}…", &value[..end]))
+}
+
 /// The first of `keys` that `from` holds as text.
 fn field<'a>(keys: &[&str], from: &'a Value) -> Option<&'a str> {
     keys.iter().find_map(|key| from[key].as_str())
@@ -137,6 +166,23 @@ mod tests {
 
     fn said(agent: &str, named: Option<&str>, payload: Value) -> Option<Said> {
         read(agent, named, &payload)
+    }
+
+    #[test]
+    fn result_text_keeps_lines_with_a_utf8_byte_bound() {
+        let payload =
+            json!({ "last_assistant_message": "First line\n检查通过", "prompt": "old prompt" });
+        assert_eq!(
+            reply("Stop", &payload).as_deref(),
+            Some("First line\n检查通过")
+        );
+        assert!(reply("UserPromptSubmit", &payload).is_none());
+        let clipped = reply(
+            "agent-turn-complete",
+            &json!({ "message": "鲸".repeat(4000) }),
+        )
+        .unwrap();
+        assert!(clipped.len() <= 8192 && clipped.ends_with('…'));
     }
 
     #[test]

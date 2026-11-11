@@ -38,6 +38,8 @@ pub struct Report {
     /// What it works on or says: a file's name, a command, a pattern, a message.
     #[serde(default)]
     pub detail: Option<String>,
+    #[serde(default)]
+    pub reply: Option<String>,
     /// The agent's conversation, which resumes it.
     #[serde(default)]
     pub conversation: Option<String>,
@@ -197,6 +199,7 @@ fn send(args: &[String]) -> anyhow::Result<()> {
         event: said.event,
         tool: said.tool,
         detail: said.detail,
+        reply: said.reply,
         conversation: said.conversation,
         speed: super::speed::Speed::read(agent, &payload),
         tool_id: said.tool_id,
@@ -219,6 +222,7 @@ mod tests {
             event: event.into(),
             tool: None,
             detail: None,
+            reply: None,
             conversation: None,
             speed: None,
             tool_id: None,

@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use super::activity::Doing;
 
+mod review;
+pub use review::Review;
+
 /// The most steps a session keeps; older ones drop.
 pub const KEPT: usize = 200;
 
@@ -45,6 +48,7 @@ pub enum Step {
 pub struct Entry {
     pub at: Instant,
     pub step: Step,
+    pub review: Review,
 }
 
 /// A session's steps, which outlive its agent until the session closes.
@@ -123,7 +127,11 @@ impl Timeline {
         if self.entries.len() == KEPT {
             self.entries.pop_front();
         }
-        self.entries.push_back(Entry { at: now, step });
+        self.entries.push_back(Entry {
+            at: now,
+            step,
+            review: Review::default(),
+        });
         true
     }
 
