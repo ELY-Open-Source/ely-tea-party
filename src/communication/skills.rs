@@ -44,6 +44,20 @@ pub fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+pub(super) fn home() -> anyhow::Result<PathBuf> {
+    if cfg!(debug_assertions)
+        && let Some(path) = std::env::var_os("ELY_TEST_SKILL_HOME")
+    {
+        let path = PathBuf::from(path);
+        ensure!(
+            path.is_absolute(),
+            "skills: ELY_TEST_SKILL_HOME must be absolute"
+        );
+        return Ok(path);
+    }
+    dirs::home_dir().context("skills: no home directory")
+}
+
 pub fn targets(home: &Path) -> [(String, PathBuf); 2] {
     [
         (
@@ -256,7 +270,7 @@ pub fn refresh(home: &Path) -> Vec<Status> {
 }
 
 pub fn cli(args: &[String]) -> anyhow::Result<serde_json::Value> {
-    let home = dirs::home_dir().context("skills: no home directory")?;
+    let home = home()?;
     if args == ["status"] || args == ["sync"] {
         let statuses = if args[0] == "sync" {
             refresh(&home)

@@ -35,7 +35,8 @@ pub fn section(cx: &App) -> gpui::Div {
             State::Modified => "et.messaging.modified",
             State::Failed => "et.messaging.failed",
         };
-        let path = dirs::home_dir()
+        let path = skills::home()
+            .ok()
             .and_then(|home| {
                 status
                     .path
@@ -106,8 +107,9 @@ fn run(action: Option<(String, bool)>, cx: &mut App) {
         state.error = None;
     });
     let work = cx.background_executor().spawn(async move {
-        let Some(home) = dirs::home_dir() else {
-            return (Vec::new(), Some("skills: no home directory".into()));
+        let home = match skills::home() {
+            Ok(home) => home,
+            Err(error) => return (Vec::new(), Some(format!("{error:#}"))),
         };
         let error = action.and_then(|(agent, install)| {
             let result = skills::targets(&home)

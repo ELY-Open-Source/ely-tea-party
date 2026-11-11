@@ -16,8 +16,12 @@ impl Home {
             .env_clear()
             .env("HOME", &self.0)
             .env("USERPROFILE", &self.0)
+            .env("ELY_TEST_SKILL_HOME", self.skills())
             .output()
             .unwrap()
+    }
+    fn skills(&self) -> PathBuf {
+        self.0.join("skill-home")
     }
 }
 impl Drop for Home {
@@ -56,6 +60,7 @@ fn missing_connection_and_unknown_commands_fail_without_starting_app() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 fn installed_binary_manages_both_skill_entries_and_protects_edits() {
     let home = Home::new();
     for agent in ["claude", "codex"] {
@@ -67,8 +72,21 @@ fn installed_binary_manages_both_skill_entries_and_protects_edits() {
         );
         let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(value["state"], "synced");
+        let folder = if agent == "claude" {
+            ".claude"
+        } else {
+            ".agents"
+        };
+        assert_eq!(
+            PathBuf::from(value["path"].as_str().unwrap()),
+            home.skills()
+                .join(folder)
+                .join("skills/ely-session-messaging")
+        );
     }
-    let path = home.0.join(".agents/skills/ely-session-messaging/SKILL.md");
+    let path = home
+        .skills()
+        .join(".agents/skills/ely-session-messaging/SKILL.md");
     let bootstrap = std::fs::read_to_string(&path).unwrap();
     assert!(bootstrap.contains("\"$ELY_CLI\" msg guide"));
     assert!(!bootstrap.contains("/Applications"));
@@ -90,8 +108,25 @@ fn installed_binary_manages_both_skill_entries_and_protects_edits() {
     );
     assert!(
         !home
-            .0
+            .skills()
             .join(".claude/skills/ely-session-messaging/SKILL.md")
             .exists()
     );
+}
+
+#[test]
+#[cfg(debug_assertions)]
+fn relative_test_skill_home_fails_before_installing() {
+    let home = Home::new();
+    let result = Command::new(env!("CARGO_BIN_EXE_ely-tea-party"))
+        .args(["skills", "install", "codex"])
+        .env_clear()
+        .env("HOME", &home.0)
+        .env("USERPROFILE", &home.0)
+        .env("ELY_TEST_SKILL_HOME", "relative")
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("must be absolute"));
+    assert_eq!(std::fs::read_dir(&home.0).unwrap().count(), 0);
 }

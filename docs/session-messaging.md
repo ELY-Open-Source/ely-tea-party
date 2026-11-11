@@ -54,6 +54,8 @@ The release bundle manifest pins the bootstrap and full-guide hashes with their 
 
 Tests cover routing, replies, explicit acknowledgment, retries, wrong-session access, identity changes, mailbox persistence, skill ownership and interrupted upgrades, CLI subprocess behavior, and PATH restoration in real zsh/bash/fish PTYs.
 
+Debug builds accept an absolute `ELY_TEST_SKILL_HOME` for isolated installer tests. Windows resolves the normal home through Known Folders, so overriding `HOME` or `USERPROFILE` alone does not isolate these tests. Release builds ignore this test override.
+
 On macOS, build the debug binary, then run `python3 scripts/check-messaging.py` from the repository. It opens the actual GUI with two restored zsh PTYs in an isolated home and config directory. Controlled peers call the bundled CLI over the real socket and verify discovery, delivery, replies, acknowledgments, duplicate retries, credentials, protocol rejection, and retired addresses. It also verifies startup skill upgrades, preservation of user edits, and socket-directory removal on normal exit. JSON results and logs remain in the temporary evidence directory printed by the script. It does not run coding models or change personal agent installations.
 
 This runtime acceptance passed on macOS on 2026-11-11. The settings window's install, sync and remove actions were also exercised against an isolated home, including preserving a modified entry and inspecting the rendered status. Windows/PowerShell behavior and two coding models autonomously discovering and using the skill remain unverified.
