@@ -361,6 +361,7 @@ impl Workspace {
                             .min_h_0()
                             .child(drawer.terminal.clone().cached(fill())),
                     )
+                    .child(self.drawer_share_button(cx))
                     .child(handle),
             )
             .when(self.drawer_dragged.is_some(), |body| body.child(cover()))

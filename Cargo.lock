@@ -1777,6 +1777,7 @@ dependencies = [
  "objc",
  "polling",
  "raw-window-handle",
+ "regex",
  "resvg",
  "rusqlite",
  "rustix-openpty",
