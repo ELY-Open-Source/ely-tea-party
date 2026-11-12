@@ -70,7 +70,7 @@ impl SnapshotSource {
     }
 }
 
-fn tail<T>(term: &Term<T>) -> (Vec<String>, bool) {
+pub(crate) fn tail<T>(term: &Term<T>) -> (Vec<String>, bool) {
     let top = term.topmost_line().0;
     let bottom = term.bottommost_line().0;
     let start = top.max(bottom - 399);

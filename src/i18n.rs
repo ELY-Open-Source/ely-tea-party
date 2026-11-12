@@ -10,12 +10,14 @@ use crate::{
 
 mod en;
 mod en_characters;
+mod en_drawer;
 mod en_files;
 mod en_messaging;
 mod en_switcher;
 mod en_tasks;
 mod zh;
 mod zh_characters;
+mod zh_drawer;
 mod zh_files;
 mod zh_messaging;
 mod zh_switcher;
@@ -25,6 +27,7 @@ mod zh_tasks;
 fn english() -> Vec<(&'static str, &'static str)> {
     [
         en::MESSAGES,
+        en_drawer::MESSAGES,
         en_characters::MESSAGES,
         en_files::MESSAGES,
         en_tasks::MESSAGES,
@@ -38,6 +41,7 @@ fn english() -> Vec<(&'static str, &'static str)> {
 fn chinese() -> Vec<(&'static str, &'static str)> {
     [
         zh::MESSAGES,
+        zh_drawer::MESSAGES,
         zh_characters::MESSAGES,
         zh_files::MESSAGES,
         zh_tasks::MESSAGES,

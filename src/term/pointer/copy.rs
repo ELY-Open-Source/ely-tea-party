@@ -10,6 +10,22 @@ use super::super::{keys, view::TerminalView};
 use crate::settings::SettingsStore;
 
 impl TerminalView {
+    /// Inserts context only through bracketed paste, without Enter.
+    pub(crate) fn paste_context(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
+        if !self
+            .pty
+            .term
+            .lock()
+            .mode()
+            .contains(TermMode::BRACKETED_PASTE)
+        {
+            log::warn!("terminal {}: context needs bracketed paste", self.pty.pid);
+            return false;
+        }
+        self.input(keys::paste(text, true), cx);
+        true
+    }
+
     /// The selected text without alacritty's final newline, as Ghostty copies it.
     pub(super) fn selected(&self) -> Option<String> {
         let mut text = self.pty.term.lock().selection_to_string()?;
