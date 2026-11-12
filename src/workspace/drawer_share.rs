@@ -97,7 +97,7 @@ impl Workspace {
             error: None,
             _changes: changes,
         });
-        log::info!("drawer: session {session_id} opens a redacted preview");
+        log::info!("drawer: opens a redacted preview");
         cx.notify();
     }
 
