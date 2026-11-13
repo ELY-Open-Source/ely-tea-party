@@ -303,6 +303,8 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "起始位置选“指定文件夹”时，会话从这里开始",
     ),
     ("et.terminal.scrollback", "回滚行数"),
+    ("et.terminal.turn_gone", "已不在回滚记录中"),
+    ("et.terminal.turn_unlocated", "尚未定位到回滚记录"),
     ("et.terminal.option_as_alt", "Option 键作为 Alt"),
     ("et.option.off", "关闭"),
     ("et.option.left", "左侧"),

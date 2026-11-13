@@ -1,28 +1,23 @@
 //! Prompt marks inside the terminal's left gutter; hovering previews a turn and clicking jumps to it.
 
-use ely_gpui_component::theme::{ActiveTheme, Elevation, Radius, TextSize};
+use ely_gpui_component::{
+    i18n::text,
+    theme::{ActiveTheme, Elevation, Radius, TextSize},
+};
 use gpui::{
     AnyElement, App, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, relative,
+    ScrollHandle, StatefulInteractiveElement, Styled, Window, anchored, div, point,
+    prelude::FluentBuilder, px, relative,
 };
 
-use super::{
-    turns::{Place, Turn},
-    view::TerminalView,
-};
-
-/// The mark the pointer is over.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Pin {
-    Turn(usize),
-    /// The prompts trimmed from the scrollback, which share one mark at the top.
-    Gone,
-}
+use super::{turns::Place, view::TerminalView};
 
 /// What the pointer does on the rail.
 #[derive(Default)]
 pub struct Rail {
-    hovered: Option<Pin>,
+    hovered: Option<usize>,
+    current: Option<usize>,
+    scroll: ScrollHandle,
 }
 
 impl Rail {
@@ -30,80 +25,89 @@ impl Rail {
         cx.theme()
             .scrollbar_thickness()
             .to_pixels(window.rem_size())
-            * 2.
+            * 8.
     }
 }
 
-/// The scrollback's size and the screen's, in lines.
-pub type Scrollback = (usize, usize);
-
 impl TerminalView {
-    /// Marks in a dedicated left gutter, with the hovered prompt's card opening into the terminal.
+    /// Compact turn marks, centered independently of terminal output lengths.
     pub(super) fn rail(
-        &self,
-        (history, lines): Scrollback,
+        &mut self,
         inset: f32,
+        offset: usize,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let turns = &self.turns.list;
-        let placed = |(index, turn): (usize, &Turn)| match turn.place {
-            Place::At(line) => Some((index, line)),
-            _ => None,
-        };
-        let marks: Vec<(usize, i32)> = turns.iter().enumerate().filter_map(placed).collect();
-        let gone = turns
-            .iter()
-            .filter(|turn| turn.place == Place::Gone)
-            .count();
-        if history == 0 && marks.is_empty() && gone == 0 {
+        if turns.is_empty() {
             return Vec::new();
         }
+        let current = current_turn(turns.iter().map(|turn| turn.place), offset);
+        if current != self.rail.current {
+            self.rail.current = current;
+            if let Some(index) = current {
+                self.rail.scroll.scroll_to_item(index);
+            }
+        }
         let width = Rail::width(window, cx);
-        let colors = &cx.theme().colors;
-        let total = (history + lines) as f32;
-        let at = |line: i32| ((line + history as i32) as f32 + 0.5) / total;
-        let mut rail = div().absolute().top_0().bottom_0().left_0().w(width);
-        let pins = marks
-            .iter()
-            .map(|&(index, line)| (Pin::Turn(index), at(line)))
-            .chain((gone > 0).then_some((Pin::Gone, 0.)));
-        for (pin, place) in pins {
-            let hovered = self.rail.hovered == Some(pin);
-            let color = match (pin, hovered) {
-                (Pin::Gone, _) => colors.fg_subtle,
-                (_, true) => colors.accent_hover,
-                (_, false) => colors.accent,
+        let unit = width / 8.;
+        let pitch = unit * (10. / 6.);
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let mut list = div()
+            .id("turn-rail")
+            .w_full()
+            .h(pitch * turns.len() as f32)
+            .max_h(relative(0.7))
+            .flex()
+            .flex_col()
+            .overflow_y_scroll()
+            .occlude()
+            .track_scroll(&self.rail.scroll)
+            .on_scroll_wheel(cx.listener(|view, _, _, cx| {
+                view.rail.hovered = None;
+                cx.notify();
+            }));
+        for (index, turn) in turns.iter().enumerate() {
+            let distance = self.rail.hovered.map(|hovered| hovered.abs_diff(index));
+            let length = match distance {
+                Some(0) => 26.,
+                Some(1) => 20.,
+                Some(2) => 14.,
+                Some(3) => 10.,
+                _ => 6.,
             };
-            let id = match pin {
-                Pin::Turn(index) => index,
-                Pin::Gone => usize::MAX,
+            let opacity = if distance == Some(0) {
+                1.
+            } else if current == Some(index) && self.rail.hovered.is_none() {
+                0.6
+            } else {
+                0.4
             };
-            rail = rail.child(
+            let located = matches!(turn.place, Place::At(_));
+            list = list.child(
                 div()
-                    .id(("turn", id))
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(relative(place))
-                    .mt(px(-4.))
-                    .h(px(8.))
+                    .id(("turn", index))
+                    .flex_none()
+                    .h(pitch)
+                    .w_full()
+                    .pl(unit * (16. / 6.))
                     .flex()
                     .items_center()
-                    .justify_center()
-                    .occlude()
-                    .when(pin != Pin::Gone, |mark| mark.cursor_pointer())
+                    .block_mouse_except_scroll()
+                    .when(located, |mark| mark.cursor_pointer())
                     .child(
                         div()
-                            .w(if hovered { width } else { px(7.) })
-                            .h(px(2.))
+                            .w(unit * (length / 6.))
+                            .h(theme.hairline() * 2.)
                             .rounded_full()
-                            .bg(color),
+                            .bg(colors.fg.opacity(opacity)),
                     )
                     .on_hover(cx.listener(move |view, over: &bool, _, cx| {
+                        log::trace!("terminal {}: turn {index} hovered {over}", view.pty.pid);
                         if *over {
-                            view.rail.hovered = Some(pin);
-                        } else if view.rail.hovered == Some(pin) {
+                            view.rail.hovered = Some(index);
+                        } else if view.rail.hovered == Some(index) {
                             view.rail.hovered = None;
                         }
                         cx.notify();
@@ -112,7 +116,6 @@ impl TerminalView {
                         MouseButton::Left,
                         cx.listener(move |view, _, _, cx| {
                             cx.stop_propagation();
-                            let Pin::Turn(index) = pin else { return };
                             if let Some(Place::At(line)) =
                                 view.turns.list.get(index).map(|t| t.place)
                             {
@@ -122,30 +125,33 @@ impl TerminalView {
                     ),
             );
         }
-        let mut shown = vec![rail.into_any_element()];
-        shown.extend(self.card(gone, (inset, width), at, cx));
-        shown
+        vec![
+            div()
+                .absolute()
+                .top(px(inset))
+                .bottom(px(inset))
+                .left_0()
+                .w(width)
+                .flex()
+                .flex_col()
+                .justify_center()
+                .child(list)
+                .children(self.card(cx))
+                .into_any_element(),
+        ]
     }
 
-    /// The prompt under the pointer: its words, how its turn ended, and whether the scrollback still holds it.
-    fn card(
-        &self,
-        gone: usize,
-        (inset, width): (f32, Pixels),
-        at: impl Fn(i32) -> f32,
-        cx: &Context<Self>,
-    ) -> Option<AnyElement> {
+    /// Preview beside the hovered tick, outside the scrolling list.
+    fn card(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let turns = &self.turns.list;
-        let (turn, place) = match self.rail.hovered? {
-            Pin::Turn(index) => {
-                let turn = turns.get(index)?;
-                let Place::At(line) = turn.place else {
-                    return None;
-                };
-                (turn, at(line))
-            }
-            Pin::Gone => (turns.iter().rfind(|turn| turn.place == Place::Gone)?, 0.),
-        };
+        let index = self.rail.hovered?;
+        let turn = turns.get(index)?;
+        let bounds = self.rail.scroll.bounds_for_item(index)?;
+        let list = self.rail.scroll.bounds();
+        let y = bounds.top() + self.rail.scroll.offset().y;
+        if y < list.top() || y >= list.bottom() {
+            return None;
+        }
         let theme = cx.theme();
         let colors = &theme.colors;
         let line = |text: String, size, color| {
@@ -156,14 +162,13 @@ impl TerminalView {
                 .text_color(color)
                 .child(text)
         };
-        let trimmed = (turn.place == Place::Gone).then(|| match gone {
-            1 => "已不在回滚记录中".to_string(),
-            more => format!("已不在回滚记录中 · 共 {more} 条"),
-        });
+        let unavailable = match turn.place {
+            Place::At(_) => None,
+            Place::Gone => Some("et.terminal.turn_gone"),
+            Place::Seeking | Place::Lost => Some("et.terminal.turn_unlocated"),
+        };
         let card = div()
-            .absolute()
-            .left(width + px(6.))
-            .max_w(px(380.))
+            .w(theme.sheet_size())
             .flex()
             .flex_col()
             .gap_1()
@@ -183,13 +188,41 @@ impl TerminalView {
                     .clone()
                     .map(|reply| line(reply, TextSize::Sm, colors.fg_muted)),
             )
-            .children(trimmed.map(|text| line(text, TextSize::Xs, colors.fg_subtle)));
-        // Below the mark in the view's upper part, above it lower down.
-        let card = if place < 0.7 {
-            card.top(relative(place)).mt(px(inset - 6.))
-        } else {
-            card.bottom(relative(1. - place)).mb(px(inset - 6.))
-        };
-        Some(card.into_any_element())
+            .children(unavailable.map(|key| {
+                line(
+                    text(cx, key, &[]).to_string(),
+                    TextSize::Xs,
+                    colors.fg_subtle,
+                )
+            }));
+        Some(
+            anchored()
+                .position(point(list.right(), y))
+                .snap_to_window()
+                .child(card)
+                .into_any_element(),
+        )
     }
 }
+
+fn current_turn(places: impl Iterator<Item = Place>, offset: usize) -> Option<usize> {
+    let located: Vec<_> = places
+        .enumerate()
+        .filter_map(|(index, place)| match place {
+            Place::At(line) => Some((index, line)),
+            _ => None,
+        })
+        .collect();
+    if offset == 0 {
+        return located.last().map(|&(index, _)| index);
+    }
+    located
+        .iter()
+        .rev()
+        .find(|&&(_, line)| line <= 1 - offset as i32)
+        .or_else(|| located.first())
+        .map(|&(index, _)| index)
+}
+
+#[cfg(test)]
+mod tests;

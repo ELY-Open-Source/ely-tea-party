@@ -316,8 +316,6 @@ impl Render for TerminalView {
         let theme = themes::active(&settings, window.appearance(), cx);
         let mut term = self.pty.term.lock();
         self.turns.follow(&mut term, std::time::Instant::now());
-        let grid = term.grid();
-        let scrollback = (grid.history_size(), grid.screen_lines());
         let ink = Ink::new(&theme, term.colors());
         let lit = self.finder.as_ref().map_or_else(Vec::new, |finder| {
             finder.lit(&term, cx.theme().colors.warning)
@@ -455,7 +453,7 @@ impl Render for TerminalView {
                 root.text_color(ink.fg).child(format!("{error:#}"))
             }
         };
-        let rail = self.rail(scrollback, settings.padding_y, window, cx);
+        let rail = self.rail(settings.padding_y, offset, window, cx);
         let request = self.menu.request();
         let menu = self.menu.items(cx);
         div()
