@@ -330,6 +330,11 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "Where sessions start while Start in says Folder",
     ),
     ("et.terminal.scrollback", "Scrollback lines"),
+    ("et.terminal.turn_gone", "No longer in scrollback"),
+    (
+        "et.terminal.turn_unlocated",
+        "Not located in scrollback yet",
+    ),
     ("et.terminal.option_as_alt", "Option as Alt"),
     ("et.option.off", "Off"),
     ("et.option.left", "Left"),
