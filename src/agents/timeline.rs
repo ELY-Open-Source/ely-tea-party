@@ -164,6 +164,25 @@ impl Timeline {
             .map(|call| call.0)
     }
 
+    /// Each prompt the steps kept, with the words that ended its turn; what a harness sent in the user's name is left out.
+    pub fn turns(&self) -> Vec<(String, Option<String>)> {
+        let mut turns: Vec<(String, Option<String>)> = Vec::new();
+        for entry in &self.entries {
+            match &entry.step {
+                Step::Prompt(Some(prompt)) if !prompt.trim_start().starts_with('<') => {
+                    turns.push((prompt.clone(), None));
+                }
+                Step::Ended { said, .. } if said.is_some() => {
+                    if let Some(turn) = turns.last_mut() {
+                        turn.1.clone_from(said);
+                    }
+                }
+                _ => {}
+            }
+        }
+        turns
+    }
+
     /// Whether a step began at `at`, as a round's start names it.
     pub fn holds(&self, at: Instant) -> bool {
         self.entries.iter().any(|entry| entry.at == at)

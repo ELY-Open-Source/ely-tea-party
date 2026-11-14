@@ -29,6 +29,15 @@ const SOUGHT: usize = 3;
 /// How often rows are read for a prompt not yet found.
 const SEEK_EVERY: Duration = Duration::from_millis(250);
 
+/// How long after a session comes back its agent may take to draw the conversation again.
+const REDRAWN_WITHIN: Duration = Duration::from_secs(90);
+
+/// How often the rows are swept for the prompts that came back.
+const SWEEP_EVERY: Duration = Duration::from_secs(1);
+
+/// How many prompts a row may pass over to show a later one: the agent draws some no more.
+const PASSED: usize = 4;
+
 /// Where a prompt is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Place {
@@ -58,6 +67,8 @@ pub struct Turns {
     pub list: Vec<Turn>,
     next: u32,
     sought: Option<Instant>,
+    /// Until when the prompts that came back are sought, and when they last were.
+    redrawn: Option<(Instant, Option<Instant>)>,
 }
 
 impl Turns {
@@ -74,6 +85,59 @@ impl Turns {
             self.list.remove(0);
         }
         self.sought = None;
+    }
+
+    /// Puts `turns`, a conversation that came back, before the prompts taken since; its agent draws them again soon.
+    pub fn restore(&mut self, turns: Vec<(String, Option<String>)>, now: Instant) {
+        let room = KEPT.saturating_sub(self.list.len());
+        let skip = turns.len().saturating_sub(room);
+        let mut list = Vec::with_capacity(KEPT);
+        for (prompt, reply) in turns.into_iter().skip(skip) {
+            self.next += 1;
+            list.push(Turn {
+                id: self.next,
+                prompt,
+                reply,
+                place: Place::Lost,
+                marked: false,
+            });
+        }
+        list.append(&mut self.list);
+        self.list = list;
+        self.redrawn = Some((now + REDRAWN_WITHIN, None));
+    }
+
+    /// Marks, in one pass down the rows, the prompts never found, in their order.
+    fn sweep<T>(&mut self, term: &mut Term<T>, top: i32, bottom: i32) {
+        let waiting: Vec<(usize, String)> = (self.list.iter().enumerate())
+            .filter(|(_, turn)| !turn.marked)
+            .map(|(index, turn)| (index, probe(&turn.prompt)))
+            .filter(|(_, probe)| !probe.is_empty())
+            .collect();
+        let mut next = 0;
+        for line in top..=bottom {
+            if next == waiting.len() {
+                break;
+            }
+            if term.grid()[Line(line)][Column(0)].hyperlink().is_some() {
+                continue;
+            }
+            let shown = text(term, line);
+            let ahead = waiting[next..].iter().take(PASSED);
+            let Some(hit) = ahead.clone().position(|(_, probe)| leads(&shown, probe)) else {
+                continue;
+            };
+            let turn = &mut self.list[waiting[next + hit].0];
+            let link = Hyperlink::new(Some(format!("{MARK}{}", turn.id)), LINK.to_string());
+            term.grid_mut()[Line(line)][Column(0)].set_hyperlink(Some(link));
+            turn.place = Place::At(line);
+            turn.marked = true;
+            next += hit + 1;
+        }
+        log::debug!(
+            "turns: {next} of {} prompts that came back found",
+            waiting.len()
+        );
     }
 
     /// The last turn ended saying `reply`.
@@ -105,6 +169,14 @@ impl Turns {
                 None => Place::Lost,
             };
             turn.marked |= matches!(turn.place, Place::At(_));
+        }
+        if let Some((until, swept)) = self.redrawn {
+            if now >= until || self.list.iter().all(|turn| turn.marked) {
+                self.redrawn = None;
+            } else if swept.is_none_or(|at| now.saturating_duration_since(at) >= SWEEP_EVERY) {
+                self.redrawn = Some((until, Some(now)));
+                self.sweep(term, top, bottom);
+            }
         }
         let due = self
             .sought
@@ -161,6 +233,21 @@ fn probe(prompt: &str) -> String {
     words.join(" ").chars().take(PROBE).collect()
 }
 
+/// Whether `shown` opens with `probe` after no more than an agent's mark for a prompt, so a reply quoting a prompt is passed by.
+fn leads(shown: &str, probe: &str) -> bool {
+    shown.find(probe).is_some_and(|at| {
+        // A placeholder for an image or a paste stands before the words, as in the probe.
+        let mut before = shown[..at].to_string();
+        while let Some((open, close)) = before.find('[').zip(before.find(']')) {
+            if close < open {
+                break;
+            }
+            before.replace_range(open..=close, "");
+        }
+        before.chars().count() <= 4 && !before.chars().any(char::is_alphanumeric)
+    })
+}
+
 /// The text `line` shows, spaces collapsed.
 fn text<T>(term: &Term<T>, line: i32) -> String {
     let row = &term.grid()[Line(line)];
@@ -187,6 +274,17 @@ impl TerminalView {
     pub fn prompted(&mut self, prompt: String, cx: &mut Context<Self>) {
         log::debug!("terminal {}: an agent took a prompt", self.pty.pid);
         self.turns.prompted(prompt);
+        cx.notify();
+    }
+
+    /// The conversation this session's agent resumes held `turns`.
+    pub fn restore_turns(&mut self, turns: Vec<(String, Option<String>)>, cx: &mut Context<Self>) {
+        log::info!(
+            "terminal {}: {} prompts come back",
+            self.pty.pid,
+            turns.len()
+        );
+        self.turns.restore(turns, Instant::now());
         cx.notify();
     }
 

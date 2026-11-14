@@ -196,6 +196,7 @@ impl Workspace {
         {
             session.pending = first.resume.clone();
             dress(session, first, &mut kept);
+            recall(session, cx);
         }
         let shell = crate::settings::SettingsStore::get(cx).shell.clone();
         for place in places {
@@ -213,6 +214,7 @@ impl Workspace {
                     if let Some(session) = self.sessions.last_mut() {
                         session.pending = place.resume.clone();
                         dress(session, place, &mut kept);
+                        recall(session, cx);
                         // Out of view until shown, so it posts notifications.
                         session
                             .terminal
@@ -241,6 +243,31 @@ fn dress(session: &mut crate::sessions::Session, place: Place, kept: &mut steps:
     if let Some(trinket) = place.trinket {
         session.trinket = trinket;
     }
+}
+
+/// Gives a restored session's terminal the prompts of the conversation its agent resumes, from the agent's own record, else from the steps kept, so its rail comes back with it.
+fn recall(session: &crate::sessions::Session, cx: &mut Context<Workspace>) {
+    let Some((agent, conversation)) = session
+        .pending
+        .as_deref()
+        .and_then(agents::transcripts::named)
+    else {
+        return;
+    };
+    let (agent, conversation) = (agent.to_owned(), conversation.to_owned());
+    let kept = session.log.turns();
+    let terminal = session.terminal.clone();
+    cx.spawn(async move |_, cx| {
+        let read = cx
+            .background_executor()
+            .spawn(async move { agents::transcripts::turns(&agent, &conversation) })
+            .await;
+        let turns = read.filter(|turns| !turns.is_empty()).unwrap_or(kept);
+        if !turns.is_empty() {
+            terminal.update(cx, |view, cx| view.restore_turns(turns, cx));
+        }
+    })
+    .detach();
 }
 
 /// The folder the first session starts in when `saved` comes back: its first session's, while it exists.

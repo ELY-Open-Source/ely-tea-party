@@ -117,3 +117,66 @@ fn a_probe_skips_placeholders_and_collapses_spaces() {
     assert_eq!(probe("abcdefghijklmnopqrstuvwxyz"), "abcdefghijklmnop");
     assert_eq!(probe(""), "");
 }
+
+#[test]
+fn prompts_that_came_back_are_found_in_order_as_the_agent_draws_them_again() {
+    let (mut term, mut parser) = term(4, 100);
+    let mut turns = Turns::default();
+    let now = Instant::now();
+    turns.prompted("taken since".into());
+    let back = ["first ask", "/never drawn", "second ask", "third ask"];
+    turns.restore(
+        back.iter()
+            .map(|prompt| (prompt.to_string(), Some("done".into())))
+            .collect(),
+        now,
+    );
+    turns.follow(&mut term, now);
+    assert_eq!(
+        places(&turns)[..2],
+        [Place::Lost, Place::Lost],
+        "not drawn yet"
+    );
+    parser.advance(
+        &mut term,
+        b"> first ask\r\nreply mentions third ask\r\n> second ask\r\nok\r\n> third ask\r\nok\r\n> taken since\r\n",
+    );
+    turns.follow(&mut term, now + SWEEP_EVERY);
+    assert_eq!(
+        places(&turns),
+        [
+            Place::At(-4),
+            Place::Lost,
+            Place::At(-2),
+            Place::At(0),
+            Place::At(2)
+        ],
+        "a row passes over the prompt never drawn, and order keeps a reply's words from a later prompt"
+    );
+    assert_eq!(turns.list[0].reply.as_deref(), Some("done"));
+    parser.advance(&mut term, b"x\r\n");
+    turns.follow(&mut term, now + REDRAWN_WITHIN);
+    assert_eq!(places(&turns)[0], Place::At(-5), "its mark scrolls with it");
+}
+
+#[test]
+fn a_conversation_longer_than_the_rail_keeps_its_last_prompts() {
+    let mut turns = Turns::default();
+    turns.prompted("newest".into());
+    let back = (0..KEPT + 5)
+        .map(|n| (format!("prompt {n}"), None))
+        .collect();
+    turns.restore(back, Instant::now());
+    assert_eq!(turns.list.len(), KEPT);
+    assert_eq!(turns.list[0].prompt, "prompt 6");
+    assert_eq!(turns.list[KEPT - 1].prompt, "newest");
+}
+
+#[test]
+fn a_prompt_row_opens_with_the_prompt_after_a_mark_and_placeholders() {
+    assert!(leads("❯ fix the build", "fix the build"));
+    assert!(leads("› [Image #1] and this?", "and this?"));
+    assert!(leads("fix the build", "fix the build"));
+    assert!(!leads("the reply quotes fix the build", "fix the build"));
+    assert!(!leads("好的，fix the build", "fix the build"));
+}
