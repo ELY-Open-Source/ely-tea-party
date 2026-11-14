@@ -11,6 +11,7 @@ pub mod install;
 pub mod quips;
 pub mod speed;
 pub mod timeline;
+pub mod transcripts;
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},
