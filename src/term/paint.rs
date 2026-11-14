@@ -4,7 +4,7 @@ use std::{rc::Rc, sync::Arc};
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use glyphs::draw;
+use glyphs::{draw, extend};
 
 use alacritty_terminal::vte::ansi::CursorShape;
 use gpui::{
@@ -89,24 +89,33 @@ pub fn grid(
             let origin = snapped(bounds.origin, window);
             drop_pictures(stale, window);
             let top = |index: usize| origin + point(px(0.), cell.height * index as f32);
+            // A layer is ordered once, not per glyph; in one, quads lie under glyphs, so grounds, text and the cursor take one each.
             paint_pictures(&pictures, Layer::Under, origin, cell, window);
-            for (index, row) in frame.rows.iter().enumerate() {
-                paint_grounds(row, top(index), &look, window);
-            }
+            window.paint_layer(bounds, |window| {
+                for (index, row) in frame.rows.iter().enumerate() {
+                    paint_grounds(row, top(index), &look, window);
+                }
+            });
             paint_pictures(&pictures, Layer::Between, origin, cell, window);
-            for (index, row) in frame.rows.iter().enumerate() {
-                paint_text(row, top(index), &look, window);
-            }
+            window.paint_layer(bounds, |window| {
+                for (index, row) in frame.rows.iter().enumerate() {
+                    paint_text(row, top(index), &look, window);
+                }
+            });
             paint_pictures(&pictures, Layer::Over, origin, cell, window);
             match (&preedit, at, &cursor) {
-                (Some(text), Some(at), _) => paint_preedit(text, at, origin, &look, window),
+                (Some(text), Some(at), _) => window.paint_layer(bounds, |window| {
+                    paint_preedit(text, at, origin, &look, window)
+                }),
                 (None, _, Some((cursor, shape))) => {
                     let at = input.read(cx).glide_position((cursor.row, cursor.column));
                     // Until it lands, the cursor draws again.
                     if at != (cursor.row as f32, cursor.column as f32) {
                         window.request_animation_frame();
                     }
-                    paint_cursor(cursor, *shape, at, origin, &look, window)
+                    window.paint_layer(bounds, |window| {
+                        paint_cursor(cursor, *shape, at, origin, &look, window)
+                    })
                 }
                 _ => {}
             }
@@ -257,6 +266,8 @@ fn paint_text(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: 
         .collect();
     draw(&row.text, &runs, top, Some(cell.width), look, window);
     for (column, content, style) in &row.alone {
+        let small = glyphs::narrowed(row, *column, content, look);
+        let look = small.as_ref().unwrap_or(look);
         paint_alone(content, style.fg, style, at(*column), look, window);
     }
     for (column, columns, style) in spans {
@@ -288,21 +299,6 @@ fn runs(text: &str, style: &Style, color: Hsla, look: &Look, window: &Window) ->
         }
     }
     runs
-}
-
-/// Adds `len` bytes in `font` to the last run, or starts one.
-fn extend(runs: &mut Vec<TextRun>, len: usize, font: &Font, color: Hsla) {
-    match runs.last_mut() {
-        Some(last) if last.font == *font => last.len += len,
-        _ => runs.push(TextRun {
-            len,
-            font: font.clone(),
-            color,
-            background_color: None,
-            underline: None,
-            strikethrough: None,
-        }),
-    }
 }
 
 /// Unicode's private use areas, where Nerd Font icons live.
