@@ -125,6 +125,47 @@ pub(super) fn draw(
     }
 }
 
+/// Adds `len` bytes in `font` to the last run, or starts one.
+pub(super) fn extend(runs: &mut Vec<TextRun>, len: usize, font: &gpui::Font, color: gpui::Hsla) {
+    match runs.last_mut() {
+        Some(last) if last.font == *font => last.len += len,
+        _ => runs.push(TextRun {
+            len,
+            font: font.clone(),
+            color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }),
+    }
+}
+
+/// Asks for a character's emoji presentation, which a program may count as one cell.
+const EMOJI: char = '\u{FE0F}';
+
+/// `look` at the size an emoji fits one cell, when the cell after it holds a character the emoji would cover.
+pub(super) fn narrowed(
+    row: &crate::term::frame::Row,
+    column: usize,
+    content: &str,
+    look: &Look,
+) -> Option<Look> {
+    if !content.ends_with(EMOJI) {
+        return None;
+    }
+    // A wide cell's second half is a space, as is a free cell.
+    let next = row.text.chars().nth(column + 1)?;
+    if next == ' ' && !row.alone.iter().any(|(at, ..)| *at == column + 1) {
+        return None;
+    }
+    let size = look.size.min(look.cell.width * 0.85);
+    Some(Look {
+        size,
+        baseline: look.baseline - (look.size - size) * 0.3,
+        ..look.clone()
+    })
+}
+
 /// CoreText gives glyph offsets growing upward; the screen grows downward.
 #[cfg(target_os = "macos")]
 fn upward(y: Pixels) -> Pixels {

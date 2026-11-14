@@ -95,6 +95,8 @@ pub fn frame<T: EventListener>(
     let mut rows = vec![Row::default(); term.screen_lines()];
     let at = content.cursor.point;
     let mut cursor = None;
+    // The row and the column a sequence's first cell took the cells up to.
+    let mut joined: Option<(usize, usize)> = None;
     for indexed in content.display_iter {
         let (point, cell) = (indexed.point, indexed.cell);
         let row = (point.line.0 + offset) as usize;
@@ -129,14 +131,24 @@ pub fn frame<T: EventListener>(
             look.underline = Underline::Single;
             look.underline_color = look.fg;
         }
+        let taken = joined.is_some_and(|(at, end)| at == row && point.column.0 < end);
+        let sequence = (!hidden && !taken && !spacer && clusters::pictograph(cell.c))
+            .then(|| clusters::sequence(term, point))
+            .flatten();
+        if let Some((_, end)) = &sequence {
+            joined = Some((row, *end));
+        }
         let marks = cell.zerowidth().filter(|marks| !marks.is_empty());
-        let alone = (!hidden && (marks.is_some() || boxes::drawn(cell.c))).then(|| {
-            std::iter::once(cell.c)
-                .chain(marks.into_iter().flatten().copied())
-                .collect::<String>()
-        });
+        let alone = match sequence {
+            Some((text, _)) => Some(text),
+            None => (!hidden && !taken && (marks.is_some() || boxes::drawn(cell.c))).then(|| {
+                std::iter::once(cell.c)
+                    .chain(marks.into_iter().flatten().copied())
+                    .collect::<String>()
+            }),
+        };
         // alacritty keeps a tab in the first cell it crossed, for copies; it draws blank.
-        let shown = if spacer || hidden || alone.is_some() || cell.c == '\t' {
+        let shown = if spacer || hidden || taken || alone.is_some() || cell.c == '\t' {
             ' '
         } else {
             cell.c
@@ -216,6 +228,8 @@ fn style(cell: &Cell, ink: &Ink, set: &Colors) -> Style {
         strike: flags.contains(Flags::STRIKEOUT) && !hidden,
     }
 }
+
+mod clusters;
 
 #[cfg(test)]
 mod hover_tests;
