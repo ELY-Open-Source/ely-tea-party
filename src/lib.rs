@@ -3,7 +3,10 @@ pub mod app;
 pub mod blur;
 pub mod butler;
 pub mod communication;
+pub mod control;
 pub mod curl;
+#[cfg(windows)]
+pub mod defterm;
 #[cfg(target_os = "macos")]
 pub mod dock;
 #[cfg(windows)]
@@ -13,10 +16,13 @@ pub mod git;
 pub mod handoff;
 pub mod i18n;
 pub mod interface;
+pub mod keymap;
 pub mod memory;
 pub mod menus;
 pub mod pet;
 pub mod profiles;
+#[cfg(windows)]
+pub mod registry;
 pub mod sessions;
 pub mod settings;
 pub mod skins;

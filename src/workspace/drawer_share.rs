@@ -63,8 +63,8 @@ impl Workspace {
         };
         let Some(agent) = &session.agent else { return };
         let session_id = session.id;
-        let terminal = session.terminal.entity_id();
-        let group = session.terminal.read(cx).foreground();
+        let terminal = session.main().terminal.entity_id();
+        let group = session.main().terminal.read(cx).foreground();
         let agent = agent.instance;
         let snapshot = drawer
             .terminal
@@ -124,13 +124,13 @@ impl Workspace {
             .get(self.active)
             .filter(|session| {
                 session.id == preview.session
-                    && session.terminal.entity_id() == preview.terminal
+                    && session.main().terminal.entity_id() == preview.terminal
                     && session
                         .agent
                         .as_ref()
                         .is_some_and(|agent| agent.instance == preview.agent)
             })
-            .map(|session| session.terminal.clone());
+            .map(|session| session.main().terminal.clone());
         let target = target.filter(|terminal| {
             let view = terminal.read(cx);
             view.foreground() == preview.foreground

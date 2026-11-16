@@ -9,8 +9,8 @@ use anyhow::Context as _;
 use gpui::{Context, Window};
 use serde::{Deserialize, Serialize};
 
-use super::{Workspace, start};
-use crate::agents;
+use super::Workspace;
+use crate::{agents, sessions::Program, term::shell::Start};
 
 pub mod steps;
 
@@ -126,7 +126,7 @@ impl Workspace {
     fn snapshot(&self) -> Saved {
         let place = |session: &crate::sessions::Session| Place {
             link_id: session.link_id,
-            folder: session.folder.clone(),
+            folder: session.main().folder.clone(),
             // A resume not yet typed stays saved.
             resume: session.pending.clone().or_else(|| {
                 let agent = session.agent.as_ref()?;
@@ -164,7 +164,7 @@ impl Workspace {
     /// Types each restored resume whose shell has been quiet a while, for shells that report no folder.
     pub(super) fn type_pending(&mut self, now: Instant, cx: &mut Context<Self>) {
         for session in &mut self.sessions {
-            let view = session.terminal.read(cx);
+            let view = session.main().terminal.read(cx);
             if session.pending.is_none() || now.saturating_duration_since(view.drew()) < SETTLED {
                 continue;
             }
@@ -208,15 +208,20 @@ impl Workspace {
                 continue;
             }
             let id = agents::next_session();
-            match start(&shell, &[], place.folder.clone(), (id, false), cx) {
-                Ok(((pty, events), launch)) => {
-                    self.add((id, pty, events), launch, Vec::new(), window, cx);
+            let program = Program {
+                shell: shell.clone(),
+                ..Program::default()
+            };
+            match self.started(&program, Start::In(place.folder.clone()), Some(id), cx) {
+                Ok(started) => {
+                    self.add(id, started, program, window, cx);
                     if let Some(session) = self.sessions.last_mut() {
                         session.pending = place.resume.clone();
                         dress(session, place, &mut kept);
                         recall(session, cx);
                         // Out of view until shown, so it posts notifications.
                         session
+                            .main()
                             .terminal
                             .update(cx, |view, _| view.set_front(false, window));
                     }
@@ -256,7 +261,7 @@ fn recall(session: &crate::sessions::Session, cx: &mut Context<Workspace>) {
     };
     let (agent, conversation) = (agent.to_owned(), conversation.to_owned());
     let kept = session.log.turns();
-    let terminal = session.terminal.clone();
+    let terminal = session.main().terminal.clone();
     cx.spawn(async move |_, cx| {
         let read = cx
             .background_executor()

@@ -100,10 +100,16 @@ impl Workspace {
         let Some(session) = self.sessions.iter().find(|session| session.link_id == id) else {
             return;
         };
-        let source = session.terminal.read(cx).snapshot_source(
+        let source = session.main().terminal.read(cx).snapshot_source(
             session.id.to_string(),
             session.named().chars().take(160).collect(),
-            session.folder.to_string_lossy().chars().take(512).collect(),
+            session
+                .main()
+                .folder
+                .to_string_lossy()
+                .chars()
+                .take(512)
+                .collect(),
             session.link_id.url(),
         );
         let status = tasks::observed(session, cx);
@@ -127,7 +133,7 @@ impl Workspace {
         let memory_enabled = config.memory;
         let memory_service = crate::memory::Service::get(cx);
         let memory_revision = memory_service.revision();
-        let folder = session.folder.clone();
+        let folder = session.main().folder.clone();
         let session_link = session.link_id.url();
         let read_service = memory_service.clone();
         let cancel = Cancellation::default();

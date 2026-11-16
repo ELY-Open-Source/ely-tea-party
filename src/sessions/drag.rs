@@ -64,7 +64,7 @@ pub fn row(
     when: (Option<&Path>, Instant),
     cx: &App,
 ) -> impl IntoElement {
-    let pid = session.terminal.read(cx).pid() as usize;
+    let pid = session.id as usize;
     let settings = SettingsStore::get(cx);
     let compact = settings.sidebar_style == SidebarStyle::Compact;
     let title = if compact {
@@ -72,8 +72,8 @@ pub fn row(
     } else {
         match &session.agent {
             Some(agent) => session.called(agent),
-            None if session.title.is_empty() => TITLE.to_string(),
-            None => one_line(&session.title),
+            None if session.main().title.is_empty() => TITLE.to_string(),
+            None => one_line(&session.main().title),
         }
     };
     let full = if compact {
@@ -86,10 +86,10 @@ pub fn row(
             "{} · {}\n{}",
             agent,
             text(cx, session.task_state(cx).label(), &[]),
-            shown(&session.folder, when.0)
+            shown(&session.main().folder, when.0)
         )
     } else {
-        shown(&session.folder, when.0)
+        shown(&session.main().folder, when.0)
     };
     let moving = Moving {
         from: index,
@@ -97,13 +97,13 @@ pub fn row(
     };
     let workspace = workspace.clone();
     let close = workspace.clone();
-    let id = session.terminal.entity_id();
+    let id = session.id;
     let item = if compact {
         compact::item(&workspace, index, session, active, cx).into_any_element()
     } else {
         item(&workspace, index, session, active, when.0, when.1, cx).into_any_element()
     };
-    let menu = menu::row(&workspace, session.terminal.entity_id(), cx);
+    let menu = menu::row(&workspace, id, cx);
     let item = if settings.session_menu {
         ContextMenu::new(("session-menu", pid), menu)
             .w_full()
@@ -170,12 +170,8 @@ pub fn row(
                 .on_click(move |_, window, cx| {
                     cx.stop_propagation();
                     close.update(cx, |this, cx| {
-                        if let Some(index) = this
-                            .sessions()
-                            .iter()
-                            .position(|s| s.terminal.entity_id() == id)
-                        {
-                            this.close(index, window, cx);
+                        if let Some(index) = this.sessions().iter().position(|s| s.id == id) {
+                            this.close_asked(index, None, window, cx);
                         }
                     });
                 })

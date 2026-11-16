@@ -9,7 +9,7 @@ use ely_gpui_component::{
     typography::Caption,
 };
 use gpui::{
-    AppContext, Context, Div, DragMoveEvent, EmptyView, Entity, Focusable, InteractiveElement,
+    App, AppContext, Context, Div, DragMoveEvent, EmptyView, Entity, Focusable, InteractiveElement,
     MouseButton, ParentElement, Pixels, StatefulInteractiveElement, StyleRefinement, Styled,
     Subscription, Window, div, prelude::FluentBuilder, px,
 };
@@ -23,7 +23,11 @@ use crate::{
     },
     sessions,
     settings::{DRAWER_HEIGHT, SettingsStore},
-    term::{TerminalEvent, TerminalView},
+    term::{
+        Events, Launch, Pty, TerminalEvent, TerminalView, config,
+        shell::{ShellIntegration, Start, launch},
+        spawn,
+    },
 };
 
 /// The least the session's own terminal keeps above an open drawer.
@@ -74,7 +78,7 @@ impl Workspace {
             {
                 drawer.open = false;
                 drawer.terminal.update(cx, |view, cx| view.let_go(cx));
-                window.focus(&session.terminal.focus_handle(cx), cx);
+                window.focus(&session.terminal().focus_handle(cx), cx);
                 log::debug!("app: session {id}'s drawer hides");
             }
             Some(drawer) => {
@@ -83,8 +87,8 @@ impl Workspace {
                 log::debug!("app: session {id}'s drawer shows");
             }
             None => {
-                let folder = session.folder.clone();
-                match super::start(
+                let folder = session.main().folder.clone();
+                match start(
                     &SettingsStore::get(cx).shell,
                     &[],
                     folder.clone(),
@@ -139,7 +143,11 @@ impl Workspace {
         if focused {
             self.close_drawer(self.active, window, cx);
         } else {
-            self.close(self.active, window, cx);
+            let pane = self
+                .sessions
+                .get(self.active)
+                .map(|session| session.focused);
+            self.close_asked(self.active, pane, window, cx);
         }
     }
 
@@ -159,7 +167,7 @@ impl Workspace {
             .terminal
             .update(cx, |view, _| view.set_front(false, window));
         if index == self.active && drawer.open {
-            window.focus(&session.terminal.focus_handle(cx), cx);
+            window.focus(&session.terminal().focus_handle(cx), cx);
         }
         cx.notify();
     }
@@ -189,7 +197,8 @@ impl Workspace {
             TerminalEvent::Bell
             | TerminalEvent::Shows(_)
             | TerminalEvent::Ended(_)
-            | TerminalEvent::Speed(_) => {}
+            | TerminalEvent::Speed(_)
+            | TerminalEvent::Focused => {}
             TerminalEvent::Dragged(key) => match self.files.read(cx).path(key) {
                 Some(path) => {
                     log::info!("app: {} dragged onto a drawer", path.display());
@@ -248,7 +257,7 @@ impl Workspace {
             .relative()
             .flex_1()
             .min_h_0()
-            .children(session.map(|session| session.terminal.clone().cached(fill())))
+            .children(session.map(|session| super::panes::draw(&session.layout, session, cx)))
             .children(
                 session
                     .and_then(|session| session.agent.as_ref())
@@ -366,4 +375,18 @@ impl Workspace {
             )
             .when(self.drawer_dragged.is_some(), |body| body.child(cover()))
     }
+}
+
+/// Starts `shell`, the Shell setting's way of naming one, in `folder`; its hooks reach the app under session `id`, as its terminal's or its drawer's.
+fn start(
+    shell: &str,
+    args: &[String],
+    folder: impl Into<Start>,
+    (id, drawer): (u64, bool),
+    cx: &App,
+) -> anyhow::Result<((Pty, Events), Launch)> {
+    let settings = SettingsStore::get(cx);
+    let mut launch = launch(shell, args, folder, &cx.global::<ShellIntegration>().0)?;
+    launch.env.extend(crate::agents::env(id, drawer)?);
+    Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch))
 }

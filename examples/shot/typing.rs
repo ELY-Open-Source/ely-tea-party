@@ -12,16 +12,18 @@ use objc::{
 };
 
 /// US layout key codes and what each key types.
-const KEYS: [(&str, u16, &str); 40] = [
+const KEYS: [(&str, u16, &str); 42] = [
     (",", 43, ","),
     ("a", 0, "a"),
     ("b", 11, "b"),
     ("c", 8, "c"),
+    ("d", 2, "d"),
     ("e", 14, "e"),
     ("f", 3, "f"),
     ("i", 34, "i"),
     ("j", 38, "j"),
     ("o", 31, "o"),
+    ("k", 40, "k"),
     ("s", 1, "s"),
     ("v", 9, "v"),
     ("t", 17, "t"),

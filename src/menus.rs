@@ -2,21 +2,32 @@ use ely_gpui_component::{
     forms::{Copy, Paste, SelectAll},
     i18n::text,
 };
-use gpui::{App, InteractiveElement, KeyBinding, Menu, MenuItem, OsAction, actions};
+use gpui::{App, InteractiveElement, Menu, MenuItem, OsAction, actions};
 
 use crate::{
     settings::window::OpenSettings,
-    term::{input::Find, zoom},
+    term::{
+        input::{Clear, Find},
+        zoom,
+    },
     update::CheckForUpdates,
     workspace::{
-        CloseSession, NewSession, QuickSwitch, ToggleDrawer, TogglePanel, ToggleParty,
-        ToggleSessions,
+        CloseSession, Leave, NewSession, QuickSwitch, ToggleDrawer, TogglePanel, ToggleParty,
+        ToggleSessions, Workspace,
     },
 };
 
 actions!(
     ely_tea_party,
-    [Quit, Bigger, Smaller, ResetSize, Minimize, Zoom]
+    [
+        Quit,
+        Bigger,
+        Smaller,
+        ResetSize,
+        Minimize,
+        Zoom,
+        ToggleFullScreen
+    ]
 );
 
 /// The PRD's menu bar, in the interface's language.
@@ -53,6 +64,7 @@ pub fn menus(cx: &App) -> Vec<Menu> {
                 MenuItem::os_action(word("et.menu.select_all"), SelectAll, OsAction::SelectAll),
                 MenuItem::separator(),
                 MenuItem::action(word("et.menu.find"), Find),
+                MenuItem::action(word("et.menu.clear"), Clear),
             ],
         ),
         menu(
@@ -66,6 +78,8 @@ pub fn menus(cx: &App) -> Vec<Menu> {
                 MenuItem::action(word("et.menu.bigger"), Bigger),
                 MenuItem::action(word("et.menu.smaller"), Smaller),
                 MenuItem::action(word("et.menu.reset_size"), ResetSize),
+                MenuItem::separator(),
+                MenuItem::action(word("et.menu.full_screen"), ToggleFullScreen),
             ],
         ),
         // macOS lists the open windows here itself.
@@ -79,34 +93,33 @@ pub fn menus(cx: &App) -> Vec<Menu> {
     ]
 }
 
-/// Binds app commands before building their menus.
+/// Answers the app's commands; the keymap sets the menu bar.
 pub fn init(cx: &mut App) {
-    let (quit, modifier) = if cfg!(target_os = "macos") {
-        ("cmd-q", "cmd")
-    } else {
-        ("ctrl-shift-q", "ctrl")
-    };
-    cx.bind_keys([
-        KeyBinding::new(quit, Quit, None),
-        KeyBinding::new(&format!("{modifier}-="), Bigger, None),
-        KeyBinding::new(&format!("{modifier}-+"), Bigger, None),
-        KeyBinding::new(&format!("{modifier}--"), Smaller, None),
-        KeyBinding::new(&format!("{modifier}-0"), ResetSize, None),
-    ]);
-    if cfg!(target_os = "macos") {
-        cx.bind_keys([KeyBinding::new("cmd-m", Minimize, None)]);
-    }
     cx.on_action(|_: &Quit, cx| {
         log::info!("app: quit asked");
+        for handle in cx.windows() {
+            let Some(workspace) = handle.downcast::<Workspace>() else {
+                continue;
+            };
+            let asked = workspace.update(cx, |this, window, cx| {
+                let asked = this.asks(Leave::Quit, cx);
+                if asked {
+                    window.activate_window();
+                }
+                asked
+            });
+            if asked.expect("a listed window updates") {
+                return;
+            }
+        }
         cx.quit();
     });
     cx.on_action(|_: &Bigger, cx| zoom::step(Some(1.0), cx));
     cx.on_action(|_: &Smaller, cx| zoom::step(Some(-1.0), cx));
     cx.on_action(|_: &ResetSize, cx| zoom::step(None, cx));
-    cx.set_menus(menus(cx));
 }
 
-/// Minimize and Zoom, which only a window answers.
+/// Minimize, Zoom and full screen, which only a window answers.
 pub fn window_actions<E: InteractiveElement>(root: E) -> E {
     root.on_action(|_: &Minimize, window, _| {
         log::info!("window: minimized");
@@ -115,5 +128,9 @@ pub fn window_actions<E: InteractiveElement>(root: E) -> E {
     .on_action(|_: &Zoom, window, _| {
         log::info!("window: zoomed");
         window.zoom_window();
+    })
+    .on_action(|_: &ToggleFullScreen, window, _| {
+        log::info!("window: full screen {}", !window.is_fullscreen());
+        window.toggle_fullscreen();
     })
 }

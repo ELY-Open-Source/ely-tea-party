@@ -1,6 +1,4 @@
-use gpui::{Action, App, KeyBinding, actions};
-
-use super::CONTEXT;
+use gpui::{Action, App, actions};
 
 actions!(
     ely_tea_party,
@@ -15,7 +13,11 @@ actions!(
         LastSession,
         JumpToWaiting,
         ToggleDrawer,
-        ToggleParty
+        ToggleParty,
+        SplitRight,
+        SplitDown,
+        NextPane,
+        PreviousPane
     ]
 );
 
@@ -24,49 +26,7 @@ actions!(
 #[action(namespace = ely_tea_party, no_json)]
 pub struct SelectSession(pub usize);
 
-/// Ghostty's keys: Cmd on macOS; off it, Ctrl-Shift for keys a terminal takes, Alt for digits.
+/// The switcher's own keys, bound before `keymap::init` so its table keeps them; the commands' keys are `keymap`'s.
 pub fn bind_keys(cx: &mut App) {
     super::switcher::bind_keys(cx);
-    let party = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
-    let (sessions, panel, new, close, drawer, digit) = if cfg!(target_os = "macos") {
-        ("cmd-b", "cmd-alt-b", "cmd-t", "cmd-w", "cmd-j", "cmd")
-    } else {
-        (
-            "ctrl-shift-b",
-            "ctrl-shift-alt-b",
-            "ctrl-shift-t",
-            "ctrl-shift-w",
-            "ctrl-shift-j",
-            "alt",
-        )
-    };
-    let context = Some(CONTEXT);
-    cx.bind_keys([
-        KeyBinding::new(
-            if cfg!(target_os = "macos") {
-                "cmd-k"
-            } else {
-                "ctrl-shift-k"
-            },
-            QuickSwitch,
-            context,
-        ),
-        KeyBinding::new(sessions, ToggleSessions, context),
-        KeyBinding::new(panel, TogglePanel, context),
-        KeyBinding::new(new, NewSession, context),
-        KeyBinding::new(close, CloseSession, context),
-        KeyBinding::new(drawer, ToggleDrawer, context),
-        KeyBinding::new(&format!("{party}-shift-o"), ToggleParty, context),
-        KeyBinding::new("ctrl-tab", NextSession, context),
-        KeyBinding::new("ctrl-shift-tab", PreviousSession, context),
-        KeyBinding::new(&format!("{digit}-9"), LastSession, context),
-        KeyBinding::new(&format!("{digit}-shift-u"), JumpToWaiting, context),
-    ]);
-    cx.bind_keys(
-        (1..=8).map(|n| KeyBinding::new(&format!("{digit}-{n}"), SelectSession(n - 1), context)),
-    );
 }

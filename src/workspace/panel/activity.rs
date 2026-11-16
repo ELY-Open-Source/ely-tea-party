@@ -417,6 +417,7 @@ impl Workspace {
     fn show_prompt(&mut self, back: usize, cx: &mut Context<Self>) {
         if let Some(session) = self.sessions.get(self.active) {
             session
+                .main()
                 .terminal
                 .update(cx, |view, cx| view.show_prompt(back, cx));
         }

@@ -83,8 +83,10 @@ impl Workspace {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
-                                let folder =
-                                    this.sessions.get(this.active).map(|s| s.folder.clone());
+                                let folder = this
+                                    .sessions
+                                    .get(this.active)
+                                    .map(|s| s.main().folder.clone());
                                 let feedback = Some((
                                     this.companion.reply.text.clone(),
                                     this.companion.suggestion.clone(),

@@ -20,7 +20,7 @@ use ely_gpui_component::{
 use futures::StreamExt;
 use gpui::{
     Bounds, Context, EventEmitter, ExternalPaths, FocusHandle, Focusable, IntoElement, MouseButton,
-    ParentElement, Pixels, Render, SharedString, Styled, Subscription, Task, Window, div,
+    ParentElement, Pixels, Render, SharedString, Styled, Subscription, Task, Window, canvas, div,
     prelude::*, px,
 };
 
@@ -32,7 +32,7 @@ use super::{
     frame::frame,
     graphics::{Pictures, runs},
     ink::Ink,
-    input::{self, Find, Held, NextPrompt, PreviousPrompt, Went},
+    input::{self, Clear, Find, Held, NextPrompt, PreviousPrompt, Went},
     marks::Mark,
     menu::FileMenu,
     mouse::MouseMode,
@@ -67,6 +67,7 @@ pub enum TerminalEvent {
     Exited(ExitStatus),
     /// A Files node's drag landed on it: the node's tree key.
     Dragged(SharedString),
+    Focused,
 }
 
 /// A program on a pseudo-terminal, drawn cell by cell in the theme and font the settings choose.
@@ -110,6 +111,8 @@ pub struct TerminalView {
     pub(super) notices: Notices,
     /// kitty's clipboard protocol: its write, grants and read asking.
     pub(super) clips: clipboard::Session,
+    /// A paste that waits for the user's word.
+    pub(super) pasting: Option<String>,
     /// The program's title; empty while it names none.
     pub(super) title: String,
     /// The prompts an agent here took, and the rail that marks them.
@@ -194,6 +197,7 @@ impl TerminalView {
             shell: Shell::Busy,
             notices: Notices::default(),
             clips: clipboard::Session::default(),
+            pasting: None,
             title: String::new(),
             turns: Turns::default(),
             rail: Rail::default(),
@@ -286,6 +290,10 @@ impl TerminalView {
         self.active = window.is_window_active();
         if self.focus.is_focused(window) {
             self.menu.forget();
+        }
+        // Its release may land in another app.
+        if !self.active {
+            self.end_selection(cx);
         }
         let focused = self.focus.is_focused(window) && window.is_window_active();
         if focused != self.focused {
@@ -388,11 +396,12 @@ impl Render for TerminalView {
             .on_action(cx.listener(|view, _: &Paste, _, cx| view.paste(cx)))
             .on_action(cx.listener(|view, _: &SelectAll, _, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Find, window, cx| view.find(window, cx)))
+            .on_action(cx.listener(|view, _: &Clear, _, cx| view.clear(cx)))
             .on_action(
                 cx.listener(|view, _: &PreviousPrompt, _, cx| view.scroll_to_prompt(true, cx)),
             )
             .on_action(cx.listener(|view, _: &NextPrompt, _, cx| view.scroll_to_prompt(false, cx)))
-            .on_any_mouse_down(cx.listener(Self::press))
+            .on_any_mouse_down(cx.listener(Self::pressed_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
             .when(self.pointer.on_link, |root| {
@@ -456,6 +465,7 @@ impl Render for TerminalView {
         let rail = self.rail(settings.padding_y, offset, window, cx);
         let request = self.menu.request();
         let menu = self.menu.items(cx);
+        let this = cx.entity();
         div()
             .relative()
             .size_full()
@@ -467,11 +477,16 @@ impl Render for TerminalView {
             )
             .children(scrollbar::bar(span, window, cx))
             .children(rail)
+            .child(canvas(
+                |_, _, _| {},
+                move |_, _, window, cx| super::pointer::follow_drag(&this, window, cx),
+            ))
             .children(
                 self.find_box(cx)
                     .map(|found| div().absolute().top_2().right_4().child(found)),
             )
             .children(self.clipboard_prompt(cx))
+            .children(self.paste_prompt(cx))
     }
 }
 

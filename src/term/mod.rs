@@ -1,6 +1,9 @@
 mod boxes;
+mod busy;
+mod clear;
 mod click;
 mod clipboard;
+mod control;
 mod drop;
 #[cfg(windows)]
 pub(crate) mod env;
@@ -46,7 +49,11 @@ pub mod zoom;
 
 pub use drop::Quote;
 pub use fonts::{ICONS, MONO, load_font};
+#[cfg(all(windows, test))]
+pub(crate) use pty::beside_test;
 pub use pty::{Events, Launch, Listener, Pty, PtyEvent, config, fit, spawn};
+#[cfg(windows)]
+pub use pty::{Raw, adopt};
 pub use status::{Kind, Record, Records, State};
 pub use view::{BLINK, TerminalEvent, TerminalView};
 #[cfg(windows)]

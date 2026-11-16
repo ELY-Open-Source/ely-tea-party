@@ -17,6 +17,6 @@ $runtime = Join-Path $out 'butler'
 if (Test-Path $runtime) { Remove-Item -Recurse -Force $runtime -ErrorAction Stop }
 Copy-Item -Recurse target/butler $runtime -ErrorAction Stop
 Copy-Item 'vendor/conpty/LICENSE' (Join-Path $out 'LICENSE-conpty') -ErrorAction Stop
-$files = 'ely-tea-party.exe', 'butler', 'conpty.dll', 'OpenConsole.exe', 'LICENSE-conpty' | ForEach-Object { Join-Path $out $_ }
+$files = 'ely-tea-party.exe', 'butler', 'conpty.dll', 'OpenConsole.exe', 'OpenConsoleProxy.dll', 'LICENSE-conpty' | ForEach-Object { Join-Path $out $_ }
 Compress-Archive -Force -Path $files -DestinationPath $zip -ErrorAction Stop
 Write-Output "windows-zip: $zip"

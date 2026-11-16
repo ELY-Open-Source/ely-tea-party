@@ -104,6 +104,16 @@ fn a_program_prints_into_the_grid_with_its_variables_and_id() {
 }
 
 #[test]
+fn a_program_reads_the_terminal_s_name_and_version() {
+    let ran = run(
+        "printf '%s %s' \"$TERM_PROGRAM\" \"$TERM_PROGRAM_VERSION\"",
+        (40, 4),
+    );
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(ran.text, format!("ely-tea-party {version}"));
+}
+
+#[test]
 fn a_kitty_graphics_command_reaches_its_handler_at_the_cursor() {
     let ran = run(r"printf 'ab\033_Gi=1,a=q,q=2;AAAA\033\\cd'", (24, 4));
     assert_eq!(ran.text, "abcd", "the command prints nothing");
@@ -388,4 +398,58 @@ fn sizes_hold_at_least_two_by_one_and_cap_at_the_kernel() {
     assert_eq!((size.num_cols, size.num_lines), (u16::MAX / 8, 24));
     let size = fit(0, 0, (8, 16));
     assert_eq!((size.num_cols, size.num_lines), (2, 1));
+}
+
+/// Whether `launch`'s program ended well, once its pty closes.
+fn ended_well(launch: &Launch) -> Option<bool> {
+    let (pty, mut events) =
+        spawn(launch, (80, 24), (8, 16), config(&Settings::default())).expect("it starts");
+    futures::executor::block_on(async {
+        let mut ended = None;
+        while let Some(event) = events.next().await {
+            match event {
+                PtyEvent::Term(Event::ChildExit(status)) => ended = Some(status.success()),
+                PtyEvent::Term(Event::PtyWrite(reply)) => pty.write(reply.into_bytes()),
+                PtyEvent::Term(Event::Exit) => break,
+                _ => {}
+            }
+        }
+        ended
+    })
+}
+
+#[test]
+fn e_runs_its_program_as_written_and_the_session_ends_with_it() {
+    crate::testlog::init();
+    for (script, well) in [("exit 0", true), ("exit 3", false)] {
+        let args = ["-c".to_string(), script.to_string()];
+        let launch = crate::term::shell::command("sh", &args, std::env::temp_dir()).expect("sh");
+        assert!(!launch.reports, "no integration");
+        assert_eq!(ended_well(&launch), Some(well), "{script}");
+    }
+}
+
+#[test]
+fn e_finds_a_relative_program_in_the_session_s_folder() {
+    crate::testlog::init();
+    let folder = std::env::temp_dir().join(format!("ely-e-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).expect("a folder");
+    std::os::unix::fs::symlink("/bin/sh", folder.join("local-sh")).expect("a link");
+    let args = ["-c".to_string(), "exit 0".to_string()];
+    let launch = crate::term::shell::command("./local-sh", &args, folder.clone()).expect("found");
+    assert_eq!(ended_well(&launch), Some(true));
+    std::fs::remove_dir_all(&folder).expect("cleaned");
+}
+
+#[test]
+fn e_searches_a_relative_path_entry_from_the_session_s_folder() {
+    crate::testlog::init();
+    let folder = std::env::temp_dir().join(format!("ely-e-path-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).expect("a folder");
+    std::os::unix::fs::symlink("/bin/sh", folder.join("local-sh")).expect("a link");
+    let args = ["-c".to_string(), "exit 0".to_string()];
+    let mut launch = crate::term::shell::command("local-sh", &args, folder.clone()).expect("taken");
+    launch.env.push(("PATH".into(), ".:/usr/bin:/bin".into()));
+    assert_eq!(ended_well(&launch), Some(true));
+    std::fs::remove_dir_all(&folder).expect("cleaned");
 }

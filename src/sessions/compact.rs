@@ -11,7 +11,7 @@ use super::{Session, editor, one_line};
 use crate::{agents::icons, workspace::Workspace};
 
 pub(crate) fn title(session: &Session) -> String {
-    let name = if session.name.is_empty() && session.title.is_empty() {
+    let name = if session.name.is_empty() && session.main().title.is_empty() {
         session
             .agent
             .as_ref()

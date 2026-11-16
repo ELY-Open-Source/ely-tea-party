@@ -65,10 +65,14 @@ impl Workspace {
 
     pub(super) fn session_order(&self, cx: &App) -> Vec<usize> {
         if !self.party && SettingsStore::get(cx).sidebar_style == SidebarStyle::Compact {
-            groups(self.sessions.iter().map(|session| session.folder.as_path()))
-                .into_values()
-                .flatten()
-                .collect()
+            groups(
+                self.sessions
+                    .iter()
+                    .map(|session| session.main().folder.as_path()),
+            )
+            .into_values()
+            .flatten()
+            .collect()
         } else {
             (0..self.sessions.len()).collect()
         }
@@ -93,14 +97,18 @@ impl Workspace {
                 .children((0..self.sessions.len()).map(row))
                 .into_any_element();
         }
-        let groups = groups(self.sessions.iter().map(|session| session.folder.as_path()));
+        let groups = groups(
+            self.sessions
+                .iter()
+                .map(|session| session.main().folder.as_path()),
+        );
         self.sidebar
             .collapsed
             .retain(|folder| groups.contains_key(folder));
         if let Some(session) = self.sessions.get(self.active) {
-            let shown = (session.id, session.folder.clone());
+            let shown = (session.id, session.main().folder.clone());
             if self.sidebar.shown.as_ref() != Some(&shown) {
-                self.sidebar.reveal(&session.folder);
+                self.sidebar.reveal(&session.main().folder);
                 self.sidebar.shown = Some(shown);
             }
         }
@@ -188,7 +196,7 @@ impl Workspace {
         self.sessions
             .get(from)
             .zip(self.sessions.get(to))
-            .is_some_and(|(from, to)| from.folder == to.folder)
+            .is_some_and(|(from, to)| from.main().folder == to.main().folder)
     }
 
     pub(crate) fn move_sidebar_session(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
@@ -202,7 +210,7 @@ impl Workspace {
         let to = if to == usize::MAX {
             self.sessions
                 .iter()
-                .rposition(|other| other.folder == session.folder)
+                .rposition(|other| other.main().folder == session.main().folder)
                 .unwrap_or(from)
         } else {
             to

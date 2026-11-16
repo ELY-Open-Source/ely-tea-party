@@ -3,26 +3,18 @@ use std::path::PathBuf;
 use ely_gpui_component::{
     buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
-    forms::{Copy, NumberInput, Paste, PathInput, SelectAll, Switch},
+    forms::{NumberInput, PathInput, Switch},
     i18n::text,
     primitives::Severity,
-    settings::{KeyboardShortcutsList, SettingsRow, SettingsSection, Shortcut},
+    settings::{SettingsRow, SettingsSection},
     theme::{ActiveTheme, ControlSize},
 };
-use gpui::{
-    Action, App, Context, Div, Entity, KeyContext, ParentElement, SharedString, Styled, Window, div,
-};
+use gpui::{App, Context, Div, Entity, ParentElement, SharedString, Styled, Window, div};
 
-use super::{OpenSettings, SettingsWindow, choice, set, switch};
+use super::{SettingsWindow, choice, set, switch};
 use crate::{
-    menus::{Bigger, Minimize, Quit, ResetSize, Smaller},
     settings::{Mascot, OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
-    term::input::{self, Find, NextPrompt, PreviousPrompt},
     update::{self, State, VERSION},
-    workspace::{
-        self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, QuickSwitch,
-        SelectSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
-    },
 };
 
 pub(super) mod profiles;
@@ -40,9 +32,6 @@ const OPTIONS: [(OptionAsAlt, &str, &str); 4] = [
     (OptionAsAlt::Right, "right", "et.option.right"),
     (OptionAsAlt::Both, "both", "et.option.both"),
 ];
-
-/// The sessions a digit shows, Cmd-1 to Cmd-8.
-const PLACES: usize = 8;
 
 impl SettingsWindow {
     /// The terminal's settings in order, then the shortcuts.
@@ -134,6 +123,18 @@ impl SettingsWindow {
             settings.right_click_paste,
             |settings, on| settings.right_click_paste = on,
         );
+        let guard = switch(
+            &this,
+            "paste_protection",
+            settings.paste_protection,
+            |settings, on| settings.paste_protection = on,
+        );
+        let quit = switch(
+            &this,
+            "confirm_quit",
+            settings.confirm_quit,
+            |settings, on| settings.confirm_quit = on,
+        );
         let ely = switch(&this, "ely", settings.ely, |settings, on| settings.ely = on);
         let mascot = choice(
             &this,
@@ -167,6 +168,16 @@ impl SettingsWindow {
                     .control(right),
             )
             .row(
+                SettingsRow::new(word("et.terminal.paste_protection"))
+                    .description(word("et.terminal.paste_protection_hint"))
+                    .control(guard),
+            )
+            .row(
+                SettingsRow::new(word("et.terminal.confirm_quit"))
+                    .description(word("et.terminal.confirm_quit_hint"))
+                    .control(quit),
+            )
+            .row(
                 SettingsRow::new(word("et.terminal.drag_sessions"))
                     .description(word("et.terminal.drag_sessions_hint"))
                     .control(drag),
@@ -192,11 +203,22 @@ impl SettingsWindow {
                     .description(word("et.terminal.auto_updates_hint"))
                     .control(auto_check(&this, settings.check_updates)),
             )
-            .row(updates_row(cx));
+            .row(updates_row(cx))
+            .row(
+                SettingsRow::new(word("et.terminal.control"))
+                    .description(word("et.terminal.control_hint"))
+                    .control(switch(
+                        &this,
+                        "control",
+                        settings.control,
+                        |settings, on| settings.control = on,
+                    )),
+            );
         #[cfg(windows)]
-        let section = section.row(super::explorer::row(&cx.entity(), cx));
-        let keys = SettingsSection::new(word("et.terminal.shortcuts"))
-            .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
+        let section = section
+            .row(super::explorer::row(&cx.entity(), cx))
+            .row(super::defterm::row(&cx.entity(), cx));
+        let keys = self.shortcuts(cx);
         let profiles = self.profiles_section(cx);
         let page = div().flex().flex_col().gap_6();
         #[cfg(unix)]
@@ -299,136 +321,4 @@ fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
         cx,
         |settings| settings.start_in = start,
     );
-}
-
-/// The listed commands, in order: group, name and action.
-fn listed(cx: &App) -> Vec<(SharedString, SharedString, Box<dyn Action>)> {
-    let word = |key: &str| text(cx, key, &[]);
-    let sessions = word("et.keys.sessions");
-    let mut listed = vec![
-        (
-            sessions.clone(),
-            word("et.switcher.title"),
-            QuickSwitch.boxed_clone(),
-        ),
-        (
-            sessions.clone(),
-            word("et.session.new"),
-            NewSession.boxed_clone(),
-        ),
-        (
-            sessions.clone(),
-            word("et.session.close"),
-            CloseSession.boxed_clone(),
-        ),
-        (
-            sessions.clone(),
-            word("et.keys.next_session"),
-            NextSession.boxed_clone(),
-        ),
-        (
-            sessions.clone(),
-            word("et.keys.previous_session"),
-            PreviousSession.boxed_clone(),
-        ),
-    ];
-    listed.extend((0..PLACES).map(|ix| {
-        let name = text(cx, "et.keys.session", &[("number", &(ix + 1).to_string())]);
-        (sessions.clone(), name, SelectSession(ix).boxed_clone())
-    }));
-    let (edit, view, app) = (
-        word("et.keys.edit"),
-        word("et.keys.view"),
-        word("et.keys.app"),
-    );
-    listed.extend([
-        (
-            sessions,
-            word("et.keys.last_session"),
-            LastSession.boxed_clone(),
-        ),
-        (edit.clone(), word("et.keys.copy"), Copy.boxed_clone()),
-        (edit.clone(), word("et.keys.paste"), Paste.boxed_clone()),
-        (
-            edit.clone(),
-            word("et.keys.select_all"),
-            SelectAll.boxed_clone(),
-        ),
-        (edit, word("et.keys.find"), Find.boxed_clone()),
-        (
-            view.clone(),
-            word("et.keys.previous_prompt"),
-            PreviousPrompt.boxed_clone(),
-        ),
-        (
-            view.clone(),
-            word("et.keys.next_prompt"),
-            NextPrompt.boxed_clone(),
-        ),
-        (
-            view.clone(),
-            word("et.keys.toggle_sessions"),
-            ToggleSessions.boxed_clone(),
-        ),
-        (
-            view.clone(),
-            word("et.keys.toggle_panel"),
-            TogglePanel.boxed_clone(),
-        ),
-        (
-            view.clone(),
-            word("et.menu.toggle_drawer"),
-            ToggleDrawer.boxed_clone(),
-        ),
-        (
-            view.clone(),
-            word("et.menu.tea_party"),
-            ToggleParty.boxed_clone(),
-        ),
-        (view.clone(), word("et.keys.bigger"), Bigger.boxed_clone()),
-        (view.clone(), word("et.keys.smaller"), Smaller.boxed_clone()),
-        (view, word("et.keys.reset_size"), ResetSize.boxed_clone()),
-        (
-            app.clone(),
-            word("et.settings.title"),
-            OpenSettings.boxed_clone(),
-        ),
-        (
-            app.clone(),
-            word("et.keys.minimize"),
-            Minimize.boxed_clone(),
-        ),
-        (app, word("et.keys.quit"), Quit.boxed_clone()),
-    ]);
-    listed
-}
-
-/// Each listed command's keys in the main window's terminal, a line per binding, from the keymap.
-fn shortcuts(cx: &App) -> Vec<Shortcut> {
-    let stack = [workspace::CONTEXT, input::CONTEXT]
-        .map(|name| KeyContext::parse(name).expect("a context name parses"));
-    let keymap = cx.key_bindings();
-    let keymap = keymap.borrow();
-    let mut shortcuts = Vec::new();
-    for (group, name, action) in listed(cx) {
-        for binding in keymap.bindings_for_action(action.as_ref()) {
-            // gpui matches a binding at any depth of the context stack.
-            let applies = binding.predicate().is_none_or(|predicate| {
-                (1..=stack.len()).any(|depth| predicate.eval(&stack[..depth]))
-            });
-            if applies {
-                let strokes: Vec<String> = binding
-                    .keystrokes()
-                    .iter()
-                    .map(|key| key.unparse())
-                    .collect();
-                shortcuts.push(Shortcut {
-                    group: group.clone(),
-                    name: name.clone(),
-                    keys: strokes.join(" ").into(),
-                });
-            }
-        }
-    }
-    shortcuts
 }

@@ -1,5 +1,5 @@
 use std::{
-    path::{MAIN_SEPARATOR, Path, PathBuf},
+    path::{MAIN_SEPARATOR, Path},
     time::Instant,
 };
 
@@ -35,33 +35,29 @@ use status::LISTED;
 use status::hover;
 pub use status::line;
 pub mod orb;
+mod panes;
+
+pub use panes::{Layout, Pane, Program};
 
 pub use drag::{Moving, after_move, row};
 
 use orb::Look;
 
-/// A program on its own terminal, as the sessions column lists it.
+/// A row of the sessions column: one or more panes, one of them focused.
 pub struct Session {
-    /// Its hooks report under this.
+    /// Its hooks report under this; it names the session whichever pane comes or goes.
     pub id: u64,
     pub link_id: LinkId,
-    /// The coding agent it runs, if any.
+    /// The coding agent it runs, if any, in its first pane.
     pub agent: Option<Agent>,
-    pub terminal: Entity<TerminalView>,
-    /// The program's title; empty while it names none.
-    pub title: String,
+    pub panes: Vec<Pane>,
+    pub layout: Layout,
+    /// The pane that takes the keys, as its place in `panes`.
+    pub focused: usize,
     /// The name the user gave it; empty leaves the title to its program.
     pub name: String,
     /// The field its row shows while the user renames it.
     pub editing: Option<(Entity<TextInput>, Subscription)>,
-    /// The folder it reports, else the one it started in.
-    pub folder: PathBuf,
-    /// The program it runs, as its path; empty for the login shell.
-    pub shell: String,
-    /// The arguments its profile gave the program.
-    pub args: Vec<String>,
-    /// Its shell has integration, or it reported a folder anyway.
-    pub reports: bool,
     /// A bell rang while it was hidden.
     pub bell: bool,
     /// The user's own shell under its terminal, once opened.
@@ -76,7 +72,6 @@ pub struct Session {
     pub log: agents::timeline::Timeline,
     /// The trinket its character wears, from her own box: `agents::assets::trinket`.
     pub trinket: usize,
-    pub _events: Subscription,
 }
 
 /// The first trinket none of `taken` wears.
@@ -86,9 +81,24 @@ pub fn free_trinket(taken: impl IntoIterator<Item = usize>) -> usize {
 }
 
 impl Session {
-    /// What it is called: the user's name, else its program's title, else the app's name.
+    /// The focused pane.
+    pub fn pane(&self) -> &Pane {
+        &self.panes[self.focused]
+    }
+
+    /// Its first pane, the oldest it holds: its agent, its hooks and its messages are this one's.
+    pub fn main(&self) -> &Pane {
+        &self.panes[0]
+    }
+
+    /// The focused pane's terminal.
+    pub fn terminal(&self) -> &Entity<TerminalView> {
+        &self.pane().terminal
+    }
+
+    /// What it is called: the user's name, else its focused program's title, else the app's name.
     pub fn named(&self) -> &str {
-        [self.name.as_str(), self.title.as_str()]
+        [self.name.as_str(), self.pane().title.as_str()]
             .into_iter()
             .find(|title| !title.is_empty())
             .unwrap_or(TITLE)
@@ -104,7 +114,7 @@ impl Session {
 
     /// The look its mark takes from its terminal now.
     pub fn looks(&self, cx: &App) -> Option<Look> {
-        let view = self.terminal.read(cx);
+        let view = self.terminal().read(cx);
         let failed = view.ended().is_some_and(|code| code != 0);
         look(view.records().shown().map(|(_, record)| record), failed)
     }
@@ -231,9 +241,8 @@ fn item(
     now: Instant,
     cx: &App,
 ) -> ListItem {
-    let terminal = session.terminal.read(cx);
-    let pid = terminal.pid() as usize;
-    let folder = brief(&session.folder, home);
+    let pid = session.id as usize;
+    let folder = brief(&session.main().folder, home);
     let select = workspace.clone();
     let editing = session.editing.is_some();
     let state = session.task_state(cx);
@@ -335,7 +344,7 @@ fn editor(
     session: &Session,
     input: &Entity<TextInput>,
 ) -> impl IntoElement {
-    let (workspace, id) = (workspace.clone(), session.terminal.entity_id());
+    let (workspace, id) = (workspace.clone(), session.id);
     div()
         // A press selecting text stays the field's: the row would lift it for a drag.
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -375,9 +384,9 @@ fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
         Look::Done => colors.success,
         Look::Idle => colors.fg_muted,
     };
-    let pid = session.terminal.read(cx).pid() as usize;
+    let pid = session.id as usize;
     // Hover reads the records as they stand, so an open one follows them, and scrolls within the window.
-    let watched = session.terminal.downgrade();
+    let watched = session.terminal().downgrade();
     let tip = Tooltip::rich(move |window, cx| {
         let lines = watched.upgrade().map_or_else(Vec::new, |terminal| {
             let view = terminal.read(cx);
