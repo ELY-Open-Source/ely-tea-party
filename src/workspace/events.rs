@@ -1,6 +1,6 @@
 //! What the sessions' terminals report, and presses on the notifications they posted.
 
-use gpui::{Context, EntityId, Window};
+use gpui::{Context, EntityId, Focusable, Window};
 
 use super::Workspace;
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 };
 
 impl Workspace {
-    /// What session `id`'s terminal reported.
+    /// What pane `id`'s terminal reported; only the shown pane moves Files, Git and the title.
     pub(super) fn session_event(
         &mut self,
         id: EntityId,
@@ -17,26 +17,30 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self
-            .sessions
-            .iter()
-            .position(|session| session.terminal.entity_id() == id)
-        else {
+        let Some((index, at)) = self.find_pane(id) else {
             return;
         };
+        let shown = index == self.active && self.sessions[index].focused == at;
         let session = &mut self.sessions[index];
+        let pane = &mut session.panes[at];
         match event {
             TerminalEvent::Title(title) => {
-                log::debug!("app: session {}'s program names it {title:?}", index + 1);
-                session.title.clone_from(title);
-                if let Some(agent) = session.agent.as_mut()
+                log::debug!(
+                    "app: pane {} of session {} is named {title:?}",
+                    at + 1,
+                    index + 1
+                );
+                pane.title.clone_from(title);
+                if at == 0
+                    && let Some(agent) = session.agent.as_mut()
                     && agent.kind == crate::agents::Kind::Gpt
                 {
                     agent.codex_title(title);
                 }
             }
             TerminalEvent::Speed(speed) => {
-                if let Some(agent) = session.agent.as_mut()
+                if at == 0
+                    && let Some(agent) = session.agent.as_mut()
                     && agent.kind == crate::agents::Kind::Gpt
                     && agent.reported_speed(*speed)
                 {
@@ -44,20 +48,23 @@ impl Workspace {
                 }
             }
             TerminalEvent::Folder(folder) => {
-                session.folder.clone_from(folder);
-                session.reports = true;
+                pane.folder.clone_from(folder);
+                pane.reports = true;
                 // Its first prompt: the shell takes the restored agent's resume.
-                if let Some(line) = session.pending.take() {
+                if at == 0
+                    && let Some(line) = session.pending.take()
+                {
                     log::info!("restore: session {} runs {line}", session.id);
-                    session.terminal.read(cx).type_line(&line);
+                    pane.terminal.read(cx).type_line(&line);
                 }
-                if index == self.active {
-                    self.files.update(cx, |files, cx| files.show(folder, cx));
-                    self.git.update(cx, |git, cx| git.show(folder, cx));
+                if shown {
+                    self.show_folder(cx);
                 }
             }
             TerminalEvent::Bell => {
-                if let Some(agent) = session.agent.as_mut().filter(|agent| !agent.hooked) {
+                // Only its first pane holds its agent.
+                let agent = session.agent.as_mut().filter(|_| at == 0);
+                if let Some(agent) = agent.filter(|agent| !agent.hooked) {
                     agent.set(Status::NeedsInput, std::time::Instant::now());
                 }
                 if index != self.active && !session.bell {
@@ -75,20 +82,21 @@ impl Workspace {
                 if index != self.active {
                     return;
                 }
+                let terminal = pane.terminal.clone();
                 match self.files.read(cx).path(key) {
                     Some(path) => {
                         log::info!("app: {} dragged onto the terminal", path.display());
-                        session
-                            .terminal
-                            .update(cx, |view, cx| view.type_paths(&[path], cx));
+                        terminal.update(cx, |view, cx| view.type_paths(&[path], cx));
+                        window.focus(&terminal.focus_handle(cx), cx);
                     }
                     None => log::warn!("app: a tree drag of {key} types nothing"),
                 }
             }
+            TerminalEvent::Focused => return self.pane_focused(id, window, cx),
             TerminalEvent::Exited(status) => {
-                let pid = session.terminal.read(cx).pid();
-                log::info!("app: session {pid}'s program ended, {status}");
-                self.close(index, window, cx);
+                let pid = pane.terminal.read(cx).pid();
+                log::info!("app: pane {pid}'s program ended, {status}");
+                self.close_pane(index, at, window, cx);
                 return;
             }
         }
@@ -98,20 +106,28 @@ impl Workspace {
         cx.notify();
     }
 
-    /// A press on notification `tag`: its session hears of it and shows, unless it asked not to; false when no session here posted it.
+    /// A press on notification `tag`: its pane hears of it and shows, unless it asked not to; false when no session here posted it.
     pub fn pressed(&mut self, tag: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let found = self
             .sessions
             .iter()
             .enumerate()
             .find_map(|(index, session)| {
-                let focus = session.terminal.update(cx, |view, _| view.pressed(tag))?;
-                Some((index, focus))
+                session.panes.iter().enumerate().find_map(|(at, pane)| {
+                    let focus = pane.terminal.update(cx, |view, _| view.pressed(tag))?;
+                    Some((index, at, focus))
+                })
             });
-        let Some((index, focus)) = found else {
+        let Some((index, at, focus)) = found else {
             return false;
         };
         if focus {
+            log::info!(
+                "app: notification {tag} shows pane {} of session {}",
+                at + 1,
+                index + 1
+            );
+            self.sessions[index].focused = at;
             cx.activate(true);
             window.activate_window();
             self.select(index, window, cx);

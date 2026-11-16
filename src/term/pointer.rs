@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use alacritty_terminal::{
     grid::{Dimensions, Scroll},
     index::{Column, Line, Point as Cell, Side},
@@ -5,8 +7,8 @@ use alacritty_terminal::{
     term::TermMode,
 };
 use gpui::{
-    Context, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Size, Window,
+    App, Context, DispatchPhase, Entity, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Size, Task, Window,
 };
 
 use super::{
@@ -25,7 +27,11 @@ pub struct Pointer {
     pub origin: Point<Pixels>,
     pub cell: Size<Pixels>,
     /// The left button is down and drawing a selection.
-    selecting: bool,
+    pub(super) selecting: bool,
+    /// Where the selection drag last stood, in or out of the grid.
+    dragged: Point<Pixels>,
+    /// Scrolls the view while that lies past the grid's top or bottom.
+    edging: Option<Task<()>>,
     /// A plain press's cell, until it drags off it; its release may move the shell's cursor.
     click: Option<Cell>,
     /// Buttons whose press went to the program.
@@ -69,6 +75,44 @@ impl Pointer {
         let row = (delta.y / self.cell.height) as usize;
         (column < size.0 && row < size.1).then_some((column, row))
     }
+}
+
+/// How often a drag past the grid's edge scrolls.
+const EDGE: Duration = Duration::from_millis(40);
+
+/// Lines `y`, from the grid's top, lies above it, or below it as a negative count.
+fn overflow(y: Pixels, height: Pixels, lines: usize) -> i32 {
+    let bottom = height * lines as f32;
+    if height <= Pixels::ZERO {
+        0
+    } else if y < Pixels::ZERO {
+        1 + (-y / height) as i32
+    } else if y >= bottom {
+        -1 - ((y - bottom) / height) as i32
+    } else {
+        0
+    }
+}
+
+/// While a selection drags, every move in the window reaches it; one with the button up ends it.
+pub(super) fn follow_drag(view: &Entity<TerminalView>, window: &mut Window, cx: &App) {
+    if !view.read(cx).pointer.selecting {
+        return;
+    }
+    let view = view.clone();
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+        if phase != DispatchPhase::Bubble {
+            return;
+        }
+        view.update(cx, |view, cx| {
+            if event.pressed_button == Some(MouseButton::Left) {
+                view.drag(event.position, cx);
+            } else {
+                log::debug!("terminal {}: the button came up unseen", view.pty.pid);
+                view.end_selection(cx);
+            }
+        });
+    });
 }
 
 fn button(button: MouseButton) -> Option<Button> {
@@ -215,28 +259,8 @@ impl TerminalView {
         }
         drop(term);
         self.pointer.selecting = true;
+        self.pointer.dragged = event.position;
         cx.notify();
-    }
-
-    /// Points the pointer when the open modifier is down over a link.
-    fn hover(&mut self, modifiers: &Modifiers, cx: &mut Context<Self>) {
-        let on_link = opens(modifiers) && {
-            let (_, point, _) = self.cell_at(self.pointer.at);
-            self.link(point).is_some()
-        };
-        if self.pointer.on_link != on_link {
-            self.pointer.on_link = on_link;
-            cx.notify();
-        }
-    }
-
-    pub(super) fn modifiers_changed(
-        &mut self,
-        event: &ModifiersChangedEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.hover(&event.modifiers, cx);
     }
 
     pub(super) fn mouse_move(
@@ -247,7 +271,7 @@ impl TerminalView {
     ) {
         self.pointer.at = event.position;
         self.hover(&event.modifiers, cx);
-        let (cell, point, side) = self.cell_at(event.position);
+        let (cell, ..) = self.cell_at(event.position);
         let previous = self
             .pointer
             .hover
@@ -256,15 +280,8 @@ impl TerminalView {
         if previous != self.pointer.hovered(event.position, self.size) {
             cx.notify();
         }
+        // The window hands a selection drag its moves, past the grid too.
         if self.pointer.selecting && event.pressed_button == Some(MouseButton::Left) {
-            if self.pointer.click.is_some_and(|click| click != point) {
-                self.pointer.click = None;
-            }
-            if let Some(selection) = self.pty.term.lock().selection.as_mut() {
-                log::trace!("terminal {}: the selection runs to {point:?}", self.pty.pid);
-                selection.update(point, side);
-            }
-            cx.notify();
             return;
         }
         let tracking = self.tracking(&event.modifiers);
@@ -274,6 +291,57 @@ impl TerminalView {
                 .find(|button| self.pointer.pressed.contains(button));
             self.report(held, Gesture::Motion, cell, &event.modifiers, tracking);
         }
+    }
+
+    /// A selection drag's move, anywhere in the window.
+    pub(super) fn drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.pointer.dragged = position;
+        self.extend();
+        if self.overflow() != 0 && self.pointer.edging.is_none() {
+            log::debug!("terminal {}: the drag passes the grid's edge", self.pty.pid);
+            self.pointer.edging = Some(cx.spawn(async move |view, cx| {
+                loop {
+                    cx.background_executor().timer(EDGE).await;
+                    if view.update(cx, |view, cx| view.edge(cx)).is_err() {
+                        break;
+                    }
+                }
+            }));
+        }
+        cx.notify();
+    }
+
+    /// Runs the selection to the cell under the drag, clamped to the grid.
+    fn extend(&mut self) {
+        let (_, point, side) = self.cell_at(self.pointer.dragged);
+        if self.pointer.click.is_some_and(|click| click != point) {
+            self.pointer.click = None;
+        }
+        if let Some(selection) = self.pty.term.lock().selection.as_mut() {
+            log::trace!("terminal {}: the selection runs to {point:?}", self.pty.pid);
+            selection.update(point, side);
+        }
+    }
+
+    fn overflow(&self) -> i32 {
+        let Pointer {
+            origin,
+            cell,
+            dragged,
+            ..
+        } = self.pointer;
+        overflow(dragged.y - origin.y, cell.height, self.size.1)
+    }
+
+    /// One step of a drag held past the grid's edge: the history scrolls under it.
+    fn edge(&mut self, cx: &mut Context<Self>) {
+        let lines = self.overflow();
+        if !self.pointer.selecting || lines == 0 {
+            return;
+        }
+        self.pty.term.lock().scroll_display(Scroll::Delta(lines));
+        self.extend();
+        cx.notify();
     }
 
     pub(super) fn mouse_up(
@@ -316,7 +384,8 @@ impl TerminalView {
     }
 
     /// Ends a selection drag; copy on select takes its text.
-    fn end_selection(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn end_selection(&mut self, cx: &mut Context<Self>) {
+        self.pointer.edging = None;
         if !std::mem::take(&mut self.pointer.selecting) {
             return;
         }
@@ -401,6 +470,10 @@ impl TerminalView {
             self.pty.write(arrow.repeat(steps.unsigned_abs() as usize));
         } else {
             self.pty.term.lock().scroll_display(Scroll::Delta(steps));
+            // A selection drag runs on under the scrolled view.
+            if self.pointer.selecting {
+                self.extend();
+            }
             cx.notify();
         }
     }
@@ -409,4 +482,10 @@ impl TerminalView {
 #[cfg(test)]
 mod hover_tests;
 
+#[cfg(test)]
+mod edge_tests;
+
 mod copy;
+mod link;
+
+mod guard;

@@ -1,4 +1,4 @@
-//! The background picture, where the settings put it.
+//! The background picture and its gradient, where the settings put them.
 
 use std::{
     cell::{Cell, RefCell},
@@ -9,10 +9,13 @@ use std::{
 
 use gpui::{
     AnyElement, App, Bounds, Hsla, ImageAssetLoader, IntoElement, ObjectFit, ParentElement, Pixels,
-    RenderImage, Resource, Styled, StyledImage, Window, canvas, div, img, point, px, size,
+    RenderImage, Resource, Styled, StyledImage, Window, canvas, div, img, linear_color_stop,
+    linear_gradient, point, px, size,
 };
 
-use crate::settings::{BackgroundScope, PictureRepeat, Settings};
+use crate::settings::{BackgroundScope, PictureRepeat, Settings, color};
+
+mod mask;
 
 /// The most tiles one picture draws; past it the picture draws once.
 const MAX_TILES: usize = 400;
@@ -58,13 +61,16 @@ fn measure(slot: &'static LocalKey<Cell<Option<Bounds<Pixels>>>>) -> impl IntoEl
     .inset_0()
 }
 
-/// The window's ground and the picture over it, at the background's opacity; nothing without one.
+/// The window's ground, the picture over it and its gradient over both, at the background's opacity; nothing without a picture.
 pub(super) fn paint(
     settings: &Settings,
     base: Hsla,
     window: &mut Window,
     cx: &mut App,
 ) -> Option<AnyElement> {
+    if !masks(settings) {
+        mask::forget(window);
+    }
     if settings.background_image.is_empty() {
         return None;
     }
@@ -113,14 +119,47 @@ pub(super) fn paint(
         .top(bounds.origin.y)
         .w(bounds.size.width)
         .h(bounds.size.height);
+    // A repeated picture's tiles would cut the fade, so only one drawn once is masked.
+    let picture = if masks(settings) {
+        mask::masked(&image, settings, place, drawn, container, window)
+    } else {
+        image
+    };
+    let opacity = settings.background_image_opacity;
     for (x, y) in tiles(settings.background_repeat, place, drawn, container) {
-        boxed = boxed.child(tile(&image, x, y, drawn));
+        boxed = boxed.child(tile(&picture, x, y, drawn, opacity));
+    }
+    if settings.background_gradient {
+        boxed = boxed.child(gradient(settings));
     }
     Some(ground().child(boxed).into_any_element())
 }
 
+/// Whether the settings mask the picture: a mask on a picture drawn once.
+fn masks(settings: &Settings) -> bool {
+    let once = settings.background_repeat == PictureRepeat::NoRepeat;
+    settings.background_mask && once && !settings.background_image.is_empty()
+}
+
+/// The gradient over the picture, from its first color to its last at its angle.
+fn gradient(settings: &Settings) -> impl IntoElement {
+    let stop =
+        |text: &str, at| linear_color_stop(color(text).expect("the settings checked it"), at);
+    div().absolute().inset_0().bg(linear_gradient(
+        settings.background_gradient_angle,
+        stop(&settings.background_gradient_from, 0.0),
+        stop(&settings.background_gradient_to, 1.0),
+    ))
+}
+
 /// One tile of the picture, at `x` and `y` in its box.
-fn tile(image: &Arc<RenderImage>, x: f32, y: f32, drawn: (f32, f32)) -> impl IntoElement {
+fn tile(
+    image: &Arc<RenderImage>,
+    x: f32,
+    y: f32,
+    drawn: (f32, f32),
+    opacity: f32,
+) -> impl IntoElement {
     img(image.clone())
         .absolute()
         .left(px(x))
@@ -128,6 +167,7 @@ fn tile(image: &Arc<RenderImage>, x: f32, y: f32, drawn: (f32, f32)) -> impl Int
         .w(px(drawn.0))
         .h(px(drawn.1))
         .object_fit(ObjectFit::Fill)
+        .opacity(opacity)
 }
 
 /// Where each tile starts, from the picture's place in its box; past `MAX_TILES`, the first one alone.

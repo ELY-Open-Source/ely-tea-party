@@ -98,6 +98,56 @@ fn name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// How a dropped path is typed for the program at `path`.
+#[cfg(windows)]
+pub(crate) fn quote_for(path: &Path) -> Quote {
+    quote(&name(path))
+}
+
+/// How a dropped path is typed for the shell `name` names.
+fn quote(name: &str) -> Quote {
+    match name {
+        "pwsh" | "powershell" => Quote::PowerShell,
+        "cmd" => Quote::Cmd,
+        _ => Quote::Posix,
+    }
+}
+
+/// `program` with `args` in `folder`, as written: no integration, as `-e` asks.
+pub fn command(program: &str, args: &[String], folder: PathBuf) -> anyhow::Result<Launch> {
+    anyhow::ensure!(
+        !program.is_empty(),
+        "shell integration: -e names an empty program"
+    );
+    // Unix's child finds it after entering the folder, as a shell would.
+    #[cfg(unix)]
+    let program = program.to_string();
+    // Windows finds it in the parent, so as the session would: its folder, then its PATH.
+    #[cfg(windows)]
+    let program = {
+        let named = Path::new(program);
+        let program = if named.is_relative() && named.components().count() > 1 {
+            folder.join(named).display().to_string()
+        } else {
+            program.to_string()
+        };
+        // Relative PATH entries, as the session reads them.
+        let path = super::env::path()?;
+        let folders = std::iter::once(folder.clone())
+            .chain(env::split_paths(&path).map(|entry| folder.join(entry)));
+        let folders = env::join_paths(folders).context("shell integration: -e's PATH")?;
+        crate::settings::program_path_in(&program, &folders).context("shell integration: -e")?
+    };
+    log::info!("shell integration: none for {program}, which -e runs as written");
+    Ok(Launch {
+        quote: quote(&name(Path::new(&program))),
+        program: Some((program, args.to_vec())),
+        cwd: folder,
+        env: Vec::new(),
+        reports: false,
+    })
+}
+
 /// Whether `folder` lies on a share, `\\server\share`.
 #[cfg(windows)]
 fn unc(folder: &Path) -> bool {
@@ -147,11 +197,7 @@ pub fn launch(
         cwd,
         env: crate::communication::path::environment()?,
         reports: true,
-        quote: match name.as_str() {
-            "pwsh" | "powershell" => Quote::PowerShell,
-            "cmd" => Quote::Cmd,
-            _ => Quote::Posix,
-        },
+        quote: quote(&name),
     };
     if !args.is_empty() && (distro.is_none() || !cfg!(windows)) {
         launch.reports = false;
@@ -180,7 +226,16 @@ pub fn launch(
             } else {
                 &previous
             };
-            let data = format!("{}:{rest}", dir.display());
+            #[cfg(not(windows))]
+            let ours = dir.display().to_string();
+            // MSYS2's fish reads its folders as its runtime names them.
+            #[cfg(windows)]
+            let ours = {
+                let (ours, cygpath) = posix(Path::new(&path), dir)?;
+                launch.env.push(("ELY_CYGPATH".into(), cygpath));
+                ours
+            };
+            let data = format!("{ours}:{rest}");
             launch.env.push(("XDG_DATA_DIRS".into(), data));
             launch.env.push(("ELY_FISH_XDG_DATA_DIRS".into(), previous));
         }
@@ -247,7 +302,9 @@ pub fn launch(
             }
             launch.program = Some((path.clone(), args));
             let shared = super::env::fresh()?.get("WSLENV").map(str::to_string);
-            let shared = shared.map_or("ELY_WSL/p".into(), |list| format!("{list}:ELY_WSL/p"));
+            // The terminal's name crosses into the distribution too.
+            let ours = "ELY_WSL/p:TERM_PROGRAM:TERM_PROGRAM_VERSION";
+            let shared = shared.map_or(ours.into(), |list| format!("{list}:{ours}"));
             launch
                 .env
                 .push(("ELY_WSL".into(), dir.display().to_string()));
@@ -335,6 +392,40 @@ fn git_bash(sh: &Path) -> bool {
         })
         .and_then(Path::parent)
         .is_some_and(|root| root.join("usr").join("bin").join("bash.exe").is_file())
+}
+
+/// The integration folder and the `cygpath` beside `fish`, as that runtime names them.
+#[cfg(windows)]
+fn posix(fish: &Path, dir: &Path) -> anyhow::Result<(String, String)> {
+    let cygpath = fish.with_file_name("cygpath.exe");
+    anyhow::ensure!(
+        cygpath.is_file(),
+        "shell integration: no cygpath.exe beside {}, so fish's folders cannot be named",
+        fish.display()
+    );
+    let mut command = std::process::Command::new(&cygpath);
+    command.arg("-u").arg(dir).arg(&cygpath);
+    std::os::windows::process::CommandExt::creation_flags(
+        &mut command,
+        crate::git::CREATE_NO_WINDOW,
+    );
+    let out = command
+        .output()
+        .with_context(|| format!("shell integration: {} did not run", cygpath.display()))?;
+    anyhow::ensure!(
+        out.status.success(),
+        "shell integration: {} failed, {}: {}",
+        cygpath.display(),
+        out.status,
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    let text =
+        String::from_utf8(out.stdout).context("shell integration: cygpath wrote no UTF-8")?;
+    let [ours, cygpath] = text.lines().collect::<Vec<_>>()[..] else {
+        anyhow::bail!("shell integration: cygpath named {text:?}, not two paths");
+    };
+    log::info!("shell integration: fish reads {ours}, and {cygpath} names its folders");
+    Ok((ours.to_string(), cygpath.to_string()))
 }
 
 /// Whether `path` lies in the folder Windows puts its App Execution Aliases in.

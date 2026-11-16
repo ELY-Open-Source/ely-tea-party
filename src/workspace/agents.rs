@@ -113,7 +113,7 @@ impl Workspace {
         let now = Instant::now();
         let mut shown = false;
         for session in &mut self.sessions {
-            let view = session.terminal.read(cx);
+            let view = session.main().terminal.read(cx);
             let held = foreground(view.pid(), view.foreground());
             let had = session
                 .agent
@@ -151,12 +151,12 @@ impl Workspace {
                 && agent.kind == crate::agents::Kind::Gpt
             {
                 if let Some(pid) = view.foreground() {
-                    agent.startup_speed(pid, &session.folder);
+                    agent.startup_speed(pid, &session.panes[0].folder);
                 }
                 if agent.speed == crate::agents::speed::Speed::Unknown
                     || had.is_none_or(|(kind, _)| kind != agent.kind)
                 {
-                    agent.codex_title(&session.title);
+                    agent.codex_title(&session.panes[0].title);
                 }
                 if !agent.hooked
                     && let Some((_, record)) = view.records().iter().find(|(id, record)| {
@@ -289,7 +289,7 @@ impl Workspace {
             };
             if let (Some(kind), Some(detail)) = (kind, &report.detail) {
                 crate::memory::Service::get(cx).record(
-                    session.folder.clone(),
+                    session.panes[0].folder.clone(),
                     session.link_id.url(),
                     kind.into(),
                     detail.clone(),
@@ -302,10 +302,10 @@ impl Workspace {
         session.log.retain_reply(report.reply.clone());
         if let Some(said) = report.detail.clone() {
             match report.event.as_str() {
-                "UserPromptSubmit" => session
+                "UserPromptSubmit" => session.panes[0]
                     .terminal
                     .update(cx, |view, cx| view.prompted(said, cx)),
-                "Stop" | "agent-turn-complete" => session
+                "Stop" | "agent-turn-complete" => session.panes[0]
                     .terminal
                     .update(cx, |view, cx| view.replied(said, cx)),
                 _ => {}

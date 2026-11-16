@@ -11,9 +11,10 @@ use gpui::{
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
-    agents, blur, i18n, menus,
+    agents, blur, i18n, keymap, menus,
+    sessions::Program,
     settings::{self, Place, SettingsStore},
-    term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
+    term::{ICONS, Launch, MONO, config, shell::ShellIntegration, spawn},
     themes, update,
     workspace::{self, TITLE, Workspace},
 };
@@ -62,11 +63,13 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         cx.on_app_quit(|_| async { agents::hooks::close() })
             .detach();
     }
-    input::bind_keys(cx);
+    // Before the keymap, which keeps what is bound so far.
     workspace::bind_keys(cx);
-    settings::window::bind_keys(cx);
+    settings::window::init(cx);
     menus::init(cx);
+    keymap::init(cx);
     update::init(cx);
+    crate::control::start(cx);
     cx.set_app_identity(APP_ID, TITLE);
     // A press on a notification goes to the window whose session posted it.
     cx.on_system_notification_response(|response, cx| {
@@ -144,13 +147,14 @@ pub enum Restore {
     Off,
     /// The first saved session takes the window's first.
     First,
-    /// The window's first session stays, shown, and the saved ones follow it: a folder was named.
+    /// The window's first session stays, shown, and the saved ones follow it: a folder or a program was named.
     Behind,
 }
 
-/// Opens the main window running `launch`, or, with `restore`, the sessions saved last time.
+/// Opens the main window running `launch`, started for `program`, or, with `restore`, the sessions saved last time.
 pub fn open(
     mut launch: Launch,
+    program: Program,
     restore: Restore,
     cx: &mut App,
 ) -> anyhow::Result<WindowHandle<Workspace>> {
@@ -167,6 +171,51 @@ pub fn open(
             &cx.global::<ShellIntegration>().0,
         )?;
     }
+    let id = agents::next_session();
+    launch.env.extend(agents::env(id, false)?);
+    let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
+    let saved = saved.map(|saved| (saved, restore == Restore::Behind));
+    open_started(id, (pty, events, launch), program, saved, cx)
+}
+
+/// A session Windows handed over: a new row in the main window, else the first one.
+#[cfg(windows)]
+pub fn adopt(handoff: crate::defterm::Handoff, cx: &mut App) -> anyhow::Result<()> {
+    let title = handoff.title.clone();
+    let started = crate::term::adopt(handoff, config(SettingsStore::get(cx)))?;
+    let main = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| window.downcast::<Workspace>());
+    log::info!("app: a handed session, titled {title:?}, opens");
+    match main {
+        Some(main) => main.update(cx, |workspace, window, cx| {
+            workspace.adopt(started, window, cx);
+            window.activate_window();
+        })?,
+        None => {
+            // Its program runs already, so no hook of it names this session.
+            open_started(
+                agents::next_session(),
+                started,
+                Program::default(),
+                None,
+                cx,
+            )?;
+        }
+    }
+    cx.activate(true);
+    Ok(())
+}
+
+/// Opens the main window on started session `id`, the `saved` sessions with it, behind it if so said.
+fn open_started(
+    id: u64,
+    (pty, events, launch): (crate::term::Pty, crate::term::Events, Launch),
+    program: Program,
+    saved: Option<(workspace::restore::Saved, bool)>,
+    cx: &mut App,
+) -> anyhow::Result<WindowHandle<Workspace>> {
     let (bounds, display_id) = opening_bounds(cx);
     let background = blur::appearance(SettingsStore::get(cx));
     let least = px(*settings::WINDOW.start());
@@ -185,9 +234,6 @@ pub fn open(
         window_background: background,
         ..Default::default()
     };
-    let id = agents::next_session();
-    launch.env.extend(agents::env(id, false)?);
-    let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
     // Windows' wheel settings, read where gpui reads its own.
     #[cfg(windows)]
     crate::term::keep_wheel()?;
@@ -198,9 +244,9 @@ pub fn open(
             .detach();
         cx.new(|cx| {
             keep_bounds(window, cx);
-            let mut workspace = Workspace::new((id, pty, events), launch, window, cx);
-            if let Some(saved) = saved {
-                workspace.restore(saved, restore == Restore::Behind, window, cx);
+            let mut workspace = Workspace::new(id, (pty, events, launch), program, window, cx);
+            if let Some((saved, behind)) = saved {
+                workspace.restore(saved, behind, window, cx);
             }
             workspace
         })

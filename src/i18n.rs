@@ -12,16 +12,20 @@ mod en;
 mod en_characters;
 mod en_drawer;
 mod en_files;
+mod en_keys;
 mod en_messaging;
 mod en_switcher;
 mod en_tasks;
+mod en_terminal;
 mod zh;
 mod zh_characters;
 mod zh_drawer;
 mod zh_files;
+mod zh_keys;
 mod zh_messaging;
 mod zh_switcher;
 mod zh_tasks;
+mod zh_terminal;
 
 /// Every English word, the catalog others mirror.
 fn english() -> Vec<(&'static str, &'static str)> {
@@ -30,7 +34,9 @@ fn english() -> Vec<(&'static str, &'static str)> {
         en_drawer::MESSAGES,
         en_characters::MESSAGES,
         en_files::MESSAGES,
+        en_keys::MESSAGES,
         en_tasks::MESSAGES,
+        en_terminal::MESSAGES,
         en_switcher::MESSAGES,
         en_messaging::MESSAGES,
     ]
@@ -44,7 +50,9 @@ fn chinese() -> Vec<(&'static str, &'static str)> {
         zh_drawer::MESSAGES,
         zh_characters::MESSAGES,
         zh_files::MESSAGES,
+        zh_keys::MESSAGES,
         zh_tasks::MESSAGES,
+        zh_terminal::MESSAGES,
         zh_switcher::MESSAGES,
         zh_messaging::MESSAGES,
     ]

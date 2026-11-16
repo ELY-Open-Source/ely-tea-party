@@ -76,7 +76,7 @@ fn entries(owner: &Workspace, window: WindowHandle<Workspace>, cx: &App) -> Vec<
                 id: session.id,
                 window: handle,
                 title: sessions::compact::title(session),
-                folder: sessions::one_line(&session.folder.to_string_lossy()),
+                folder: sessions::one_line(&session.main().folder.to_string_lossy()),
                 agent,
                 kind,
                 state: session.task_state(cx),

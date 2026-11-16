@@ -73,7 +73,7 @@ fn items(path: &Path, cx: &App) -> Menu {
 
 impl TerminalView {
     /// A press: a right one on a file asks for the menu; one beside the open menu only closes it.
-    pub(super) fn press(
+    pub(super) fn pressed_down(
         &mut self,
         event: &MouseDownEvent,
         window: &mut Window,

@@ -98,7 +98,7 @@ impl Workspace {
         Some(format!(
             "{}\n{}",
             session.link_id.url(),
-            session.folder.display()
+            session.main().folder.display()
         ))
     }
 
@@ -109,7 +109,7 @@ impl Workspace {
             && let Some(session) = self.sessions.get(self.active)
         {
             crate::memory::organize::poll(
-                session.folder.clone(),
+                session.main().folder.clone(),
                 SettingsStore::get(cx).butler.clone(),
                 SettingsStore::get(cx).language.tag().into(),
                 cx,
@@ -152,10 +152,16 @@ impl Workspace {
             }
         };
         let session = &self.sessions[self.active];
-        let source = session.terminal.read(cx).snapshot_source(
+        let source = session.main().terminal.read(cx).snapshot_source(
             session.id.to_string(),
             session.named().chars().take(80).collect(),
-            session.folder.to_string_lossy().chars().take(256).collect(),
+            session
+                .main()
+                .folder
+                .to_string_lossy()
+                .chars()
+                .take(256)
+                .collect(),
             session.link_id.url(),
         );
         let prompt = session
@@ -170,7 +176,7 @@ impl Workspace {
         let memory_service = crate::memory::Service::get(cx);
         let memory_revision = memory_service.revision();
         let memory_enabled = config.memory;
-        let folder = session.folder.clone();
+        let folder = session.main().folder.clone();
         let session_link = session.link_id.url();
         let task = prompt.clone().unwrap_or_default();
         let read_folder = folder.clone();

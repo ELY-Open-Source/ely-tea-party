@@ -1,48 +1,68 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 
 use anyhow::Context as _;
-use gpui::{AppContext, Context, EntityId, Window};
+use gpui::{Context, Window};
 
 use super::Workspace;
 use crate::{
     agents,
-    sessions::{self, Session},
+    sessions::{self, Layout, Program, Session, orb},
     settings::{self, SettingsStore, StartIn},
-    term::{Events, Launch, Pty, TerminalView, shell::Start},
+    term::{
+        Events, Launch, Pty, config,
+        shell::{ShellIntegration, Start, command, launch},
+        spawn,
+    },
 };
 
 impl Workspace {
-    /// Keeps session `id`, `pty` started from `launch`, as the last row.
+    /// Notes each session's mark `now`, and draws the window at each step while one shown moves.
+    pub(super) fn tick(&mut self, now: Instant, cx: &mut Context<Self>) {
+        let mut moving = false;
+        for session in &mut self.sessions {
+            moving |= session.note(now, cx);
+        }
+        let moving = moving && SettingsStore::get(cx).show_sessions;
+        if moving == self.ticking.is_some() {
+            return;
+        }
+        log::debug!("app: status marks {}", if moving { "move" } else { "rest" });
+        self.ticking = moving.then(|| {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(orb::wait(Instant::now()))
+                        .await;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        break;
+                    }
+                }
+            })
+        });
+    }
+
+    /// Keeps session `id`, its first pane started to run `program`, as the last row.
     pub(super) fn add(
         &mut self,
-        (id, pty, events): (u64, Pty, Events),
-        launch: Launch,
-        args: Vec<String>,
+        id: u64,
+        started: (Pty, Events, Launch),
+        program: Program,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
-        let entity = terminal.entity_id();
-        let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
-            this.session_event(entity, event, window, cx)
-        });
-        let shell =
-            (launch.program.as_ref()).map_or_else(String::new, |(program, _)| program.clone());
-        let pid = terminal.read(cx).pid();
-        log::info!("app: session {pid} opens in {}", launch.cwd.display());
+        let pane = self.pane(started, program, window, cx);
+        let layout = Layout::Pane(pane.id());
+        log::info!("app: session {} opens", self.sessions.len() + 1);
         let trinket = sessions::free_trinket(self.sessions.iter().map(|session| session.trinket));
         self.sessions.push(Session {
             id,
             link_id: Default::default(),
             agent: None,
-            terminal,
-            title: String::new(),
+            panes: vec![pane],
+            layout,
+            focused: 0,
             name: String::new(),
             editing: None,
-            folder: launch.cwd,
-            shell,
-            args,
-            reports: launch.reports,
             bell: false,
             waiting: false,
             look: None,
@@ -50,7 +70,6 @@ impl Workspace {
             trinket,
             drawer: None,
             pending: None,
-            _events: events,
         });
     }
 
@@ -59,8 +78,11 @@ impl Workspace {
         let Some(start) = self.start_in(cx) else {
             return;
         };
-        let shell = SettingsStore::get(cx).shell.clone();
-        if let Err(error) = self.open(&shell, Vec::new(), start, None, window, cx) {
+        let program = Program {
+            shell: SettingsStore::get(cx).shell.clone(),
+            ..Program::default()
+        };
+        if let Err(error) = self.open(program, start, None, window, cx) {
             log::error!("app: no new session: {error:#}");
         }
     }
@@ -81,7 +103,12 @@ impl Workspace {
             },
         };
         log::info!("app: a profile opens {shell} with {} arguments", args.len());
-        if let Err(error) = self.open(&shell, args, start, None, window, cx) {
+        let program = Program {
+            shell,
+            args,
+            written: false,
+        };
+        if let Err(error) = self.open(program, start, None, window, cx) {
             log::error!("app: no profile session: {error:#}");
         }
     }
@@ -94,7 +121,9 @@ impl Workspace {
             StartIn::Session => Some(
                 self.sessions
                     .get(self.active)
-                    .map_or(Start::Home, |session| Start::In(session.folder.clone())),
+                    .map_or(Start::Home, |session| {
+                        Start::In(session.pane().folder.clone())
+                    }),
             ),
             StartIn::Folder => match settings::start_folder(&settings.start_folder) {
                 Ok(folder) => Some(Start::In(folder)),
@@ -107,23 +136,22 @@ impl Workspace {
     }
 
     /// Session `id` again: the shell it runs, in the folder it last reported.
-    pub fn duplicate(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((shell, args, folder, index)) = self
+    pub fn duplicate(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((program, folder, index)) = self
             .sessions
             .iter()
             .enumerate()
-            .find(|(_, session)| session.terminal.entity_id() == id)
+            .find(|(_, session)| session.id == id)
             .map(|(index, session)| {
-                let shell = session.shell.clone();
-                (shell, session.args.clone(), session.folder.clone(), index)
+                let pane = session.pane();
+                (pane.program.clone(), pane.folder.clone(), index)
             })
         else {
             log::error!("app: there is no session {id:?} to duplicate");
             return;
         };
         log::info!("app: session {id:?} duplicates into {}", folder.display());
-        if let Err(error) = self.open(&shell, args, Start::In(folder), Some(index + 1), window, cx)
-        {
+        if let Err(error) = self.open(program, Start::In(folder), Some(index + 1), window, cx) {
             log::error!("app: no duplicate session: {error:#}");
         }
     }
@@ -135,29 +163,72 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
-        let (shell, args) = self
+        let program = self
             .sessions
             .get(self.active)
-            .map(|session| (session.shell.clone(), session.args.clone()))
+            .map(|session| session.pane().program.clone())
             .context("app: no active session for the chosen folder")?;
         log::info!("app: session here {}", folder.display());
         let at = Some(self.active + 1);
-        self.open(&shell, args, Start::In(folder), at, window, cx)
+        self.open(program, Start::In(folder), at, window, cx)
     }
 
-    /// Shows a `shell` session with `args` from `start`, at `at` or last.
+    /// Shows a session Windows handed over, last.
+    #[cfg(windows)]
+    pub fn adopt(
+        &mut self,
+        started: (Pty, Events, Launch),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Its program runs already, so no hook of it names this session.
+        self.add(
+            agents::next_session(),
+            started,
+            Program::default(),
+            window,
+            cx,
+        );
+        self.select(self.sessions.len() - 1, window, cx);
+    }
+
+    /// Starts `program` from `start`, its pty sized as the first layout will fit it. With `hooked`, its agents' hooks and messages reach the app as that session's own.
+    pub(super) fn started(
+        &self,
+        program: &Program,
+        start: Start,
+        hooked: Option<u64>,
+        cx: &Context<Self>,
+    ) -> anyhow::Result<(Pty, Events, Launch)> {
+        let Program {
+            shell,
+            args,
+            written,
+        } = program;
+        let mut launch = match (written, start) {
+            (true, Start::In(folder)) => command(shell, args, folder)?,
+            (true, Start::Home) => anyhow::bail!("app: a written program starts in a folder"),
+            (false, start) => launch(shell, args, start, &cx.global::<ShellIntegration>().0)?,
+        };
+        if let Some(id) = hooked {
+            launch.env.extend(agents::env(id, false)?);
+        }
+        let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
+        Ok((pty, events, launch))
+    }
+
+    /// Shows a session of `program` from `start`, at `at` or last.
     fn open(
         &mut self,
-        shell: &str,
-        args: Vec<String>,
+        program: Program,
         start: Start,
         at: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
         let id = agents::next_session();
-        let ((pty, events), launch) = super::start(shell, &args, start, (id, false), cx)?;
-        self.add((id, pty, events), launch, args, window, cx);
+        let started = self.started(&program, start, Some(id), cx)?;
+        self.add(id, started, program, window, cx);
         let last = self.sessions.len() - 1;
         if let Some(at) = at {
             self.move_session(last, at, cx);

@@ -3,12 +3,12 @@ use ely_gpui_component::{
     menus::{Menu, MenuItem},
     primitives::IconName,
 };
-use gpui::{App, ClipboardItem, Entity, EntityId};
+use gpui::{App, ClipboardItem, Entity};
 
 use crate::workspace::Workspace;
 
 /// What a right press on the row of session `id` offers.
-pub fn row(workspace: &Entity<Workspace>, id: EntityId, cx: &App) -> Menu {
+pub fn row(workspace: &Entity<Workspace>, id: u64, cx: &App) -> Menu {
     let (duplicate, close) = (workspace.clone(), workspace.clone());
     let link = workspace.clone();
     Menu::new()
@@ -20,7 +20,7 @@ pub fn row(workspace: &Entity<Workspace>, id: EntityId, cx: &App) -> Menu {
                         .read(cx)
                         .sessions()
                         .iter()
-                        .find(|session| session.terminal.entity_id() == id)
+                        .find(|session| session.id == id)
                     {
                         cx.write_to_clipboard(ClipboardItem::new_string(session.link_id.url()));
                     }
@@ -39,12 +39,9 @@ pub fn row(workspace: &Entity<Workspace>, id: EntityId, cx: &App) -> Menu {
                 .icon(IconName::X)
                 .on_click(move |window, cx| {
                     close.update(cx, |this, cx| {
-                        let found = this
-                            .sessions()
-                            .iter()
-                            .position(|session| session.terminal.entity_id() == id);
+                        let found = this.sessions().iter().position(|session| session.id == id);
                         if let Some(index) = found {
-                            this.close(index, window, cx);
+                            this.close_asked(index, None, window, cx);
                         }
                     })
                 }),

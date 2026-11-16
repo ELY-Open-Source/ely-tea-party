@@ -1,6 +1,7 @@
 use super::*;
 use crate::term::{Kind, Records};
 use crate::{i18n, settings::Language};
+use std::path::PathBuf;
 
 #[test]
 fn folders_under_home_read_from_a_tilde() {

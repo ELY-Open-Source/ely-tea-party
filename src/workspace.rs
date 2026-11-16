@@ -8,7 +8,7 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ControlSize},
 };
 use gpui::{
-    App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
+    AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Subscription,
     Task, Window, div, prelude::FluentBuilder,
 };
@@ -39,30 +39,31 @@ mod widths;
 pub use agents::Reports;
 pub use drawer::Drawer;
 pub use keys::{
-    CloseSession, JumpToWaiting, LastSession, NewSession, NextSession, PreviousSession,
-    QuickSwitch, SelectSession, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions, bind_keys,
+    CloseSession, JumpToWaiting, LastSession, NewSession, NextPane, NextSession, PreviousPane,
+    PreviousSession, QuickSwitch, SelectSession, SplitDown, SplitRight, ToggleDrawer, TogglePanel,
+    ToggleParty, ToggleSessions, bind_keys,
 };
 
 use header::column_toggle;
 use widths::{Dragged, Side};
 
 use crate::{
-    agents as characters,
     blur::Blur,
     files::{Files, Here},
     git::panel::{Acted, GitPanel},
     menus,
-    sessions::{self, Session, orb},
+    sessions::{self, Program, Session},
     settings::{PanelTab, SettingsStore, window::OpenSettings},
-    term::{
-        Events, Launch, Pty, config,
-        shell::{ShellIntegration, Start, launch},
-        spawn,
-    },
+    term::{Events, Launch, Pty},
 };
 
+mod control;
 mod folder;
+mod leave;
+mod panes;
 mod wallpaper;
+
+pub use leave::Leave;
 
 /// The key context of the main window's content.
 pub const CONTEXT: &str = "Workspace";
@@ -105,6 +106,8 @@ pub struct Workspace {
     found: Vec<crate::profiles::Found>,
     choosing_folder: bool,
     folder_actions: bool,
+    /// A close that waits for the user's word, and the programs it would end.
+    leaving: Option<(Leave, Vec<String>)>,
     _settings: Subscription,
     _updates: Subscription,
     _acted: Subscription,
@@ -113,17 +116,18 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// The window's content with its first session `id`, `pty` started from `launch`.
+    /// The window's content with its first session `id`, `pty` started from `launch` to run `program`.
     pub fn new(
-        (id, pty, events): (u64, Pty, Events),
-        launch: Launch,
+        id: u64,
+        (pty, events, launch): (Pty, Events, Launch),
+        program: Program,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let git = cx.new(|cx| GitPanel::new(launch.cwd.clone(), window, cx));
         // A change the Git panel made shows in Files' marks too.
         let acted = cx.subscribe(&git, |this, _, _: &Acted, cx| {
-            let folder = this.sessions[this.active].folder.clone();
+            let folder = this.sessions[this.active].pane().folder.clone();
             this.files.update(cx, |files, cx| files.show(&folder, cx));
         });
         let files = cx.new(|cx| {
@@ -160,6 +164,7 @@ impl Workspace {
             party_focus: cx.focus_handle(),
             meters: usage::Meters::default(),
             glide: panel::Glide::default(),
+            leaving: None,
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 this.quiet_companion(cx);
@@ -182,34 +187,9 @@ impl Workspace {
             _here: here,
         };
         workspace.watch_companion(window, cx);
-        workspace.add((id, pty, events), launch, Vec::new(), window, cx);
+        workspace.add(id, (pty, events, launch), program, window, cx);
         workspace.select(0, window, cx);
         workspace
-    }
-
-    /// Notes each session's mark `now`, and draws the window at each step while one shown moves.
-    fn tick(&mut self, now: Instant, cx: &mut Context<Self>) {
-        let mut moving = false;
-        for session in &mut self.sessions {
-            moving |= session.note(now, cx);
-        }
-        let moving = moving && SettingsStore::get(cx).show_sessions;
-        if moving == self.ticking.is_some() {
-            return;
-        }
-        log::debug!("app: status marks {}", if moving { "move" } else { "rest" });
-        self.ticking = moving.then(|| {
-            cx.spawn(async move |this, cx| {
-                loop {
-                    cx.background_executor()
-                        .timer(orb::wait(Instant::now()))
-                        .await;
-                    if this.update(cx, |_, cx| cx.notify()).is_err() {
-                        break;
-                    }
-                }
-            })
-        });
     }
 
     /// Shows session `index`, clears its bell and its waiting mark, and gives its terminal the keys.
@@ -217,7 +197,7 @@ impl Workspace {
         if index >= self.sessions.len() {
             return;
         }
-        self.sidebar.reveal(&self.sessions[index].folder);
+        self.sidebar.reveal(&self.sessions[index].main().folder);
         if self.switcher.take().is_some() {
             log::debug!("switcher: closed as a session takes focus");
         }
@@ -228,26 +208,26 @@ impl Workspace {
             && let Some(hidden) = self.sessions.get(self.active)
         {
             let drawer = hidden.drawer.as_ref().map(|drawer| &drawer.terminal);
-            for terminal in std::iter::once(&hidden.terminal).chain(drawer) {
+            for terminal in hidden.panes.iter().map(|pane| &pane.terminal).chain(drawer) {
                 terminal.update(cx, |view, cx| view.let_go(cx));
             }
-            hidden
-                .terminal
-                .update(cx, |view, _| view.set_front(false, window));
+            for pane in &hidden.panes {
+                pane.terminal
+                    .update(cx, |view, _| view.set_front(false, window));
+            }
         }
         self.party = false;
         let session = &mut self.sessions[index];
         switcher::visit(session.id, cx);
         session.bell = false;
         session.waiting = false;
-        session
-            .terminal
-            .update(cx, |view, _| view.set_front(true, window));
-        window.focus(&session.terminal.focus_handle(cx), cx);
-        let folder = session.folder.clone();
-        self.files.update(cx, |files, cx| files.show(&folder, cx));
-        self.git.update(cx, |git, cx| git.show(&folder, cx));
+        for pane in &session.panes {
+            pane.terminal
+                .update(cx, |view, _| view.set_front(true, window));
+        }
+        window.focus(&session.terminal().focus_handle(cx), cx);
         self.active = index;
+        self.show_folder(cx);
         log::debug!("app: session {} shown", index + 1);
         self.retitle(window);
         cx.notify();
@@ -259,10 +239,15 @@ impl Workspace {
             return;
         }
         let session = self.sessions.remove(index);
-        log::info!("app: session {} closes", session.terminal.read(cx).pid());
+        log::info!("app: session {} closes", index + 1);
         // Its textures leave the window's atlas with it.
         let drawer = session.drawer.as_ref().map(|drawer| &drawer.terminal);
-        for terminal in std::iter::once(&session.terminal).chain(drawer) {
+        for terminal in session
+            .panes
+            .iter()
+            .map(|pane| &pane.terminal)
+            .chain(drawer)
+        {
             terminal.update(cx, |view, _| view.set_front(false, window));
         }
         if self.sessions.is_empty() {
@@ -300,20 +285,6 @@ impl Workspace {
     }
 }
 
-/// Starts `shell`, the Shell setting's way of naming one, in `folder`; its hooks reach the app under session `id`, as its terminal's or its drawer's.
-fn start(
-    shell: &str,
-    args: &[String],
-    folder: impl Into<Start>,
-    (id, drawer): (u64, bool),
-    cx: &App,
-) -> anyhow::Result<((Pty, Events), Launch)> {
-    let settings = SettingsStore::get(cx);
-    let mut launch = launch(shell, args, folder, &cx.global::<ShellIntegration>().0)?;
-    launch.env.extend(characters::env(id, drawer)?);
-    Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch))
-}
-
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.background.fit(window);
@@ -345,7 +316,7 @@ impl Render for Workspace {
             |settings| settings.show_panel = !settings.show_panel,
             cx,
         );
-        // No menu bar off macOS: a gear opens Settings.
+        // No menu bar off macOS: a gear opens Settings. A narrow header clips its end, so the gear goes first.
         let gear = (!cfg!(target_os = "macos")).then(|| {
             IconButton::new("open-settings", IconName::Settings)
                 .variant(ButtonVariant::Ghost)
@@ -360,7 +331,14 @@ impl Render for Workspace {
             .children(update::update_button(cx))
             .children(gear)
             .child(right);
-        let mut shell = ColumnShell::new("workspace").glass();
+        let this = cx.entity();
+        let mut shell = ColumnShell::new("workspace")
+            .glass()
+            .on_close(move |window, cx| {
+                if !this.update(cx, |this, cx| this.asks(Leave::Window, cx)) {
+                    window.remove_window();
+                }
+            });
         let mut terminal = ShellColumn::new("terminal")
             .title(self.title().to_string())
             .child(
@@ -379,14 +357,12 @@ impl Render for Workspace {
                 .on_click(move |_, window, cx| {
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
-            let mut column = self
+            let column = self
                 .side_column(Side::Sessions, cx)
                 .leading(left)
                 .action(party::party_button(cx.entity()))
-                .action(new);
-            if let Some(profiles) = crate::profiles::button(&cx.entity(), &self.found, cx) {
-                column = column.action(profiles);
-            }
+                .action(new)
+                .action(crate::profiles::button(&cx.entity(), &self.found, cx));
             shell = shell.column(
                 column
                     .child(
@@ -457,6 +433,18 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &JumpToWaiting, window, cx| this.jump_to_waiting(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &SplitRight, window, cx| {
+                this.split(gpui::Axis::Horizontal, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SplitDown, window, cx| {
+                this.split(gpui::Axis::Vertical, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &NextPane, window, cx| this.step_pane(true, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &PreviousPane, window, cx| this.step_pane(false, window, cx)),
+            )
             .on_action(cx.listener(|this, _: &LastSession, window, cx| {
                 if let Some(&index) = this.session_order(cx).last() {
                     this.select(index, window, cx);
@@ -484,6 +472,7 @@ impl Render for Workspace {
                                     .size_full()
                                     .children(wallpaper::paint(&settings, base, window, cx))
                                     .child(shell)
+                                    .children(self.leave_prompt(cx))
                                     .into_any_element()
                             }),
                     ),

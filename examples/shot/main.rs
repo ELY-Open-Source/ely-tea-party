@@ -36,8 +36,14 @@ fn main() {
     };
     let out = args.next().expect("a png path");
     let program = args.next().expect("a program");
+    let args: Vec<String> = args.collect();
+    let written = ely_tea_party::sessions::Program {
+        shell: program.clone(),
+        args: args.clone(),
+        written: true,
+    };
     let launch = Launch {
-        program: Some((program, args.collect())),
+        program: Some((program, args)),
         cwd: std::env::current_dir().expect("a current folder"),
         env: Vec::new(),
         reports: false,
@@ -52,6 +58,7 @@ fn main() {
             app::start(cx).expect("the app starts");
             let main: AnyWindowHandle = app::open(
                 launch,
+                written,
                 match std::env::var_os("SHOT_RESTORE") {
                     Some(_) => app::Restore::First,
                     None => app::Restore::Off,

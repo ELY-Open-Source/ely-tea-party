@@ -27,7 +27,7 @@ impl Workspace {
         if self.party {
             window.focus(&self.party_focus, cx);
         } else if let Some(session) = self.sessions.get(self.active) {
-            window.focus(&session.terminal.focus_handle(cx), cx);
+            window.focus(&session.terminal().focus_handle(cx), cx);
         }
         log::info!(
             "app: the tea party {}",
@@ -130,7 +130,7 @@ fn card(
             .text_color(color)
             .child(text)
     };
-    let folder = sessions::brief(&session.folder, home);
+    let folder = sessions::brief(&session.main().folder, home);
     let (picture, name, lines, bubble) = match &session.agent {
         Some(agent) => {
             let pose = agent.pose(now, session.id);
@@ -165,10 +165,10 @@ fn card(
                         .color(colors.fg_muted),
                 )
                 .into_any_element();
-            let name = if session.title.is_empty() {
+            let name = if session.main().title.is_empty() {
                 TITLE.to_string()
             } else {
-                sessions::one_line(&session.title)
+                sessions::one_line(&session.main().title)
             };
             (picture, name, Vec::new(), None)
         }

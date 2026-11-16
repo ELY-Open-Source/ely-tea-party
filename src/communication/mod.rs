@@ -122,7 +122,7 @@ fn snapshots(cx: &App) -> Vec<router::Snapshot> {
             }
         };
         for session in workspace.sessions() {
-            if session.terminal.read(cx).ended().is_some() {
+            if session.main().terminal.read(cx).ended().is_some() {
                 continue;
             }
             let agent = session.agent.as_ref();
@@ -151,7 +151,7 @@ fn snapshots(cx: &App) -> Vec<router::Snapshot> {
                 identity,
                 agent: name,
                 title: crate::sessions::compact::title(session),
-                folder: session.folder.to_string_lossy().into_owned(),
+                folder: session.main().folder.to_string_lossy().into_owned(),
                 state: format!("{:?}", session.task_state(cx)).to_lowercase(),
             });
         }

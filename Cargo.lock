@@ -150,7 +150,7 @@ dependencies = [
 [[package]]
 name = "alacritty_terminal"
 version = "0.26.0"
-source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=d2781caf4908e58404a31efa0bbac03c562380bc#d2781caf4908e58404a31efa0bbac03c562380bc"
+source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=a322b1b279168222bcad4b211dcdb04315524bcf#a322b1b279168222bcad4b211dcdb04315524bcf"
 dependencies = [
  "base64",
  "bitflags 2.13.2",
@@ -2635,7 +2635,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-linux"
 version = "0.3.8"
-source = "git+https://github.com/ELY-Open-Source/gpui-pre-linux.git?rev=db0ff3c44e3fb1a3ee6ba6a06a44d94bf5d1ff32#db0ff3c44e3fb1a3ee6ba6a06a44d94bf5d1ff32"
+source = "git+https://github.com/ELY-Open-Source/gpui-pre-linux.git?rev=dec22d23e56c01af0163bc845bb66628095d959b#dec22d23e56c01af0163bc845bb66628095d959b"
 dependencies = [
  "accesskit",
  "accesskit_unix",

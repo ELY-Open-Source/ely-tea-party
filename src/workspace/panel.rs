@@ -40,7 +40,8 @@ impl Workspace {
                 .into_any_element(),
         };
         let session = self.sessions.get(self.active);
-        let quiet = tab != PanelTab::Activity && session.is_some_and(|session| !session.reports);
+        let quiet =
+            tab != PanelTab::Activity && session.is_some_and(|session| !session.pane().reports);
         let caption = || {
             Caption::new(text(cx, "et.panel.no_folder", &[]))
                 .px_3()
@@ -113,7 +114,7 @@ impl Workspace {
                 this.folder_actions = false;
                 log::info!("files: folder actions hidden for chooser");
                 if let Some(session) = this.sessions.get(this.active) {
-                    window.focus(&session.terminal.focus_handle(cx), cx);
+                    window.focus(&session.terminal().focus_handle(cx), cx);
                 }
                 cx.notify();
                 this.choose_folder(window, cx);

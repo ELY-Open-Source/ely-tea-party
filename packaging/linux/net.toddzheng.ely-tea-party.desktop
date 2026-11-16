@@ -4,6 +4,7 @@ Name=Ely Tea Party
 Comment=A terminal on GPUI and Ely
 Exec=ely-tea-party %u
 X-TerminalArgDir=--working-directory
+X-TerminalArgExec=-e
 Icon=net.toddzheng.ely-tea-party
 Terminal=false
 Categories=System;TerminalEmulator;

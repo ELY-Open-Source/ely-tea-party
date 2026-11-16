@@ -65,7 +65,10 @@ impl Workspace {
                     .variant(ButtonVariant::Ghost)
                     .tooltip(text(cx, "et.memory.title", &[]))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        let folder = this.sessions.get(this.active).map(|s| s.folder.clone());
+                        let folder = this
+                            .sessions
+                            .get(this.active)
+                            .map(|s| s.main().folder.clone());
                         crate::memory::window::open(folder, None, cx);
                     })),
             )
@@ -171,7 +174,8 @@ impl Workspace {
                             .back()
                             .and_then(|entry| tasks::latest(&entry.step))
                             .or_else(|| {
-                                let (_, record) = session.terminal.read(cx).records().shown()?;
+                                let (_, record) =
+                                    session.main().terminal.read(cx).records().shown()?;
                                 record.msg.as_deref().map(|message| {
                                     ("et.butler.task_message", tasks::excerpt(message))
                                 })
@@ -239,11 +243,11 @@ impl Workspace {
                                             .text_xs()
                                             .text_color(theme.colors.fg_muted)
                                             .child(sessions::brief(
-                                                &session.folder,
+                                                &session.main().folder,
                                                 home.as_deref(),
                                             ))
                                             .tooltip(Tooltip::text(sessions::shown(
-                                                &session.folder,
+                                                &session.main().folder,
                                                 home.as_deref(),
                                             ))),
                                     ),
