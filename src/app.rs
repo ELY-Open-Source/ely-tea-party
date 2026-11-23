@@ -20,6 +20,9 @@ use crate::{
 };
 
 pub mod args;
+mod dropped;
+
+pub use dropped::{dropped, dropped_folder};
 
 /// How long the window's size holds before it is kept, so a drag saves once.
 const SETTLE: Duration = Duration::from_millis(500);

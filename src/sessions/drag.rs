@@ -55,13 +55,14 @@ impl Render for Ghost {
     }
 }
 
-/// Session `index`'s row, which drags to another session's place; a right press opens its menu.
+/// Session `index`'s row, which drags to another session's place; a right press opens its menu, which offers `groups`.
 pub fn row(
     workspace: &Entity<Workspace>,
     index: usize,
     session: &Session,
     active: bool,
     when: (Option<&Path>, Instant),
+    groups: &[(u64, String)],
     cx: &App,
 ) -> impl IntoElement {
     let pid = session.id as usize;
@@ -103,7 +104,7 @@ pub fn row(
     } else {
         item(&workspace, index, session, active, when.0, when.1, cx).into_any_element()
     };
-    let menu = menu::row(&workspace, id, cx);
+    let menu = menu::row(&workspace, (id, session.group), groups, cx);
     let item = if settings.session_menu {
         ContextMenu::new(("session-menu", pid), menu)
             .w_full()

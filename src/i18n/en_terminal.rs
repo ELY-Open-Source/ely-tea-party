@@ -1,5 +1,9 @@
 pub const MESSAGES: &[(&str, &str)] = &[
     ("et.terminal.restore", "Restore sessions at start"),
+    (
+        "et.terminal.restore_hint",
+        "The next start opens the sessions left: their panes, folders, names, groups and agents' conversations.",
+    ),
     ("et.terminal.mascot", "Who peeks"),
     ("et.terminal.shell", "Shell"),
     ("et.terminal.start_in", "Start in"),

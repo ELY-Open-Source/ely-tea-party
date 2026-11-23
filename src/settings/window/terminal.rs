@@ -144,6 +144,9 @@ impl SettingsWindow {
             |settings, mascot| settings.mascot = mascot,
             cx,
         );
+        let low = switch(&this, "ely_low", settings.ely_low, |settings, on| {
+            settings.ely_low = on
+        });
         let drag = switch(
             &this,
             "drag_sessions",
@@ -161,7 +164,6 @@ impl SettingsWindow {
         });
         let section = section
             .row(SettingsRow::new(word("et.terminal.copy_on_select")).control(copy))
-            .row(SettingsRow::new(word("et.terminal.restore")).control(restore))
             .row(
                 SettingsRow::new(word("et.terminal.right_click_paste"))
                     .description(word("et.terminal.right_click_paste_hint"))
@@ -176,6 +178,11 @@ impl SettingsWindow {
                 SettingsRow::new(word("et.terminal.confirm_quit"))
                     .description(word("et.terminal.confirm_quit_hint"))
                     .control(quit),
+            )
+            .row(
+                SettingsRow::new(word("et.terminal.restore"))
+                    .description(word("et.terminal.restore_hint"))
+                    .control(restore),
             )
             .row(
                 SettingsRow::new(word("et.terminal.drag_sessions"))
@@ -198,6 +205,11 @@ impl SettingsWindow {
                     .control(ely),
             )
             .row(SettingsRow::new(word("et.terminal.mascot")).control(mascot))
+            .row(
+                SettingsRow::new(word("et.terminal.ely_low"))
+                    .description(word("et.terminal.ely_low_hint"))
+                    .control(low),
+            )
             .row(
                 SettingsRow::new(word("et.terminal.auto_updates"))
                     .description(word("et.terminal.auto_updates_hint"))

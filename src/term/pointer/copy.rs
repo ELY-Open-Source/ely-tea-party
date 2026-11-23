@@ -4,10 +4,10 @@ use alacritty_terminal::{
     selection::{Selection, SelectionType},
     term::{Term, TermMode},
 };
-use gpui::{ClipboardItem, Context};
+use gpui::{ClipboardItem, Context, Modifiers};
 
 use super::super::{keys, view::TerminalView};
-use crate::settings::SettingsStore;
+use crate::{keymap, settings::SettingsStore};
 
 impl TerminalView {
     /// Inserts context only through bracketed paste, without Enter.
@@ -66,12 +66,19 @@ impl TerminalView {
         }
     }
 
-    /// The selection to the clipboard.
+    /// The selection to the clipboard; with none, a Ctrl key goes on to the program, as in Windows Terminal.
     pub(in crate::term) fn copy(&mut self, cx: &mut Context<Self>) {
-        match self.selected() {
-            Some(text) => self.copy_text(text, false, cx),
-            None => log::debug!("terminal {}: nothing selected to copy", self.pty.pid),
+        if let Some(text) = self.selected() {
+            return self.copy_text(text, false, cx);
         }
+        if passes(cx.global::<keymap::Pressed>().0) {
+            log::debug!(
+                "terminal {}: nothing selected; Copy's Ctrl key goes to the program",
+                self.pty.pid
+            );
+            return cx.propagate();
+        }
+        log::debug!("terminal {}: nothing selected to copy", self.pty.pid);
     }
 
     /// Text to the clipboard; `primary` text goes to Linux's selection, as Ghostty puts it.
@@ -138,6 +145,11 @@ impl TerminalView {
     }
 }
 
+/// Whether Copy's key goes on to the program while nothing is selected: Ctrl alone, as Windows Terminal's.
+fn passes(held: Modifiers) -> bool {
+    held.control && !held.shift && !held.alt && !held.platform
+}
+
 /// Ghostty's select all: first to last non-blank cell.
 fn everything<T>(term: &Term<T>) -> Option<Selection> {
     let grid = term.grid();
@@ -163,6 +175,7 @@ mod tests {
         term::{Config, test::TermSize},
         vte::ansi::Processor,
     };
+    use gpui::Modifiers;
 
     use super::*;
 
@@ -186,5 +199,18 @@ mod tests {
         assert_eq!(last.as_deref(), Some("text \u{301}"), "a mark ends it");
         let link = all(b"\x1b]8;;http://a\x07 \x1b]8;;\x07text");
         assert_eq!(link.as_deref(), Some("text"), "a linked space is blank");
+    }
+
+    #[test]
+    fn only_ctrl_alone_passes_copy_s_key_on() {
+        assert!(passes(Modifiers::control()), "ctrl-c, ctrl-insert");
+        assert!(!passes(Modifiers::control_shift()), "ctrl-shift-c");
+        assert!(!passes(Modifiers::command()), "cmd-c");
+        assert!(!passes(Modifiers::none()), "a menu's Copy");
+        let ctrl_alt = Modifiers {
+            alt: true,
+            ..Modifiers::control()
+        };
+        assert!(!passes(ctrl_alt), "ctrl-alt");
     }
 }

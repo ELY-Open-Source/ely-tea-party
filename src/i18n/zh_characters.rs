@@ -70,5 +70,13 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.mascot.whale", "鲸鱼娘"),
     ("et.mascot.ely", "Ely"),
     ("et.terminal.ely", "窗口角色"),
-    ("et.terminal.ely_hint", "她从窗口上方探出头，表情随会话变化"),
+    (
+        "et.terminal.ely_hint",
+        "她从窗口上方探出头，表情随当前会话变化",
+    ),
+    ("et.terminal.ely_low", "缩头探出"),
+    (
+        "et.terminal.ely_low_hint",
+        "指针移到她身上之前，Ely 只露出头顶和呆毛",
+    ),
 ];

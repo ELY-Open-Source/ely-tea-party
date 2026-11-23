@@ -47,6 +47,15 @@ cat > "$app/Contents/Info.plist" <<EOF
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleDisplayName</key><string>$name</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Folder</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key><array><string>public.folder</string></array>
+    </dict>
+  </array>
   <key>CFBundleExecutable</key><string>ely-tea-party</string>
   <key>CFBundleIconFile</key><string>ely-tea-party</string>
   <key>CFBundleIdentifier</key><string>$id</string>

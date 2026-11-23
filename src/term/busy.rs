@@ -40,8 +40,19 @@ pub(super) fn running(pty: &Pty) -> io::Result<Option<String>> {
     };
     let name = path.file_name().unwrap_or(path.as_os_str());
     // A shell at its prompt holds its group alone; `sh -c` beside its job does not.
-    let prompt = group == pty.pid as i32 && shell(name) && super::unix::lone(group)?;
+    let prompt = own(pty, group)? && shell(name) && super::unix::lone(group)?;
     Ok((!prompt).then(|| name.to_string_lossy().into_owned()))
+}
+
+/// Whether `group` leads as the session's own shell: the pty's process, or the child macOS's `login` starts.
+#[cfg(unix)]
+fn own(pty: &Pty, group: i32) -> io::Result<bool> {
+    let pid = pty.pid as i32;
+    #[cfg(target_os = "macos")]
+    if pty.login && group != pid {
+        return Ok(super::unix::parent(group)? == pid);
+    }
+    Ok(group == pid)
 }
 
 /// The program the terminal runs, or the first its shell started: Windows has no foreground group.
@@ -70,6 +81,14 @@ pub(super) fn running(pty: &Pty) -> io::Result<Option<String>> {
 }
 
 impl TerminalView {
+    /// Windows handed it over, as the default terminal.
+    pub fn handed(&self) -> bool {
+        #[cfg(windows)]
+        return self.pty.launcher.is_some();
+        #[cfg(not(windows))]
+        false
+    }
+
     /// What closing it would end: a program past its shell, or one that reports work or waits.
     pub fn busy(&self) -> Option<String> {
         match running(&self.pty) {

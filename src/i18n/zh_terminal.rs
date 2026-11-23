@@ -1,5 +1,9 @@
 pub const MESSAGES: &[(&str, &str)] = &[
     ("et.terminal.restore", "启动时恢复会话"),
+    (
+        "et.terminal.restore_hint",
+        "下次启动时打开上次留下的会话，连同窗格、目录、名称、分组和 agent 的对话。",
+    ),
     ("et.terminal.mascot", "角色选择"),
     ("et.terminal.shell", "Shell"),
     ("et.terminal.start_in", "起始位置"),

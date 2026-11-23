@@ -23,7 +23,8 @@ fn application() -> gpui::Application {
     gpui_platform::application()
 }
 
-fn run(cx: &mut App) -> anyhow::Result<()> {
+/// Starts the app; on macOS the first folder `dropped` on the icon before it started names the first session's, and links wait in it.
+fn run(dropped: &mut Vec<String>, cx: &mut App) -> anyhow::Result<()> {
     #[cfg(windows)]
     if app::args::embedded(std::env::args_os().skip(1)) {
         log::info!("app: COM started this copy for a console session");
@@ -35,7 +36,18 @@ fn run(cx: &mut App) -> anyhow::Result<()> {
     let words = std::env::args_os()
         .skip(1)
         .filter(|arg| !arg.to_str().is_some_and(handoff::is_link));
-    let asked = app::args::parse(words)?;
+    let mut asked = app::args::parse(words)?;
+    let folder = dropped.iter().position(|url| !handoff::is_link(url));
+    if let Some(at) = folder.filter(|_| asked.folder.is_none()) {
+        let url = dropped.remove(at);
+        match app::dropped_folder(&url) {
+            Ok(folder) => {
+                log::info!("app: starts in {}, dropped on the icon", folder.display());
+                asked.folder = Some(folder);
+            }
+            Err(error) => log::error!("{error:#}"),
+        }
+    }
     app::start(cx)?;
     #[cfg(windows)]
     if let Err(error) = ely_tea_party::defterm::listen(cx) {
@@ -155,14 +167,25 @@ fn main() {
     });
     application.run(move |cx: &mut App| {
         ely_gpui_component::init(cx).expect("Ely failed to start");
-        if let Err(error) = run(cx) {
+        // AppKit hands a folder dropped on the icon over before the app starts, and while it runs; links go to the market.
+        let mut dropped = Vec::new();
+        while let Ok(url) = received.try_recv() {
+            dropped.push(url);
+        }
+        if let Err(error) = run(&mut dropped, cx) {
             log::error!("{error:#}");
             std::process::exit(1);
         }
         handoff::listen(sender);
         cx.spawn(async move |cx| {
-            while let Some(link) = received.next().await {
-                cx.update(|cx| skins::market::open(&link, cx));
+            let later = futures::stream::iter(dropped).chain(received);
+            futures::pin_mut!(later);
+            while let Some(url) = later.next().await {
+                if handoff::is_link(&url) {
+                    cx.update(|cx| skins::market::open(&url, cx));
+                } else if let Err(error) = cx.update(|cx| app::dropped(&url, cx)) {
+                    log::error!("{error:#}");
+                }
             }
         })
         .detach();

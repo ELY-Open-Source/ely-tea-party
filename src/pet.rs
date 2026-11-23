@@ -24,8 +24,9 @@ use std::{cell::RefCell, rc::Rc, time::Instant};
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Bounds, ContentMask, Context, DispatchPhase,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, Styled, Subscription, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas, div, point, popup, px, size,
+    ParentElement, Pixels, Point, Render, StatefulInteractiveElement as _, Styled, Subscription,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
+    canvas, div, point, popup, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -35,10 +36,11 @@ use self::windows as platform;
 #[cfg(target_os = "linux")]
 use self::x11 as platform;
 use self::{
-    look::{Act, EASE, Mood, Pose, blend, diving, mood, pose},
+    look::{Act, EASE, LOW, Mood, Pose, blend, diving, mood, pose},
     rig::Rig,
 };
 use crate::{
+    sessions::orb::Look,
     settings::{Mascot, SettingsStore},
     workspace::Workspace,
 };
@@ -57,7 +59,7 @@ enum Edge {
 /// The window she shows in, which the settings open and close.
 type Shown = Rc<RefCell<Option<WindowHandle<Pet>>>>;
 
-/// Ely in her window: she moves all the time, her acts follow the sessions' marks, and a press pets her.
+/// Ely in her window: she moves all the time, her acts follow the shown session's mark, and a press pets her.
 pub struct Pet {
     rig: Rc<Rig>,
     mood: Mood,
@@ -85,6 +87,9 @@ pub struct Pet {
     strolled: Option<u64>,
     stepped: Instant,
     landing: bool,
+    /// The pointer is over her window, and she sinks to her hair while the settings ask and it is not.
+    hovered: bool,
+    low: bool,
     main: WindowHandle<Workspace>,
     /// What keeps her window on the main window's edge, where the platform does not, and her window it moves.
     glue: Option<platform::Glue>,
@@ -217,15 +222,6 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
         ..Default::default()
     };
     let workspace = main.entity(cx)?;
-    let feeling = |workspace: &Workspace, cx: &App| {
-        mood(
-            workspace
-                .sessions()
-                .iter()
-                .flat_map(|session| [session.looks(cx), session.agent_look()])
-                .flatten(),
-        )
-    };
     let start = feeling(workspace.read(cx), cx);
     let pet = cx.open_window(options, |window, cx| {
         if skirt > 0.0 {
@@ -262,6 +258,8 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 strolled: None,
                 stepped: Instant::now(),
                 landing: false,
+                hovered: false,
+                low: false,
                 main,
                 glue: None,
                 own: None,
@@ -282,6 +280,28 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
         "pet: Ely peeks over the main window, {way}, on the pane's {edge} edge, feeling {start:?}"
     );
     Ok(pet)
+}
+
+/// The mood the session shown asks for, by its mark or its agent, whichever presses more; calm with none.
+fn feeling(workspace: &Workspace, cx: &App) -> Mood {
+    shown_mood(
+        (workspace.sessions().iter())
+            .map(|session| pressing(session.looks(cx), session.agent_look())),
+        workspace.shown(),
+    )
+}
+
+/// The look of `a` and `b` whose mood presses more.
+fn pressing(a: Option<Look>, b: Option<Look>) -> Option<Look> {
+    match (a, b) {
+        (Some(a), Some(b)) if mood(b) > mood(a) => Some(b),
+        (a, b) => a.or(b),
+    }
+}
+
+/// The mood of the session at `shown` among the sessions' looks; calm with none.
+fn shown_mood(mut looks: impl Iterator<Item = Option<Look>>, shown: usize) -> Mood {
+    looks.nth(shown).flatten().map_or(Mood::Calm, mood)
 }
 
 /// Keeps her window on `main`'s pane as it moves, comes forward and hides, and gives the edge she first stands on.
@@ -373,6 +393,9 @@ impl Pet {
             since(self.shown),
             self.petted.map(since),
         );
+        if self.low {
+            pose.lift -= LOW;
+        }
         if pose.act != self.act {
             log::debug!("pet: Ely goes from {:?} to {:?}", self.act, pose.act);
             self.act = pose.act;
@@ -409,6 +432,15 @@ impl Pet {
 
 impl Render for Pet {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Windows' mouse leave sends gpui no exit, so there the window's own hover gates hers.
+        let over = self.hovered && (cfg!(not(windows)) || window.is_window_hovered());
+        let settings = SettingsStore::get(cx);
+        let low = settings.ely_low && settings.mascot == Mascot::Ely && !over;
+        if low != self.low {
+            log::debug!("pet: Ely peeks {}", if low { "low" } else { "whole" });
+            self.low = low;
+            self.ease(Instant::now());
+        }
         let now = Instant::now();
         let pose = self.pose(now);
         // gpui gives a hidden window no frames, so she rests while unseen.
@@ -449,10 +481,12 @@ impl Render for Pet {
             },
         );
         div()
+            .id("ely")
             .size_full()
             .relative()
             .child(drawn.size_full())
             .children(whale.map(|whale| div().absolute().inset_0().child(whale)))
+            .on_hover(cx.listener(|pet, hovered: &bool, _, _| pet.hovered = *hovered))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|pet, event: &MouseDownEvent, window, cx| {

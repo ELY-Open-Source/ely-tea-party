@@ -1,4 +1,4 @@
-//! Sessions outlive the app: each one's folder and its agent's conversation are saved, and come back at the next start.
+//! Sessions outlive the app: each one's folder, its agent's conversation, its panes and its group are saved, and come back at the next start.
 
 use std::{
     path::{Path, PathBuf},
@@ -9,10 +9,18 @@ use anyhow::Context as _;
 use gpui::{Context, Window};
 use serde::{Deserialize, Serialize};
 
-use super::Workspace;
-use crate::{agents, sessions::Program, term::shell::Start};
+use super::{Workspace, groups::Group};
+use crate::{
+    agents,
+    sessions::{Program, Session},
+    term::shell::Start,
+};
 
+mod layout;
 pub mod steps;
+
+pub use layout::{Panes, SavedLayout};
+use layout::{layout_of, panes_saved};
 
 /// A shell this quiet has drawn its prompt.
 const SETTLED: Duration = Duration::from_secs(2);
@@ -24,6 +32,16 @@ pub struct Saved {
     pub sessions: Vec<Place>,
     /// The session shown.
     pub active: usize,
+    /// The sessions' groups, in the order their rows show; none in a file saved before groups.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<SavedGroup>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedGroup {
+    pub id: u64,
+    pub name: String,
 }
 
 /// A session as it is saved: its folder, the line that resumes its agent's conversation, and what sets it apart.
@@ -39,6 +57,12 @@ pub struct Place {
     /// None in a file saved before trinkets: it takes a free one.
     #[serde(default)]
     pub trinket: Option<usize>,
+    /// The group its row sits in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<u64>,
+    /// Its panes, while it holds more than its first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panes: Option<Panes>,
 }
 
 /// The saved sessions' file.
@@ -124,7 +148,7 @@ pub fn resume(agent: &str, conversation: &str) -> Option<String> {
 
 impl Workspace {
     fn snapshot(&self) -> Saved {
-        let place = |session: &crate::sessions::Session| Place {
+        let place = |session: &Session| Place {
             link_id: session.link_id,
             folder: session.main().folder.clone(),
             // A resume not yet typed stays saved.
@@ -134,10 +158,20 @@ impl Workspace {
             }),
             name: session.name.clone(),
             trinket: Some(session.trinket),
+            group: session.group,
+            panes: panes_saved(session),
         };
+        let groups = (self.groups.iter())
+            .filter(|group| (self.sessions.iter()).any(|session| session.group == Some(group.id)))
+            .map(|group| SavedGroup {
+                id: group.id,
+                name: group.name.clone(),
+            })
+            .collect();
         Saved {
             sessions: self.sessions.iter().map(place).collect(),
             active: self.active,
+            groups,
         }
     }
 
@@ -190,16 +224,46 @@ impl Workspace {
         for place in &mut saved.sessions {
             place.link_id.ensure_unique(&mut links);
         }
+        // A group no session names is left out, and a session naming no group listed sits in none.
+        let groups: Vec<Group> = (saved.groups.iter())
+            .filter(|group| (saved.sessions.iter()).any(|place| place.group == Some(group.id)))
+            .map(|group| Group {
+                id: group.id,
+                name: group.name.clone(),
+                editing: None,
+            })
+            .collect();
+        for place in &mut saved.sessions {
+            if place
+                .group
+                .is_some_and(|id| groups.iter().all(|group| group.id != id))
+            {
+                log::warn!(
+                    "restore: a session's group {:?} is listed nowhere",
+                    place.group
+                );
+                place.group = None;
+            }
+        }
+        self.groups = groups;
         let mut kept = steps::load();
-        let mut places = saved.sessions.into_iter();
-        if !behind && let (Some(first), Some(session)) = (places.next(), self.sessions.first_mut())
+        // The session shown, by its id once open.
+        let mut shown = None;
+        let mut places = saved.sessions.into_iter().enumerate();
+        if !behind
+            && let (Some((_, first)), Some(session)) = (places.next(), self.sessions.first_mut())
         {
             session.pending = first.resume.clone();
+            let panes = first.panes.clone();
             dress(session, first, &mut kept);
             recall(session, cx);
+            shown = Some(session.id);
+            if let Some(panes) = panes {
+                self.reopen(0, &panes, window, cx);
+            }
         }
         let shell = crate::settings::SettingsStore::get(cx).shell.clone();
-        for place in places {
+        for (index, place) in places {
             if !place.folder.is_dir() {
                 log::info!(
                     "restore: {} is gone; its session stays closed",
@@ -215,43 +279,106 @@ impl Workspace {
             match self.started(&program, Start::In(place.folder.clone()), Some(id), cx) {
                 Ok(started) => {
                     self.add(id, started, program, window, cx);
-                    if let Some(session) = self.sessions.last_mut() {
-                        session.pending = place.resume.clone();
-                        dress(session, place, &mut kept);
-                        recall(session, cx);
-                        // Out of view until shown, so it posts notifications.
-                        session
-                            .main()
-                            .terminal
+                    let last = self.sessions.len() - 1;
+                    let session = &mut self.sessions[last];
+                    session.pending = place.resume.clone();
+                    let panes = place.panes.clone();
+                    dress(session, place, &mut kept);
+                    recall(session, cx);
+                    if index == saved.active {
+                        shown = Some(session.id);
+                    }
+                    if let Some(panes) = panes {
+                        self.reopen(last, &panes, window, cx);
+                    }
+                    // Out of view until shown, so it posts notifications.
+                    for pane in &self.sessions[last].panes {
+                        pane.terminal
                             .update(cx, |view, _| view.set_front(false, window));
                     }
                 }
                 Err(error) => log::error!("restore: a session did not start: {error:#}"),
             }
         }
-        let active = match behind {
-            true => 0,
-            false => saved.active.min(self.sessions.len().saturating_sub(1)),
+        // A run given a folder keeps it shown.
+        let shown = match behind {
+            true => self.sessions.first().map(|session| session.id),
+            false => shown,
         };
+        self.arrange();
+        let active = (self.sessions.iter())
+            .position(|session| Some(session.id) == shown)
+            .unwrap_or(0);
         log::info!("restore: {} sessions back", self.sessions.len());
         self.select(active, window, cx);
+    }
+
+    /// Opens session `index`'s other panes as `panes` lays them out, its first pane running already; a pane whose folder went or that does not start is left out.
+    fn reopen(&mut self, index: usize, panes: &Panes, window: &mut Window, cx: &mut Context<Self>) {
+        let mut ids = Vec::new();
+        for (place, (shell, args, folder)) in panes.layout.panes().into_iter().enumerate() {
+            if place == panes.main {
+                ids.push(Some(self.sessions[index].main().id()));
+                continue;
+            }
+            if !folder.is_dir() {
+                log::info!(
+                    "restore: {} is gone; its pane stays closed",
+                    folder.display()
+                );
+                ids.push(None);
+                continue;
+            }
+            let program = Program {
+                shell: shell.to_string(),
+                args: args.to_vec(),
+                written: false,
+            };
+            // A split gets no hook variables, as one opened by hand.
+            match self.started(&program, Start::In(folder.to_path_buf()), None, cx) {
+                Ok(started) => {
+                    let pane = self.pane(started, program, window, cx);
+                    ids.push(Some(pane.id()));
+                    self.sessions[index].panes.push(pane);
+                }
+                Err(error) => {
+                    log::error!("restore: a pane did not start: {error:#}");
+                    ids.push(None);
+                }
+            }
+        }
+        let session = &mut self.sessions[index];
+        let Some(layout) = layout_of(&panes.layout, &mut ids.iter().copied()) else {
+            return;
+        };
+        let focused = ids.get(panes.focused).copied().flatten();
+        session.focused = (session.panes.iter())
+            .position(|pane| Some(pane.id()) == focused)
+            .unwrap_or(0);
+        session.layout = layout;
+        log::info!(
+            "restore: session {} opens {} panes",
+            session.id,
+            session.panes.len()
+        );
     }
 }
 
 /// Gives a restored session the name and trinket `place` kept, and the steps `kept` for it.
-fn dress(session: &mut crate::sessions::Session, place: Place, kept: &mut steps::Kept) {
+fn dress(session: &mut Session, place: Place, kept: &mut steps::Kept) {
     if let Some(log) = steps::take(kept, place.link_id) {
         session.log = log;
     }
     session.link_id = place.link_id;
     session.name = place.name;
+    session.group = place.group;
     if let Some(trinket) = place.trinket {
         session.trinket = trinket;
     }
 }
 
 /// Gives a restored session's terminal the prompts of the conversation its agent resumes, from the agent's own record, else from the steps kept, so its rail comes back with it.
-fn recall(session: &crate::sessions::Session, cx: &mut Context<Workspace>) {
+fn recall(session: &Session, cx: &mut Context<Workspace>) {
     let Some((agent, conversation)) = session
         .pending
         .as_deref()
@@ -316,8 +443,23 @@ mod tests {
                 resume: Some("claude --resume a".into()),
                 name: String::new(),
                 trinket: Some(2),
+                group: Some(1),
+                panes: Some(Panes {
+                    layout: SavedLayout::Split {
+                        down: true,
+                        share: 0.3,
+                        first: Box::new(pane("/tmp")),
+                        second: Box::new(pane("/")),
+                    },
+                    main: 0,
+                    focused: 1,
+                }),
             }],
             active: 0,
+            groups: vec![SavedGroup {
+                id: 1,
+                name: "one".into(),
+            }],
         };
         let text = serde_json::to_string(&saved).expect("written");
         assert_eq!(serde_json::from_str::<Saved>(&text).expect("read"), saved);
@@ -329,5 +471,16 @@ mod tests {
         let saved = serde_json::from_str::<Saved>(text).expect("read");
         assert_eq!(saved.sessions[0].trinket, None);
         assert!(saved.sessions[0].name.is_empty());
+        assert_eq!(saved.sessions[0].group, None);
+        assert_eq!(saved.sessions[0].panes, None);
+        assert!(saved.groups.is_empty());
+    }
+
+    fn pane(folder: &str) -> SavedLayout {
+        SavedLayout::Pane {
+            shell: "zsh".into(),
+            args: Vec::new(),
+            folder: folder.into(),
+        }
     }
 }

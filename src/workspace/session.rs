@@ -54,6 +54,8 @@ impl Workspace {
         let layout = Layout::Pane(pane.id());
         log::info!("app: session {} opens", self.sessions.len() + 1);
         let trinket = sessions::free_trinket(self.sessions.iter().map(|session| session.trinket));
+        // A new session joins the shown one's group.
+        let group = self.sessions.get(self.active).and_then(|shown| shown.group);
         self.sessions.push(Session {
             id,
             link_id: Default::default(),
@@ -70,6 +72,7 @@ impl Workspace {
             trinket,
             drawer: None,
             pending: None,
+            group,
         });
     }
 
@@ -189,7 +192,12 @@ impl Workspace {
             window,
             cx,
         );
-        self.select(self.sessions.len() - 1, window, cx);
+        let id = self.sessions[self.sessions.len() - 1].id;
+        self.arrange();
+        let index = (self.sessions.iter())
+            .position(|session| session.id == id)
+            .expect("the session handed over");
+        self.select(index, window, cx);
     }
 
     /// Starts `program` from `start`, its pty sized as the first layout will fit it. With `hooked`, its agents' hooks and messages reach the app as that session's own.
@@ -230,10 +238,19 @@ impl Workspace {
         let started = self.started(&program, start, Some(id), cx)?;
         self.add(id, started, program, window, cx);
         let last = self.sessions.len() - 1;
-        if let Some(at) = at {
+        if let Some(at) = at.map(|at| at.min(last)) {
+            // It joins the group of the row it lands after.
+            let before = at
+                .checked_sub(1)
+                .and_then(|before| self.sessions[before].group);
+            self.sessions[last].group = before;
             self.move_session(last, at, cx);
         }
-        self.select(at.map_or(last, |at| at.min(last)), window, cx);
+        self.arrange();
+        let index = (self.sessions.iter())
+            .position(|session| session.id == id)
+            .expect("the session opened");
+        self.select(index, window, cx);
         Ok(())
     }
 }

@@ -25,7 +25,7 @@ use crate::{
 pub(crate) mod compact;
 mod drag;
 mod link;
-mod menu;
+pub mod menu;
 pub use link::LinkId;
 mod status;
 pub mod task;
@@ -37,7 +37,7 @@ pub use status::line;
 pub mod orb;
 mod panes;
 
-pub use panes::{Layout, Pane, Program};
+pub use panes::{Layout, Pane, Program, Toward};
 
 pub use drag::{Moving, after_move, row};
 
@@ -72,6 +72,8 @@ pub struct Session {
     pub log: agents::timeline::Timeline,
     /// The trinket its character wears, from her own box: `agents::assets::trinket`.
     pub trinket: usize,
+    /// The group its row sits in; none sits above every group.
+    pub group: Option<u64>,
 }
 
 /// The first trinket none of `taken` wears.
