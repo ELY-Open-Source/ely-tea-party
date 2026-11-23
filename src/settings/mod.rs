@@ -223,6 +223,8 @@ pub struct Settings {
     pub mascot: Mascot,
     /// How far in from the pane's left edge she stands, in points, as a drag left her.
     pub ely_left: f32,
+    /// Ely shows only her hair and ahoge until the pointer comes over her.
+    pub ely_low: bool,
     /// A check for a newer release at start and every few hours.
     pub check_updates: bool,
     /// Whether `ely-tea-party ctl` may read and type into sessions.
@@ -316,6 +318,7 @@ impl Default for Settings {
             ely: true,
             mascot: Mascot::Whale,
             ely_left: 140.0,
+            ely_low: false,
             check_updates: true,
             control: false,
             show_sessions: true,

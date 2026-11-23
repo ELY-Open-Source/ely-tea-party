@@ -253,11 +253,15 @@ impl Workspace {
         // Cached: the characters' frames redraw the window, not the grids.
         let fill = || StyleRefinement::default().size_full();
         let session = self.sessions.get(self.active);
+        let weak = cx.entity().downgrade();
         let main = div()
             .relative()
             .flex_1()
             .min_h_0()
-            .children(session.map(|session| super::panes::draw(&session.layout, session, cx)))
+            .children(
+                session
+                    .map(|session| super::panes::draw(&session.layout, session, &weak, window, cx)),
+            )
             .children(
                 session
                     .and_then(|session| session.agent.as_ref())

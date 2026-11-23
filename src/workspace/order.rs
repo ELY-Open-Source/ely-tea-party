@@ -1,4 +1,4 @@
-//! The sessions' order, which their rows' drags change.
+//! The sessions' order, which their rows' drags change, and the one shown.
 
 use gpui::Context;
 
@@ -6,6 +6,11 @@ use super::Workspace;
 use crate::sessions;
 
 impl Workspace {
+    /// The session shown, at its place in the sessions' rows.
+    pub fn shown(&self) -> usize {
+        self.active
+    }
+
     /// Moves session `from` to place `to`; the shown session stays shown.
     pub fn move_session(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
         let count = self.sessions.len();

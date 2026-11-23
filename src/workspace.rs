@@ -39,9 +39,9 @@ mod widths;
 pub use agents::Reports;
 pub use drawer::Drawer;
 pub use keys::{
-    CloseSession, JumpToWaiting, LastSession, NewSession, NextPane, NextSession, PreviousPane,
-    PreviousSession, QuickSwitch, SelectSession, SplitDown, SplitRight, ToggleDrawer, TogglePanel,
-    ToggleParty, ToggleSessions, bind_keys,
+    CloseSession, JumpToWaiting, LastSession, MovePane, NewSession, NextPane, NextSession,
+    PreviousPane, PreviousSession, QuickSwitch, SelectSession, SplitDown, SplitRight, ToggleDrawer,
+    TogglePanel, ToggleParty, ToggleSessions, bind_keys,
 };
 
 use header::column_toggle;
@@ -59,6 +59,7 @@ use crate::{
 
 mod control;
 mod folder;
+mod groups;
 mod leave;
 mod panes;
 mod wallpaper;
@@ -108,6 +109,8 @@ pub struct Workspace {
     folder_actions: bool,
     /// A close that waits for the user's word, and the programs it would end.
     leaving: Option<(Leave, Vec<String>)>,
+    /// The sessions' groups, in the order their rows show.
+    groups: Vec<groups::Group>,
     _settings: Subscription,
     _updates: Subscription,
     _acted: Subscription,
@@ -165,6 +168,7 @@ impl Workspace {
             meters: usage::Meters::default(),
             glide: panel::Glide::default(),
             leaving: None,
+            groups: Vec::new(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 this.quiet_companion(cx);
@@ -197,7 +201,8 @@ impl Workspace {
         if index >= self.sessions.len() {
             return;
         }
-        self.sidebar.reveal(&self.sessions[index].main().folder);
+        let session = &self.sessions[index];
+        self.sidebar.reveal(session.group, &session.main().folder);
         if self.switcher.take().is_some() {
             log::debug!("switcher: closed as a session takes focus");
         }
@@ -259,6 +264,7 @@ impl Workspace {
         }
         let shown = index == self.active;
         self.active = sessions::after_close(self.active, index, self.sessions.len());
+        self.prune_groups(window, cx);
         if shown {
             self.select(self.active, window, cx);
         } else {
@@ -336,6 +342,7 @@ impl Render for Workspace {
             .glass()
             .on_close(move |window, cx| {
                 if !this.update(cx, |this, cx| this.asks(Leave::Window, cx)) {
+                    this.update(cx, |this, _| this.keep());
                     window.remove_window();
                 }
             });
@@ -444,6 +451,9 @@ impl Render for Workspace {
             )
             .on_action(
                 cx.listener(|this, _: &PreviousPane, window, cx| this.step_pane(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, MovePane(toward): &MovePane, _, cx| this.move_pane(*toward, cx)),
             )
             .on_action(cx.listener(|this, _: &LastSession, window, cx| {
                 if let Some(&index) = this.session_order(cx).last() {

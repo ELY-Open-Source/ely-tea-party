@@ -18,15 +18,18 @@ use crate::{
     settings::{SettingsStore, SidebarStyle},
 };
 
+/// A folder's place in the compact list: the named group it sits in, none for the ungrouped, and the folder.
+type Spot = (Option<u64>, PathBuf);
+
 #[derive(Default)]
 pub(super) struct Sidebar {
-    collapsed: BTreeSet<PathBuf>,
-    shown: Option<(u64, PathBuf)>,
+    collapsed: BTreeSet<Spot>,
+    shown: Option<(u64, Spot)>,
 }
 
 impl Sidebar {
-    pub(super) fn reveal(&mut self, folder: &Path) {
-        if self.collapsed.remove(folder) {
+    pub(super) fn reveal(&mut self, group: Option<u64>, folder: &Path) {
+        if self.collapsed.remove(&(group, folder.to_path_buf())) {
             log::info!("sessions: reveal folder {}", folder.display());
         }
     }
@@ -63,76 +66,123 @@ impl Workspace {
         self.select(order[(at + by) % count], window, cx);
     }
 
+    /// The sessions in their rows' order: block by block, and in the compact list folder by folder inside each.
     pub(super) fn session_order(&self, cx: &App) -> Vec<usize> {
         if !self.party && SettingsStore::get(cx).sidebar_style == SidebarStyle::Compact {
-            groups(
-                self.sessions
-                    .iter()
-                    .map(|session| session.main().folder.as_path()),
-            )
-            .into_values()
-            .flatten()
-            .collect()
+            self.blocks()
+                .into_iter()
+                .flat_map(|(_, places)| {
+                    let start = places.start;
+                    groups(
+                        self.sessions[places]
+                            .iter()
+                            .map(|session| session.main().folder.as_path()),
+                    )
+                    .into_values()
+                    .flatten()
+                    .map(move |index| start + index)
+                    .collect::<Vec<_>>()
+                })
+                .collect()
         } else {
             (0..self.sessions.len()).collect()
         }
     }
 
-    pub(super) fn session_list(&mut self, now: Instant, cx: &Context<Self>) -> AnyElement {
+    /// The sessions' rows, block by block under each named group's header; the compact list groups each block's rows by folder.
+    pub(super) fn session_list(&mut self, now: Instant, cx: &mut Context<Self>) -> AnyElement {
         let home = dirs::home_dir();
         let workspace = cx.entity();
-        let row = |index| {
-            sessions::row(
-                &workspace,
-                index,
-                &self.sessions[index],
-                index == self.active,
-                (home.as_deref(), now),
-                cx,
-            )
-        };
-        if SettingsStore::get(cx).sidebar_style == SidebarStyle::Characters {
-            return List::new()
-                .divided()
-                .children((0..self.sessions.len()).map(row))
-                .into_any_element();
+        let named: Vec<(u64, String)> = (self.groups.iter())
+            .map(|group| (group.id, group.name.clone()))
+            .collect();
+        let characters = SettingsStore::get(cx).sidebar_style == SidebarStyle::Characters;
+        if !characters {
+            self.fold();
         }
-        let groups = groups(
-            self.sessions
-                .iter()
-                .map(|session| session.main().folder.as_path()),
-        );
-        self.sidebar
-            .collapsed
-            .retain(|folder| groups.contains_key(folder));
+        let mut list = div().flex().flex_col().gap_2();
+        for (group, places) in self.blocks() {
+            let header = group
+                .and_then(|id| self.groups.iter().find(|each| each.id == id))
+                .map(|found| self.header(found, cx));
+            let row = |index: usize| {
+                sessions::row(
+                    &workspace,
+                    index,
+                    &self.sessions[index],
+                    index == self.active,
+                    (home.as_deref(), now),
+                    &named,
+                    cx,
+                )
+                .into_any_element()
+            };
+            let block = if characters {
+                List::new()
+                    .divided()
+                    .children(places.map(row))
+                    .into_any_element()
+            } else {
+                self.folders(group, places, home.as_deref(), &row, cx)
+            };
+            list = list.child(div().children(header).child(block));
+        }
+        list.into_any_element()
+    }
+
+    /// Keeps the compact list's collapsed folders to those still listed, and opens the shown session's.
+    fn fold(&mut self) {
+        let spots: BTreeSet<Spot> = (self.sessions.iter())
+            .map(|session| (session.group, session.main().folder.clone()))
+            .collect();
+        self.sidebar.collapsed.retain(|spot| spots.contains(spot));
         if let Some(session) = self.sessions.get(self.active) {
-            let shown = (session.id, session.main().folder.clone());
+            let shown = (session.id, (session.group, session.main().folder.clone()));
             if self.sidebar.shown.as_ref() != Some(&shown) {
-                self.sidebar.reveal(&session.main().folder);
+                self.sidebar.reveal(session.group, &session.main().folder);
                 self.sidebar.shown = Some(shown);
             }
         }
+    }
+
+    /// The rows at `places`, of named group `group`, under a header for each folder they sit in.
+    fn folders(
+        &self,
+        group: Option<u64>,
+        places: std::ops::Range<usize>,
+        home: Option<&Path>,
+        row: &impl Fn(usize) -> AnyElement,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let start = places.start;
+        let groups = groups(
+            self.sessions[places]
+                .iter()
+                .map(|session| session.main().folder.as_path()),
+        );
         let theme = cx.theme();
         div()
             .flex()
             .flex_col()
             .gap_2()
             .children(groups.iter().map(|(folder, indices)| {
-                let open = !self.sidebar.collapsed.contains(folder);
+                let indices: Vec<usize> = indices.iter().map(|index| start + index).collect();
+                let spot = (group, folder.clone());
+                let open = !self.sidebar.collapsed.contains(&spot);
                 let duplicate = groups
                     .keys()
                     .filter(|other| other.file_name() == folder.file_name())
                     .count()
                     > 1;
-                let name = label(folder, home.as_deref(), duplicate);
-                let path = folder.clone();
+                let name = label(folder, home, duplicate);
                 let state = indices
                     .iter()
                     .map(|&index| self.sessions[index].task_state(cx))
                     .min();
                 let header = div()
                     .id(gpui::SharedString::from(format!(
-                        "session-folder:{}",
+                        "session-folder:{}:{}",
+                        group.unwrap_or(0),
                         folder.display()
                     )))
                     .role(Role::Button)
@@ -151,17 +201,17 @@ impl Workspace {
                     .cursor_pointer()
                     .hover(|style| style.bg(theme.colors.hover))
                     .focus_ring(cx)
-                    .tooltip(Tooltip::text(sessions::shown(folder, home.as_deref())))
+                    .tooltip(Tooltip::text(sessions::shown(folder, home)))
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
-                        if !this.sidebar.collapsed.remove(&path) {
-                            this.sidebar.collapsed.insert(path.clone());
+                        if !this.sidebar.collapsed.remove(&spot) {
+                            this.sidebar.collapsed.insert(spot.clone());
                         }
                         log::info!(
                             "sessions: folder {} collapsed={}",
-                            path.display(),
-                            this.sidebar.collapsed.contains(&path)
+                            spot.1.display(),
+                            this.sidebar.collapsed.contains(&spot)
                         );
                         cx.notify();
                     }))
@@ -182,35 +232,37 @@ impl Workspace {
                             .color(state.color(&theme.colors))
                     }))
                     .child(indices.len().to_string());
-                div().child(header).when(open, |group| {
-                    group.child(div().pl_4().children(indices.iter().copied().map(row)))
+                div().child(header).when(open, |block| {
+                    block.child(div().pl_4().children(indices.iter().copied().map(row)))
                 })
             }))
             .into_any_element()
     }
 
+    /// Whether row `from` may land at row `to`: inside its own group, and in the compact list inside its own folder too.
     pub(crate) fn sidebar_drop_allowed(&self, from: usize, to: usize, cx: &App) -> bool {
-        if SettingsStore::get(cx).sidebar_style == SidebarStyle::Characters {
-            return true;
-        }
+        let characters = SettingsStore::get(cx).sidebar_style == SidebarStyle::Characters;
         self.sessions
             .get(from)
             .zip(self.sessions.get(to))
-            .is_some_and(|(from, to)| from.main().folder == to.main().folder)
+            .is_some_and(|(from, to)| {
+                from.group == to.group && (characters || from.main().folder == to.main().folder)
+            })
     }
 
+    /// Moves row `from` to row `to`, or below the last of its kind for `usize::MAX`, where the drop is allowed.
     pub(crate) fn move_sidebar_session(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
-        if SettingsStore::get(cx).sidebar_style == SidebarStyle::Characters {
-            self.move_session(from, to, cx);
-            return;
-        }
+        let characters = SettingsStore::get(cx).sidebar_style == SidebarStyle::Characters;
         let Some(session) = self.sessions.get(from) else {
             return;
         };
         let to = if to == usize::MAX {
             self.sessions
                 .iter()
-                .rposition(|other| other.main().folder == session.main().folder)
+                .rposition(|other| {
+                    other.group == session.group
+                        && (characters || other.main().folder == session.main().folder)
+                })
                 .unwrap_or(from)
         } else {
             to
@@ -253,10 +305,16 @@ mod tests {
     #[test]
     fn selecting_a_session_reveals_only_its_folder() {
         let mut sidebar = Sidebar::default();
-        sidebar
-            .collapsed
-            .extend([PathBuf::from("/a"), PathBuf::from("/b")]);
-        sidebar.reveal(Path::new("/b"));
-        assert_eq!(sidebar.collapsed, BTreeSet::from([PathBuf::from("/a")]));
+        sidebar.collapsed.extend([
+            (None, PathBuf::from("/a")),
+            (None, PathBuf::from("/b")),
+            (Some(1), PathBuf::from("/b")),
+        ]);
+        sidebar.reveal(None, Path::new("/b"));
+        assert_eq!(
+            sidebar.collapsed,
+            BTreeSet::from([(None, PathBuf::from("/a")), (Some(1), PathBuf::from("/b"))]),
+            "the same folder in a named group stays as it was"
+        );
     }
 }

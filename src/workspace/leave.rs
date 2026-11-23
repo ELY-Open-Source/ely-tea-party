@@ -74,6 +74,7 @@ impl Workspace {
         match leave {
             Leave::Window => {
                 log::info!("app: the window closes");
+                self.keep();
                 window.remove_window();
             }
             Leave::Quit => {

@@ -2,24 +2,24 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context as _, bail, ensure};
 use ely_gpui_component::forms::{Copy, Paste, SelectAll};
 use gpui::{
     Action, App, DummyKeyboardMapper, Global, KeyBinding, KeyBindingContextPredicate, Keystroke,
-    NoAction,
+    Modifiers, NoAction,
 };
 
 use crate::{
     menus::{self, Bigger, Minimize, Quit, ResetSize, Smaller, ToggleFullScreen},
+    sessions::Toward,
     settings::{
         SettingsStore,
         window::{self, CloseSettings, OpenSettings},
     },
     term::input::{self, Clear, Find, FindNewer, NextPrompt, PreviousPrompt},
     workspace::{
-        self, CloseSession, JumpToWaiting, LastSession, NewSession, NextPane, NextSession,
-        PreviousPane, PreviousSession, QuickSwitch, SelectSession, SplitDown, SplitRight,
-        ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
+        self, CloseSession, JumpToWaiting, LastSession, MovePane, NewSession, NextPane,
+        NextSession, PreviousPane, PreviousSession, QuickSwitch, SelectSession, SplitDown,
+        SplitRight, ToggleDrawer, TogglePanel, ToggleParty, ToggleSessions,
     },
 };
 
@@ -237,6 +237,26 @@ pub fn commands() -> Vec<Command> {
             on(&["cmd-["], &["ctrl-shift-p"]),
             Box::new(PreviousPane),
         ),
+    ]);
+    #[rustfmt::skip]
+    let moves = [
+        (Toward::Left, "move_pane_left", "et.keys.move_pane_left", "cmd-alt-left", "ctrl-shift-alt-left"),
+        (Toward::Right, "move_pane_right", "et.keys.move_pane_right", "cmd-alt-right", "ctrl-shift-alt-right"),
+        (Toward::Up, "move_pane_up", "et.keys.move_pane_up", "cmd-alt-up", "ctrl-shift-alt-up"),
+        (Toward::Down, "move_pane_down", "et.keys.move_pane_down", "cmd-alt-down", "ctrl-shift-alt-down"),
+    ];
+    all.extend(moves.map(|(toward, name, label, mac_key, key)| {
+        let keys = on(&[mac_key], &[key]);
+        command(
+            name,
+            sessions,
+            label,
+            main,
+            keys,
+            Box::new(MovePane(toward)),
+        )
+    }));
+    all.extend([
         command("copy", edit, "et.keys.copy", term, copy, Box::new(Copy)),
         command("paste", edit, "et.keys.paste", term, paste, Box::new(Paste)),
         command(
@@ -388,56 +408,24 @@ pub fn commands() -> Vec<Command> {
     all
 }
 
-/// Refuses a command no table names, a key that does not read, and a key two commands of one window hold.
-pub fn check(shortcuts: &Shortcuts) -> anyhow::Result<()> {
-    let commands = commands();
-    for name in shortcuts.keys() {
-        ensure!(
-            commands.iter().any(|command| command.name == *name),
-            "shortcuts names {name}, which is no command"
-        );
-    }
-    let mut held: Vec<(String, &Command)> = Vec::new();
-    for command in &commands {
-        for key in command.keys(shortcuts, &commands) {
-            let stroke = Keystroke::parse(&key)
-                .with_context(|| format!("shortcuts: {}'s {key:?} is no key", command.name))?;
-            // gpui reads any word as a key's name.
-            let named = !stroke.key.is_empty()
-                && !stroke.key.contains(char::is_whitespace)
-                && !MODIFIERS.contains(&stroke.key.as_str());
-            ensure!(named, "shortcuts: {}'s {key:?} names no key", command.name);
-            let stroke = stroke.unparse();
-            ensure!(
-                !FOCUS_KEYS.contains(&stroke.as_str()),
-                "shortcuts: {key} moves the focus and goes to the terminal's program, so {} cannot take it",
-                command.name
-            );
-            let taken = held
-                .iter()
-                .find(|(other, holder)| *other == stroke && holder.meets(command));
-            if let Some((_, holder)) = taken {
-                bail!(
-                    "shortcuts: {key} runs {} already, so {} cannot take it",
-                    holder.name,
-                    command.name
-                );
-            }
-            held.push((stroke, command));
-        }
-    }
-    Ok(())
-}
-
 /// The bindings Ely and the fork's own lists made before the commands'.
 struct Base(Vec<KeyBinding>);
 
 impl Global for Base {}
 
+/// The modifiers of the last key pressed, read before bindings run, since an action carries no key.
+#[derive(Clone, Copy, Default)]
+pub struct Pressed(pub Modifiers);
+
+impl Global for Pressed {}
+
 /// Keeps Ely's bindings, then binds every command as the settings say.
 pub fn init(cx: &mut App) {
     let base = cx.key_bindings().borrow().bindings().cloned().collect();
     cx.set_global(Base(base));
+    cx.set_global(Pressed::default());
+    cx.intercept_keystrokes(|event, _, cx| cx.set_global(Pressed(event.keystroke.modifiers)))
+        .detach();
     apply(cx);
     let mut bound = SettingsStore::get(cx).shortcuts.clone();
     cx.observe_global::<SettingsStore>(move |cx| {
@@ -496,5 +484,8 @@ pub fn apply(cx: &mut App) {
     );
 }
 
+mod check;
 #[cfg(test)]
 mod tests;
+
+pub use check::check;

@@ -21,6 +21,11 @@ actions!(
     ]
 );
 
+/// Swaps the shown pane with its neighbor toward a side, as Windows Terminal's `swapPane`.
+#[derive(Clone, Debug, PartialEq, Action)]
+#[action(namespace = ely_tea_party, no_json)]
+pub struct MovePane(pub crate::sessions::Toward);
+
 /// Shows the session at this place, from 0; past the last one, the key goes on to the program.
 #[derive(Clone, Debug, PartialEq, Action)]
 #[action(namespace = ely_tea_party, no_json)]
