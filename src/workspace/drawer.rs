@@ -44,6 +44,7 @@ pub struct Drawer {
     pub agent: Option<Agent>,
     /// What agents in it did.
     pub log: Timeline,
+    pub(super) share_error: Option<&'static str>,
     title: String,
     folder: PathBuf,
     _events: Subscription,
@@ -83,6 +84,7 @@ impl Workspace {
             }
             Some(drawer) => {
                 drawer.open = true;
+                drawer.share_error = None;
                 window.focus(&drawer.terminal.focus_handle(cx), cx);
                 log::debug!("app: session {id}'s drawer shows");
             }
@@ -117,6 +119,7 @@ impl Workspace {
                             terminal,
                             open: true,
                             busy: false,
+                            share_error: None,
                             title: String::new(),
                             folder,
                             _events: events,
@@ -374,7 +377,7 @@ impl Workspace {
                             .min_h_0()
                             .child(drawer.terminal.clone().cached(fill())),
                     )
-                    .child(self.drawer_share_button(cx))
+                    .child(self.drawer_share_button(drawer, cx))
                     .child(handle),
             )
             .when(self.drawer_dragged.is_some(), |body| body.child(cover()))

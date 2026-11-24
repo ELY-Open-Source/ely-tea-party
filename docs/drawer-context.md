@@ -4,18 +4,13 @@ Open a session's shell drawer with Cmd+J on macOS or Ctrl+Shift+J elsewhere.
 When an agent is running in the terminal above it, the drawer's bottom bar
 offers **Send to Agent**.
 
-The button captures recent output, limited to 400 terminal rows and 32 KB,
-and opens an editable preview. Soft-wrapped rows are joined before common
-credentials, authentication headers, cookies, private keys, email addresses
-and home directory names are redacted locally. Older output may be omitted.
-Detection is heuristic: review the preview for sensitive information it missed.
-The preview is not saved to disk or copied to the system clipboard by this action.
+Click **Send to Agent** to paste recent output directly into the agent's input
+and focus it. Review the pasted text there and press Enter to submit.
 
-Choose **Insert into Agent** to paste the preview into that session's agent
-input. Press Enter in the agent to submit it. Edits containing recognized
-sensitive values are redacted again and shown for another review before insertion.
+The capture is limited to 400 terminal rows and 32 KB. Soft-wrapped rows are
+joined before common credentials, authentication headers, cookies, private keys,
+email addresses and home directory names are redacted locally. Review sensitive
+information that the automatic redaction may miss before submitting.
 
-Insertion requires the original session and agent to remain active and the
-terminal to support bracketed paste. If the destination changes, return to
-the original session or open a new preview. If bracketed paste is unavailable,
-wait until the agent's input is ready and retry; no text is sent on failure.
+Pasting requires an active agent and bracketed paste. If the paste fails, the
+drawer shows a message next to the button.

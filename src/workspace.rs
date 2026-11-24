@@ -90,7 +90,6 @@ pub struct Workspace {
     ticking: Option<Task<()>>,
     /// The drawer's height while its divider is dragged.
     drawer_dragged: Option<Pixels>,
-    drawer_share: Option<drawer_share::Preview>,
     /// The tea party shows in place of the columns.
     party: bool,
     butler: crate::butler::Briefing,
@@ -158,7 +157,6 @@ impl Workspace {
             choosing_folder: false,
             folder_actions: false,
             drawer_dragged: None,
-            drawer_share: None,
             party: false,
             butler: crate::butler::Briefing::default(),
             companion: companion::Companion::default(),
@@ -491,6 +489,5 @@ impl Render for Workspace {
             .children(self.companion_bubble(window, cx))
             .child(crate::butler::outside_click_listener())
             .children(self.switcher.clone())
-            .children(self.drawer_share_dialog(cx))
     }
 }
